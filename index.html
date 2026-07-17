@@ -1108,8 +1108,12 @@
     <div class="side-user">
       <div class="side-user-avatar" id="user-avatar">?</div>
       <div class="side-user-info">
-        <div class="side-user-email" id="user-email">—</div>
+        <div class="side-user-email" id="user-name-display">—</div>
+        <div class="side-user-email" id="user-email" style="color:var(--text-muted);font-size:10.5px;">—</div>
       </div>
+      <button class="side-user-logout" onclick="editUserName()" title="Editar nome" style="margin-right:2px;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+      </button>
       <button class="side-user-logout" onclick="logout()" title="Sair">SAIR</button>
     </div>
   </aside>
@@ -1266,8 +1270,10 @@ async function checkAuth(){
     authEl.classList.remove('show');
     appEl.style.display = 'grid';
     const email = session.user.email;
+    const name = getUserName();
     document.getElementById('user-email').textContent = email;
-    document.getElementById('user-avatar').textContent = email[0].toUpperCase();
+    document.getElementById('user-name-display').textContent = name;
+    document.getElementById('user-avatar').textContent = name[0].toUpperCase();
     await loadTasks();
   } else {
     appEl.style.display = 'none';
@@ -1310,6 +1316,27 @@ async function doAuth(){
 async function logout(){
   await sb.auth.signOut();
   location.reload();
+}
+
+function getUserName(){
+  if(!session) return '';
+  const meta = session.user.user_metadata || {};
+  if(meta.name) return meta.name;
+  if(meta.full_name) return meta.full_name.split(' ')[0];
+  const emailPart = session.user.email.split('@')[0];
+  const firstPart = emailPart.split(/[._-]/)[0];
+  return firstPart.charAt(0).toUpperCase() + firstPart.slice(1);
+}
+
+async function editUserName(){
+  const current = getUserName();
+  const newName = prompt('Como você quer ser chamado?', current);
+  if(!newName || newName.trim() === '' || newName === current) return;
+  const {error} = await sb.auth.updateUser({data: {name: newName.trim()}});
+  if(error){alert('Erro ao salvar nome: ' + error.message);return;}
+  const {data} = await sb.auth.getSession();
+  session = data.session;
+  render();
 }
 
 async function loadTasks(){
@@ -1480,7 +1507,7 @@ function renderDashboard(){
     <div class="view-header">
       <div>
         <div class="eyebrow">${dataStr}</div>
-        <h1>${saudacao}, Samir</h1>
+        <h1>${saudacao}, ${esc(getUserName())}</h1>
       </div>
       <button class="btn-primary" onclick="openModal()">+ Nova tarefa</button>
     </div>
