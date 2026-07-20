@@ -221,6 +221,65 @@
     box-shadow:0 4px 14px rgba(91,122,148,0.35);
   }
 
+  .header-cta{
+    background:var(--glass);
+    backdrop-filter:blur(24px) saturate(160%);
+    -webkit-backdrop-filter:blur(24px) saturate(160%);
+    border:1px solid var(--glass-border-soft);
+    border-radius:16px;
+    padding:16px 20px;
+    display:flex;
+    align-items:center;
+    gap:18px;
+    box-shadow:var(--shadow-soft);
+    min-width:280px;
+  }
+  .header-cta-info{flex:1;line-height:1.3;}
+  .header-cta-title{
+    font-family:'Space Grotesk';
+    font-weight:500;
+    font-size:14px;
+    color:var(--text-strong);
+    margin-bottom:3px;
+    letter-spacing:-0.01em;
+  }
+  .header-cta-sub{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10.5px;
+    color:var(--text-muted);
+    letter-spacing:0.05em;
+    text-transform:uppercase;
+  }
+  .btn-cta{
+    background:var(--accent);
+    color:white;
+    font-weight:500;
+    font-size:14px;
+    padding:14px 20px;
+    border-radius:12px;
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    transition:all .18s ease;
+    box-shadow:0 4px 14px rgba(91,122,148,0.30);
+    white-space:nowrap;
+    flex-shrink:0;
+  }
+  .btn-cta:hover{
+    background:var(--accent-hover);
+    transform:translateY(-1px);
+    box-shadow:0 6px 20px rgba(91,122,148,0.40);
+  }
+  .btn-cta-icon{
+    width:26px;height:26px;
+    background:rgba(255,255,255,0.2);
+    border-radius:7px;
+    display:grid;place-items:center;
+    font-size:18px;
+    font-weight:400;
+    line-height:1;
+  }
+
   .glass{
     background:var(--glass);
     backdrop-filter:blur(24px) saturate(160%);
@@ -1065,6 +1124,101 @@
   }
   .side-user-logout:hover{color:var(--danger);background:rgba(196,133,119,0.1);}
 
+  .client-item{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:9px 2px;
+    border-bottom:1px solid var(--line);
+    font-size:12.5px;
+  }
+  .client-item:last-child{border-bottom:none;}
+  .client-name{
+    color:var(--text);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    flex:1;
+    min-width:0;
+  }
+  .client-bar{
+    width:56px;
+    height:5px;
+    background:rgba(154,175,194,0.15);
+    border-radius:3px;
+    overflow:hidden;
+    flex-shrink:0;
+  }
+  .client-bar-fill{
+    height:100%;
+    background:linear-gradient(90deg, var(--palette-6), var(--accent));
+    border-radius:3px;
+  }
+  .client-count{
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    color:var(--text-muted);
+    min-width:16px;
+    text-align:right;
+    flex-shrink:0;
+  }
+
+  .settings-btn{
+    width:100%;
+    padding:10px 12px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    background:transparent;
+    color:var(--text);
+    border-radius:10px;
+    font-size:13.5px;
+    transition:all .15s ease;
+    margin-top:10px;
+    border-top:1px solid var(--line);
+    padding-top:14px;
+  }
+  .settings-btn:hover{background:var(--glass-strong);color:var(--text-strong);}
+  .settings-btn svg{width:16px;height:16px;color:var(--text-muted);flex-shrink:0;}
+
+  .theme-grid{
+    display:grid;
+    grid-template-columns:repeat(2,1fr);
+    gap:10px;
+    margin-top:6px;
+  }
+  .theme-card{
+    padding:14px 14px 12px;
+    border-radius:12px;
+    border:2px solid var(--line);
+    background:var(--glass-strong);
+    cursor:pointer;
+    transition:all .15s ease;
+    text-align:left;
+  }
+  .theme-card:hover{border-color:var(--text-muted);transform:translateY(-1px);}
+  .theme-card.selected{
+    border-color:var(--accent);
+    background:rgba(255,255,255,0.85);
+    box-shadow:0 4px 14px rgba(90,110,130,0.10);
+  }
+  .theme-card-name{
+    font-family:'Space Grotesk';
+    font-weight:500;
+    font-size:13.5px;
+    color:var(--text-strong);
+    margin-bottom:8px;
+  }
+  .theme-swatches{
+    display:flex;
+    gap:5px;
+  }
+  .theme-swatch{
+    width:20px;height:20px;
+    border-radius:6px;
+    border:1px solid rgba(255,255,255,0.4);
+  }
+
   @media (max-width:900px){
     .app{grid-template-columns:1fr;}
     aside{display:none;}
@@ -1100,6 +1254,10 @@
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
         Todas as tarefas
       </button>
+      <button class="settings-btn" onclick="openSettings()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Configurações
+      </button>
     </nav>
     <div class="side-footer">
       <div id="today-date">—</div>
@@ -1123,6 +1281,22 @@
   </main>
 </div>
 
+<div class="auth-screen" id="onboarding-screen">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <div class="brand-dot">s</div>
+      <div class="brand-name">samyest<span>.</span>mind</div>
+    </div>
+    <div class="auth-title">Como devemos te chamar?</div>
+    <div class="auth-sub">Esse nome vai aparecer nas saudações e no seu perfil.</div>
+    <div class="auth-error" id="onboarding-error"></div>
+    <div class="auth-field">
+      <input type="text" class="input" id="onboarding-name" placeholder="Seu nome" onkeypress="if(event.key==='Enter')saveOnboarding()">
+    </div>
+    <button class="auth-btn" id="onboarding-btn" onclick="saveOnboarding()">Continuar</button>
+  </div>
+</div>
+
 <div class="auth-screen" id="auth-screen">
   <div class="auth-card">
     <div class="auth-brand">
@@ -1142,6 +1316,34 @@
     <div class="auth-switch">
       <span id="auth-switch-text">Não tem conta?</span>
       <button onclick="toggleAuthMode()" id="auth-switch-btn">Cadastrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="settings-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-head-title">Configurações</div>
+      <button class="modal-close" onclick="closeSettings()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Como você quer ser chamado</label>
+        <input type="text" class="input" id="s-name" placeholder="Seu nome">
+      </div>
+      <div class="field">
+        <label>Tema de cores</label>
+        <div class="theme-grid" id="theme-grid"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <div></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-secondary" onclick="closeSettings()">Cancelar</button>
+        <button class="btn-primary" onclick="saveSettings()">Salvar</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1216,6 +1418,120 @@ let session = null;
 let authMode = 'signin';
 
 const STORAGE_KEY = 'samyest-mind-tasks-v2';
+
+const THEMES = {
+  bluegray: {
+    name: 'Sereno',
+    bg: '#E9EDF1',
+    p5: '#B7C6D4', p6: '#9AAFC2', p8: '#7D9AB3',
+    accent: '#5B7A94', accentHover: '#4A6680',
+    text: '#3B4A5A', textStrong: '#2A3644',
+    textMuted: '#7D9AB3', textSoft: '#9AAFC2'
+  },
+  rose: {
+    name: 'Rosa',
+    bg: '#FCEFEF',
+    p5: '#FFACAB', p6: '#FF8B84', p8: '#D95F5A',
+    accent: '#B84C48', accentHover: '#933A36',
+    text: '#4A2A2A', textStrong: '#2E1717',
+    textMuted: '#B57676', textSoft: '#D9A8A6'
+  },
+  mint: {
+    name: 'Menta',
+    bg: '#EAF5F4',
+    p5: '#A1E0DD', p6: '#5CC2C6', p8: '#4A9B9E',
+    accent: '#3F8285', accentHover: '#2F6669',
+    text: '#1F4444', textStrong: '#0F2828',
+    textMuted: '#6BA0A2', textSoft: '#A0C4C6'
+  },
+  lavender: {
+    name: 'Lavanda',
+    bg: '#F3EDF5',
+    p5: '#D9C4E0', p6: '#B8A2C7', p8: '#9B85B0',
+    accent: '#7D6395', accentHover: '#634A78',
+    text: '#3D2C4A', textStrong: '#241A2E',
+    textMuted: '#9080A0', textSoft: '#B3A5C0'
+  },
+  sky: {
+    name: 'Céu',
+    bg: '#EAF2F9',
+    p5: '#B4D3E8', p6: '#88A8D2', p8: '#5A7EAF',
+    accent: '#4568A0', accentHover: '#345183',
+    text: '#2C3E5C', textStrong: '#1A2537',
+    textMuted: '#7A9AB5', textSoft: '#9EB8CB'
+  },
+  sunset: {
+    name: 'Pêssego',
+    bg: '#FBEEE4',
+    p5: '#FDBBBA', p6: '#F5A08D', p8: '#D4826B',
+    accent: '#B96548', accentHover: '#9B4E36',
+    text: '#4F2E1F', textStrong: '#2F1B12',
+    textMuted: '#B58472', textSoft: '#D6A997'
+  }
+};
+
+let currentTheme = 'bluegray';
+
+function applyTheme(name){
+  const t = THEMES[name] || THEMES.bluegray;
+  currentTheme = name;
+  const r = document.documentElement.style;
+  r.setProperty('--bg-base', t.bg);
+  r.setProperty('--palette-5', t.p5);
+  r.setProperty('--palette-6', t.p6);
+  r.setProperty('--palette-8', t.p8);
+  r.setProperty('--accent', t.accent);
+  r.setProperty('--accent-hover', t.accentHover);
+  r.setProperty('--text', t.text);
+  r.setProperty('--text-strong', t.textStrong);
+  r.setProperty('--text-muted', t.textMuted);
+  r.setProperty('--text-soft', t.textSoft);
+}
+
+function openSettings(){
+  document.getElementById('s-name').value = getUserName();
+  const grid = document.getElementById('theme-grid');
+  grid.innerHTML = Object.entries(THEMES).map(([key, t])=>`
+    <button class="theme-card ${key===currentTheme?'selected':''}" data-theme="${key}" onclick="selectTheme('${key}')">
+      <div class="theme-card-name">${t.name}</div>
+      <div class="theme-swatches">
+        <div class="theme-swatch" style="background:${t.bg}"></div>
+        <div class="theme-swatch" style="background:${t.p5}"></div>
+        <div class="theme-swatch" style="background:${t.p6}"></div>
+        <div class="theme-swatch" style="background:${t.p8}"></div>
+        <div class="theme-swatch" style="background:${t.accent}"></div>
+      </div>
+    </button>
+  `).join('');
+  document.getElementById('settings-modal').classList.add('open');
+}
+
+function closeSettings(){
+  const original = (session?.user?.user_metadata?.theme) || 'bluegray';
+  if(currentTheme !== original) applyTheme(original);
+  document.getElementById('settings-modal').classList.remove('open');
+}
+
+function selectTheme(name){
+  applyTheme(name);
+  document.querySelectorAll('.theme-card').forEach(c=>{
+    c.classList.toggle('selected', c.dataset.theme === name);
+  });
+}
+
+async function saveSettings(){
+  const name = document.getElementById('s-name').value.trim();
+  if(!name){alert('Preencha seu nome');return;}
+  const {error} = await sb.auth.updateUser({data: {name, theme: currentTheme}});
+  if(error){alert('Erro ao salvar: ' + error.message);return;}
+  const {data} = await sb.auth.getSession();
+  session = data.session;
+  document.getElementById('settings-modal').classList.remove('open');
+  render();
+  const userName = getUserName();
+  document.getElementById('user-name-display').textContent = userName;
+  document.getElementById('user-avatar').textContent = userName[0].toUpperCase();
+}
 const STATUSES = {todo:'A Fazer', waiting:'Aguardando', doing:'Em Andamento', done:'Concluído'};
 const DEFAULT_CLIENTS = ['Elliz B (Donna da Lua)','Adelso Costa','Conteinner','Alex','Jmavell','Interno','TruthCommerce','Ascent','Espumart'];
 
@@ -1263,22 +1579,52 @@ async function checkAuth(){
   session = data.session;
   const appEl = document.getElementById('app');
   const authEl = document.getElementById('auth-screen');
+  const onbEl = document.getElementById('onboarding-screen');
   if(!ALLOW_SIGNUP){
     document.querySelector('.auth-switch').style.display = 'none';
   }
   if(session){
     authEl.classList.remove('show');
+    const meta = session.user.user_metadata || {};
+    if(!meta.name){
+      appEl.style.display = 'none';
+      onbEl.classList.add('show');
+      setTimeout(()=>document.getElementById('onboarding-name').focus(), 60);
+      return;
+    }
+    onbEl.classList.remove('show');
     appEl.style.display = 'grid';
     const email = session.user.email;
     const name = getUserName();
+    const savedTheme = (session.user.user_metadata || {}).theme || 'bluegray';
+    applyTheme(savedTheme);
     document.getElementById('user-email').textContent = email;
     document.getElementById('user-name-display').textContent = name;
     document.getElementById('user-avatar').textContent = name[0].toUpperCase();
     await loadTasks();
   } else {
     appEl.style.display = 'none';
+    onbEl.classList.remove('show');
     authEl.classList.add('show');
   }
+}
+
+async function saveOnboarding(){
+  const nameEl = document.getElementById('onboarding-name');
+  const errorEl = document.getElementById('onboarding-error');
+  const btn = document.getElementById('onboarding-btn');
+  const name = nameEl.value.trim();
+  errorEl.classList.remove('show');
+  if(!name){errorEl.textContent = 'Digite seu nome.';errorEl.classList.add('show');return;}
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+  const {error} = await sb.auth.updateUser({data: {name}});
+  btn.disabled = false;
+  btn.textContent = 'Continuar';
+  if(error){errorEl.textContent = error.message;errorEl.classList.add('show');return;}
+  const {data} = await sb.auth.getSession();
+  session = data.session;
+  await checkAuth();
 }
 
 function toggleAuthMode(){
@@ -1509,7 +1855,16 @@ function renderDashboard(){
         <div class="eyebrow">${dataStr}</div>
         <h1>${saudacao}, ${esc(getUserName())}</h1>
       </div>
-      <button class="btn-primary" onclick="openModal()">+ Nova tarefa</button>
+      <div class="header-cta" onclick="openModal()" style="cursor:pointer;">
+        <div class="header-cta-info">
+          <div class="header-cta-title">Precisa lançar algo?</div>
+          <div class="header-cta-sub">Atalho: tecla N</div>
+        </div>
+        <button class="btn-cta" onclick="event.stopPropagation();openModal()">
+          <span class="btn-cta-icon">+</span>
+          Nova tarefa
+        </button>
+      </div>
     </div>
     <div class="status-row">
       <div class="status-item"><div class="lbl">A fazer</div><div class="val">${todo}</div></div>
@@ -1538,6 +1893,12 @@ function renderDashboard(){
             : acoes.slice(0,6).map(renderTaskRow).join('')
           }
         </div>
+        <div class="glass panel">
+          <div class="panel-head">
+            <div class="panel-title">👥 Foco por cliente</div>
+          </div>
+          ${renderClientFocus()}
+        </div>
         ${aguardando.length > 0 ? `
         <div class="glass panel">
           <div class="panel-head">
@@ -1549,21 +1910,33 @@ function renderDashboard(){
         ` : ''}
       </div>
       <div class="side-col">
-        <div class="glass panel">
-          <div class="panel-head"><div class="panel-title">Adicionar rápido</div></div>
-          <div class="quick-add">
-            <input type="text" class="input" id="qa-title" placeholder="Descreva a tarefa..." onkeypress="if(event.key==='Enter')quickAdd()">
-            <div class="qa-row">
-              <input type="text" class="input" id="qa-client" placeholder="Cliente" list="clients-list">
-              <input type="date" class="input" id="qa-date">
-            </div>
-            <button class="btn-primary" onclick="quickAdd()" style="width:100%;justify-content:center;">Adicionar</button>
-          </div>
-        </div>
         <div class="glass panel">${renderMiniCal()}</div>
       </div>
     </div>
   `;
+}
+
+function renderClientFocus(){
+  const active = state.tasks.filter(t=>t.status!=='done');
+  if(active.length === 0){
+    return `<div class="empty" style="padding:26px 12px;font-size:12.5px;"><strong>Sem pendências</strong>Nenhum cliente ativo</div>`;
+  }
+  const byClient = {};
+  active.forEach(t=>{
+    const c = t.client || 'Sem cliente';
+    byClient[c] = (byClient[c] || 0) + 1;
+  });
+  const sorted = Object.entries(byClient).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const max = sorted[0][1];
+  return sorted.map(([client, count])=>{
+    const pct = (count/max)*100;
+    return `
+      <div class="client-item">
+        <div class="client-name">${esc(client)}</div>
+        <div class="client-bar"><div class="client-bar-fill" style="width:${pct}%"></div></div>
+        <div class="client-count">${count}</div>
+      </div>`;
+  }).join('');
 }
 
 function renderMiniCal(){
@@ -1936,33 +2309,19 @@ async function formatNotes(){
   btn.innerHTML = '<span class="spinner"></span> Formatando';
 
   try{
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1000,
-        messages: [{
-          role: "user",
-          content: `Você organiza notas de trabalho. Reescreva o texto bruto abaixo em formato de anotação limpa e clara, em português. Regras:
-- Frases curtas e diretas
-- Use bullets com • para listar ações, pontos ou próximos passos
-- Se fizer sentido, separe em seções curtas (ex: "Contexto:", "Ações:", "Pendências:") — só quando houver conteúdo pra cada uma
-- Preserve datas, nomes, valores e emails exatamente como aparecem
-- NÃO invente informação
-- NÃO use markdown (nada de ** ou ##), texto puro com bullets •
-- Responda APENAS com a nota formatada, sem preâmbulo nem explicação
-
-Texto bruto:
-${raw}`
-        }]
-      })
+    const response = await fetch('/api/format', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text: raw})
     });
     const data = await response.json();
-    const formatted = data.content.map(i => i.type === 'text' ? i.text : '').join('').trim();
-    if(formatted) textarea.value = formatted;
+    if(!response.ok){
+      alert(data.error || 'Erro ao formatar');
+    } else if(data.text){
+      textarea.value = data.text;
+    }
   }catch(e){
-    alert('Erro ao formatar. Tenta de novo.');
+    alert('Erro de conexão. Tenta de novo.');
   }
 
   btn.disabled = false;
@@ -1970,9 +2329,13 @@ ${raw}`
 }
 
 document.getElementById('modal').addEventListener('click', (e)=>{if(e.target.id === 'modal') closeModal();});
+document.getElementById('settings-modal').addEventListener('click', (e)=>{if(e.target.id === 'settings-modal') closeSettings();});
 document.addEventListener('keydown', (e)=>{
-  if(e.key === 'Escape') closeModal();
-  if(e.key === 'n' && !document.getElementById('modal').classList.contains('open') && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA'){
+  if(e.key === 'Escape'){
+    closeModal();
+    closeSettings();
+  }
+  if(e.key === 'n' && !document.getElementById('modal').classList.contains('open') && !document.getElementById('settings-modal').classList.contains('open') && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA'){
     e.preventDefault();openModal();
   }
 });
