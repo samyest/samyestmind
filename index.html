@@ -406,6 +406,7 @@
   .task-check.dot-done{opacity:0.6;}
   .task-title{
     flex:1;
+    min-width:0;
     font-size:14px;
     color:var(--text);
     overflow:hidden;
@@ -2263,7 +2264,10 @@ function renderKanban(){
   return `
     <div class="view-header">
       <div><div class="eyebrow">Fluxo de trabalho</div><h1>Kanban</h1></div>
-      <button class="btn-primary" onclick="openModal()">+ Nova tarefa</button>
+      <div style="display:flex;gap:10px;">
+        <button class="btn-secondary" onclick="openColumnModal()">+ Nova coluna</button>
+        <button class="btn-primary" onclick="openModal()">+ Nova tarefa</button>
+      </div>
     </div>
     <div class="kanban">
       ${cols.map(col=>{
@@ -2298,10 +2302,6 @@ function renderKanban(){
             </div>
           </div>`;
       }).join('')}
-      <button class="kb-add-col" onclick="openColumnModal()">
-        <span class="kb-add-col-icon">+</span>
-        Nova coluna
-      </button>
     </div>`;
 }
 
