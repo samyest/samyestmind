@@ -30,6 +30,7 @@
 
     --accent: #5B7A94;
     --accent-hover: #4A6680;
+    --accent-text: #ffffff;
 
     --line: rgba(122, 142, 162, 0.14);
     --line-strong: rgba(122, 142, 162, 0.22);
@@ -204,7 +205,7 @@
 
   .btn-primary{
     background:var(--accent);
-    color:white;
+    color:var(--accent-text);
     font-weight:500;
     font-size:13px;
     padding:10px 18px;
@@ -252,7 +253,7 @@
   }
   .btn-cta{
     background:var(--accent);
-    color:white;
+    color:var(--accent-text);
     font-weight:500;
     font-size:14px;
     padding:14px 20px;
@@ -543,7 +544,7 @@
   }
   .mini-cal-day:hover{background:var(--glass-strong);}
   .mini-cal-day.other{color:var(--text-soft);opacity:0.4;}
-  .mini-cal-day.today{background:var(--accent);color:white;font-weight:500;}
+  .mini-cal-day.today{background:var(--accent);color:var(--accent-text);font-weight:500;}
   .mini-cal-day.has-task::after{
     content:'';
     position:absolute;
@@ -1060,7 +1061,7 @@
     width:100%;
     padding:12px;
     background:var(--accent);
-    color:white;
+    color:var(--accent-text);
     font-weight:500;
     font-size:14px;
     border-radius:10px;
@@ -1199,7 +1200,7 @@
   .theme-card:hover{border-color:var(--text-muted);transform:translateY(-1px);}
   .theme-card.selected{
     border-color:var(--accent);
-    background:rgba(255,255,255,0.85);
+    background:var(--glass-hover);
     box-shadow:0 4px 14px rgba(90,110,130,0.10);
   }
   .theme-card-name{
@@ -1467,6 +1468,22 @@ const THEMES = {
     accent: '#B96548', accentHover: '#9B4E36',
     text: '#4F2E1F', textStrong: '#2F1B12',
     textMuted: '#B58472', textSoft: '#D6A997'
+  },
+  graphite: {
+    name: 'Grafite',
+    bg: '#141821',
+    p5: '#2A3140', p6: '#3D4557', p8: '#5A6478',
+    accent: '#C7CDD6', accentHover: '#DDE2E9',
+    text: '#E5E7EB', textStrong: '#FFFFFF',
+    textMuted: '#9CA3AF', textSoft: '#6B7280',
+    accentText: '#141821',
+    glass: 'rgba(28, 33, 44, 0.55)',
+    glassStrong: 'rgba(36, 42, 54, 0.75)',
+    glassHover: 'rgba(45, 52, 66, 0.85)',
+    glassBorder: 'rgba(255, 255, 255, 0.10)',
+    glassBorderSoft: 'rgba(255, 255, 255, 0.06)',
+    line: 'rgba(255, 255, 255, 0.07)',
+    lineStrong: 'rgba(255, 255, 255, 0.14)'
   }
 };
 
@@ -1482,10 +1499,18 @@ function applyTheme(name){
   r.setProperty('--palette-8', t.p8);
   r.setProperty('--accent', t.accent);
   r.setProperty('--accent-hover', t.accentHover);
+  r.setProperty('--accent-text', t.accentText || '#ffffff');
   r.setProperty('--text', t.text);
   r.setProperty('--text-strong', t.textStrong);
   r.setProperty('--text-muted', t.textMuted);
   r.setProperty('--text-soft', t.textSoft);
+  r.setProperty('--glass', t.glass || 'rgba(255,255,255,0.45)');
+  r.setProperty('--glass-strong', t.glassStrong || 'rgba(255,255,255,0.65)');
+  r.setProperty('--glass-hover', t.glassHover || 'rgba(255,255,255,0.72)');
+  r.setProperty('--glass-border', t.glassBorder || 'rgba(255,255,255,0.75)');
+  r.setProperty('--glass-border-soft', t.glassBorderSoft || 'rgba(255,255,255,0.5)');
+  r.setProperty('--line', t.line || 'rgba(122, 142, 162, 0.14)');
+  r.setProperty('--line-strong', t.lineStrong || 'rgba(122, 142, 162, 0.22)');
 }
 
 function openSettings(){
