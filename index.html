@@ -401,10 +401,9 @@
   .task-row:last-child{border-bottom:none;}
   .task-row:hover{background:var(--glass-strong);}
   .task-check{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
-  .task-check.todo{background:var(--todo);}
-  .task-check.waiting{background:transparent;border:1.5px solid var(--waiting);box-sizing:border-box;}
-  .task-check.doing{background:var(--doing);}
-  .task-check.done{background:var(--done);opacity:0.6;}
+  .task-check{background:var(--col-color, var(--todo));}
+  .task-check.dot-hollow{background:transparent;border:1.5px solid var(--col-color, var(--waiting));box-sizing:border-box;}
+  .task-check.dot-done{opacity:0.6;}
   .task-title{
     flex:1;
     font-size:14px;
@@ -560,7 +559,7 @@
 
   .kanban{
     display:grid;
-    grid-template-columns:repeat(4,1fr);
+    grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));
     gap:16px;
     align-items:start;
   }
@@ -575,6 +574,9 @@
     border-bottom:1px solid var(--line);
   }
   .kb-col-title{
+    display:flex;
+    align-items:center;
+    gap:8px;
     font-family:'Space Grotesk';
     font-weight:500;
     font-size:13px;
@@ -607,11 +609,9 @@
     position:absolute;
     left:0;top:0;bottom:0;
     width:3px;
-    background:var(--todo);
+    background:var(--col-color, var(--todo));
   }
-  .kb-card.waiting::before{background:var(--waiting);}
-  .kb-card.doing::before{background:var(--doing);}
-  .kb-card.done::before{background:var(--done);}
+  .kb-card.done{opacity:0.75;}
   .kb-card:hover{
     background:rgba(255,255,255,0.75);
     transform:translateY(-1px);
@@ -746,11 +746,9 @@
     position:absolute;
     left:0;top:0;bottom:0;
     width:3px;
-    background:var(--todo);
+    background:var(--col-color, var(--todo));
   }
-  .day-task.waiting::before{background:var(--waiting);}
-  .day-task.doing::before{background:var(--doing);}
-  .day-task.done::before{background:var(--done);}
+  .day-task.done{opacity:0.75;}
   .day-task:hover{
     background:rgba(255,255,255,0.78);
     transform:translateY(-1px);
@@ -810,9 +808,6 @@
     transition:background .12s;
   }
   .cal-task:hover{background:rgba(154,175,194,0.35);}
-  .cal-task.waiting{border-left-color:var(--waiting);}
-  .cal-task.doing{border-left-color:var(--doing);}
-  .cal-task.done{border-left-color:var(--done);opacity:0.55;}
 
   .table-view{overflow:hidden;}
   .table-filters{
@@ -855,9 +850,6 @@
     font-family:'JetBrains Mono',monospace;
   }
   .badge-dot{width:6px;height:6px;border-radius:50%;background:var(--todo);}
-  .badge.waiting .badge-dot{background:var(--waiting);}
-  .badge.doing .badge-dot{background:var(--doing);}
-  .badge.done .badge-dot{background:var(--done);}
 
   .modal-bg{
     position:fixed;inset:0;
@@ -1222,160 +1214,82 @@
     border:1px solid rgba(255,255,255,0.4);
   }
 
-  /* ---- Animations (gated by body.no-anim) ---- */
-  @keyframes scRise{from{opacity:0;transform:translateY(16px) scale(.98);filter:blur(7px);}to{opacity:1;transform:none;filter:blur(0);}}
-  @keyframes scHeader{from{opacity:0;transform:translateY(-10px);filter:blur(5px);}to{opacity:1;transform:none;filter:blur(0);}}
-  @keyframes scRowIn{from{opacity:0;transform:translateX(-12px);}to{opacity:1;transform:none;}}
-  @keyframes scPop{0%{opacity:0;transform:scale(.86) translateY(6px);}62%{opacity:1;transform:scale(1.025) translateY(0);}100%{transform:scale(1);}}
-  @keyframes scFade{from{opacity:0;}to{opacity:1;}}
-  @keyframes scModal{from{opacity:0;transform:translateY(18px) scale(.955);}to{opacity:1;transform:none;}}
-  @keyframes scMoveFlash{
-    0%{box-shadow:0 0 0 0 rgba(91,122,148,.55), 0 12px 28px rgba(90,110,130,.24);transform:translateY(-4px) scale(1.02);}
-    55%{box-shadow:0 0 0 7px rgba(91,122,148,.12), var(--shadow-soft);transform:translateY(0) scale(1);}
-    100%{box-shadow:0 0 0 14px rgba(91,122,148,0), var(--shadow-soft);}
+  .kb-col-dot{
+    width:8px;height:8px;
+    border-radius:50%;
+    display:inline-block;
+    flex-shrink:0;
   }
-  @keyframes scPillPop{0%{transform:scale(.8);}55%{transform:scale(1.1);}100%{transform:scale(1);}}
-
-  body:not(.no-anim) main .view-header{animation:scHeader .5s cubic-bezier(.22,1,.36,1) both;}
-  body:not(.no-anim) main .status-row{animation:scRise .55s cubic-bezier(.22,1,.36,1) both .04s;}
-  body:not(.no-anim) main .date-filter{animation:scRise .55s cubic-bezier(.22,1,.36,1) both .09s;}
-  body:not(.no-anim) main .glass.panel,
-  body:not(.no-anim) main .glass.cal-view,
-  body:not(.no-anim) main .glass.table-view,
-  body:not(.no-anim) main .glass.day-panel{animation:scRise .58s cubic-bezier(.22,1,.36,1) both .12s;}
-  body:not(.no-anim) main .side-col > .glass{animation-delay:.18s;}
-
-  body:not(.no-anim) .task-row{animation:scRowIn .42s cubic-bezier(.22,1,.36,1) both;}
-  body:not(.no-anim) .task-row:nth-child(2){animation-delay:.16s;}
-  body:not(.no-anim) .task-row:nth-child(3){animation-delay:.21s;}
-  body:not(.no-anim) .task-row:nth-child(4){animation-delay:.26s;}
-  body:not(.no-anim) .task-row:nth-child(5){animation-delay:.31s;}
-  body:not(.no-anim) .task-row:nth-child(6){animation-delay:.36s;}
-  body:not(.no-anim) .task-row:nth-child(n+7){animation-delay:.41s;}
-
-  body:not(.no-anim) .day-panel-tasks .day-task{animation:scRowIn .42s cubic-bezier(.22,1,.36,1) both;}
-  body:not(.no-anim) .day-panel-tasks .day-task:nth-child(2){animation-delay:.06s;}
-  body:not(.no-anim) .day-panel-tasks .day-task:nth-child(3){animation-delay:.12s;}
-  body:not(.no-anim) .day-panel-tasks .day-task:nth-child(n+4){animation-delay:.18s;}
-
-  body:not(.no-anim) .client-item{animation:scRowIn .4s cubic-bezier(.22,1,.36,1) both;}
-  body:not(.no-anim) .client-item:nth-child(2){animation-delay:.05s;}
-  body:not(.no-anim) .client-item:nth-child(3){animation-delay:.1s;}
-  body:not(.no-anim) .client-item:nth-child(4){animation-delay:.15s;}
-  body:not(.no-anim) .client-item:nth-child(n+5){animation-delay:.2s;}
-
-  body:not(.no-anim) .task-table tbody tr{animation:scRowIn .38s cubic-bezier(.22,1,.36,1) both;}
-  body:not(.no-anim) .task-table tbody tr:nth-child(2){animation-delay:.04s;}
-  body:not(.no-anim) .task-table tbody tr:nth-child(3){animation-delay:.08s;}
-  body:not(.no-anim) .task-table tbody tr:nth-child(4){animation-delay:.12s;}
-  body:not(.no-anim) .task-table tbody tr:nth-child(5){animation-delay:.16s;}
-  body:not(.no-anim) .task-table tbody tr:nth-child(n+6){animation-delay:.2s;}
-
-  body:not(.no-anim) .cal-task{animation:scFade .34s ease both;}
-  body:not(.no-anim) .kb-cards .kb-card{animation:scPop .42s cubic-bezier(.34,1.56,.64,1) both;}
-  body:not(.no-anim) .kb-cards .kb-card:nth-child(2){animation-delay:.06s;}
-  body:not(.no-anim) .kb-cards .kb-card:nth-child(3){animation-delay:.12s;}
-  body:not(.no-anim) .kb-cards .kb-card:nth-child(4){animation-delay:.18s;}
-  body:not(.no-anim) .kb-cards .kb-card:nth-child(5){animation-delay:.24s;}
-  body:not(.no-anim) .kb-cards .kb-card:nth-child(n+6){animation-delay:.3s;}
-  body:not(.no-anim) .kb-card.just-moved{animation:scPop .42s cubic-bezier(.34,1.56,.64,1) both, scMoveFlash .95s ease-out;}
-
-  body:not(.no-anim) .date-pill.active{animation:scPillPop .34s cubic-bezier(.34,1.56,.64,1);}
-
-  body:not(.no-anim) .modal-bg.open{animation:scFade .22s ease both;}
-  body:not(.no-anim) .modal-bg.open .modal{animation:scModal .42s cubic-bezier(.34,1.56,.64,1) both;}
-  body:not(.no-anim) .auth-screen.show .auth-card{animation:scModal .5s cubic-bezier(.34,1.56,.64,1) both;}
-
-  @media (prefers-reduced-motion:reduce){
-    *{animation-duration:.001ms !important;animation-iteration-count:1 !important;}
+  .kb-col-edit{
+    width:22px;height:22px;
+    display:grid;place-items:center;
+    color:var(--text-muted);
+    border-radius:6px;
+    transition:all .15s ease;
+    flex-shrink:0;
+  }
+  .kb-col-edit:hover{color:var(--accent);background:var(--glass-hover);}
+  .kb-add-col{
+    border:1.5px dashed var(--line-strong);
+    border-radius:16px;
+    min-height:120px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    color:var(--text-muted);
+    font-size:13px;
+    font-weight:500;
+    transition:all .15s ease;
+    align-self:start;
+  }
+  .kb-add-col:hover{color:var(--accent);border-color:var(--accent);background:var(--glass);}
+  .kb-add-col-icon{
+    width:32px;height:32px;
+    border-radius:50%;
+    background:var(--glass-strong);
+    display:grid;place-items:center;
+    font-size:18px;
+    line-height:1;
   }
 
-  /* ---- Animation toggle switch ---- */
-  .switch-row{
-    display:flex;align-items:center;justify-content:space-between;gap:14px;
-    width:100%;text-align:left;cursor:pointer;
-    background:var(--glass-strong);border:1px solid var(--line);
-    padding:12px 14px;border-radius:10px;transition:border-color .15s ease;
+  .color-swatch-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
+  .color-swatch-btn{
+    width:28px;height:28px;
+    border-radius:8px;
+    border:2px solid transparent;
+    transition:all .15s ease;
+    flex-shrink:0;
   }
-  .switch-row:hover{border-color:var(--text-muted);}
-  .switch-row .switch-label{font-size:13px;color:var(--text);line-height:1.4;}
-  .switch{
-    width:44px;height:26px;border-radius:20px;background:var(--line-strong);
-    position:relative;transition:background .2s ease;flex-shrink:0;
+  .color-swatch-btn:hover{transform:translateY(-1px);}
+  .color-swatch-btn.selected{
+    border-color:var(--text-strong);
+    box-shadow:0 0 0 2px var(--glass-strong);
   }
-  .switch.on{background:var(--accent);}
-  .switch::after{
-    content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;
-    border-radius:50%;background:#fff;transition:transform .2s ease;
-    box-shadow:0 1px 3px rgba(0,0,0,0.25);
-  }
-  .switch.on::after{transform:translateX(18px);}
 
-  /* ---- Mobile chrome (hidden on desktop) ---- */
-  .mobile-topbar,.mobile-bottomnav,.mobile-fab{display:none;}
+  @media (max-width:1440px){
+    .app{grid-template-columns:200px 1fr;}
+    main{padding:32px 28px 50px;}
+    .dash-grid{gap:16px;}
+    .kanban{gap:14px;}
+    .view-header h1{font-size:32px;}
+    .status-row{width:100%;overflow-x:auto;}
+    .status-item{padding:12px 16px;}
+  }
+
+  @media (max-width:1180px){
+    .dash-grid{grid-template-columns:1fr;}
+    .kanban{grid-template-columns:repeat(2,1fr);}
+  }
 
   @media (max-width:900px){
     .app{grid-template-columns:1fr;}
     aside{display:none;}
-    main{padding:74px 16px 104px;}
     .status-row{width:100%;overflow-x:auto;}
     .dash-grid{grid-template-columns:1fr;}
     .kanban{grid-template-columns:1fr;}
-    .kb-col{min-height:auto;}
-    .view-header{flex-direction:column;align-items:flex-start;gap:14px;margin-bottom:24px;}
-    .view-header h1{font-size:29px;}
-    .header-cta{display:none;}
-    .field-row{grid-template-columns:1fr;}
-    .cal-cell{min-height:76px;}
-    .table-filters{flex-wrap:wrap;}
-    .table-filters .search{flex:1 1 100%;}
-
-    .mobile-topbar{
-      display:flex;align-items:center;justify-content:space-between;
-      position:fixed;top:0;left:0;right:0;height:58px;padding:0 18px;z-index:50;
-      background:var(--glass-strong);
-      backdrop-filter:blur(24px) saturate(160%);
-      -webkit-backdrop-filter:blur(24px) saturate(160%);
-      border-bottom:1px solid var(--glass-border-soft);
-    }
-    .mobile-topbar-actions{display:flex;gap:6px;}
-    .mobile-icon-btn{
-      width:40px;height:40px;display:grid;place-items:center;border-radius:11px;
-      color:var(--text-muted);background:var(--glass);transition:transform .15s ease,color .15s ease;
-    }
-    .mobile-icon-btn:active{transform:scale(0.92);color:var(--accent);}
-    .mobile-icon-btn svg{width:19px;height:19px;stroke-width:1.9;}
-
-    .mobile-bottomnav{
-      display:grid;grid-template-columns:repeat(4,1fr);gap:2px;
-      position:fixed;bottom:0;left:0;right:0;z-index:50;
-      padding:8px 8px calc(8px + env(safe-area-inset-bottom));
-      background:var(--glass-strong);
-      backdrop-filter:blur(24px) saturate(160%);
-      -webkit-backdrop-filter:blur(24px) saturate(160%);
-      border-top:1px solid var(--glass-border-soft);
-    }
-    .mobile-bottomnav .nav-item{
-      flex-direction:column;gap:4px;padding:8px 4px;border-radius:12px;
-      justify-content:center;align-items:center;
-      font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.02em;text-transform:uppercase;
-      color:var(--text-muted);background:transparent;box-shadow:none;
-    }
-    .mobile-bottomnav .nav-item .nav-icon{width:21px;height:21px;color:var(--text-muted);}
-    .mobile-bottomnav .nav-item.active{background:transparent;box-shadow:none;color:var(--accent);font-weight:500;}
-    .mobile-bottomnav .nav-item.active .nav-icon{color:var(--accent);}
-    .mobile-bottomnav .nav-item:active{transform:scale(0.92);}
-
-    .mobile-fab{
-      display:grid;place-items:center;
-      position:fixed;right:18px;bottom:calc(82px + env(safe-area-inset-bottom));z-index:51;
-      width:56px;height:56px;border-radius:18px;
-      background:var(--accent);color:var(--accent-text);
-      box-shadow:0 8px 24px rgba(91,122,148,0.45);
-      font-size:30px;font-weight:300;line-height:1;
-      transition:transform .15s ease;
-    }
-    .mobile-fab:active{transform:scale(0.9);}
+    main{padding:28px 20px;}
   }
 </style>
 </head>
@@ -1425,30 +1339,6 @@
       <button class="side-user-logout" onclick="logout()" title="Sair">SAIR</button>
     </div>
   </aside>
-
-  <div class="mobile-topbar">
-    <div class="brand" style="padding:0;margin:0;">
-      <div class="brand-dot">s</div>
-      <div class="brand-name">samyest<span>.</span>mind</div>
-    </div>
-    <div class="mobile-topbar-actions">
-      <button class="mobile-icon-btn" onclick="openSettings()" title="Configurações" aria-label="Configurações">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-      </button>
-      <button class="mobile-icon-btn" onclick="logout()" title="Sair" aria-label="Sair">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      </button>
-    </div>
-  </div>
-
-  <nav class="mobile-bottomnav">
-    <button class="nav-item" data-view="dashboard"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>Início</button>
-    <button class="nav-item" data-view="kanban"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="14" rx="1.5"/></svg>Kanban</button>
-    <button class="nav-item" data-view="calendar"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Agenda</button>
-    <button class="nav-item" data-view="table"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M3 12h18M3 18h18"/></svg>Tarefas</button>
-  </nav>
-
-  <button class="mobile-fab" onclick="openModal()" title="Nova tarefa" aria-label="Nova tarefa">+</button>
 
   <main id="main">
     <div class="loading-state">carregando seu espaço...</div>
@@ -1511,19 +1401,48 @@
         <label>Tema de cores</label>
         <div class="theme-grid" id="theme-grid"></div>
       </div>
-      <div class="field">
-        <label>Movimento</label>
-        <button class="switch-row" type="button" onclick="toggleAnim()">
-          <span class="switch-label">Animações ao trocar filtros e mover tarefas</span>
-          <span class="switch" id="anim-switch"></span>
-        </button>
-      </div>
     </div>
     <div class="modal-foot">
       <div></div>
       <div style="display:flex;gap:8px;">
         <button class="btn-secondary" onclick="closeSettings()">Cancelar</button>
         <button class="btn-primary" onclick="saveSettings()">Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="column-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-head-title" id="column-modal-title">Nova coluna</div>
+      <button class="modal-close" onclick="closeColumnModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Nome da coluna</label>
+        <input type="text" class="input" id="col-name" placeholder="Ex: Em revisão">
+      </div>
+      <div class="field">
+        <label>Tipo</label>
+        <select class="select" id="col-type">
+          <option value="active">Preciso agir</option>
+          <option value="waiting">Aguardando terceiros</option>
+          <option value="done">Concluído</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Cor</label>
+        <div class="color-swatch-row" id="col-color-swatches"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-danger" id="col-delete" onclick="deleteColumn()">Excluir</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-secondary" onclick="closeColumnModal()">Cancelar</button>
+        <button class="btn-primary" onclick="saveColumn()">Salvar</button>
       </div>
     </div>
   </div>
@@ -1708,7 +1627,6 @@ function openSettings(){
       </div>
     </button>
   `).join('');
-  syncAnimToggle();
   document.getElementById('settings-modal').classList.add('open');
 }
 
@@ -1717,16 +1635,6 @@ function closeSettings(){
   if(currentTheme !== original) applyTheme(original);
   document.getElementById('settings-modal').classList.remove('open');
 }
-
-function isAnimOn(){return localStorage.getItem('samyest-mind-anim') !== '0';}
-function applyAnimPref(){document.body.classList.toggle('no-anim', !isAnimOn());}
-function syncAnimToggle(){const el = document.getElementById('anim-switch');if(el) el.classList.toggle('on', isAnimOn());}
-function toggleAnim(){
-  localStorage.setItem('samyest-mind-anim', isAnimOn() ? '0' : '1');
-  applyAnimPref();
-  syncAnimToggle();
-}
-applyAnimPref();
 
 function selectTheme(name){
   applyTheme(name);
@@ -1748,16 +1656,128 @@ async function saveSettings(){
   document.getElementById('user-name-display').textContent = userName;
   document.getElementById('user-avatar').textContent = userName[0].toUpperCase();
 }
-const STATUSES = {todo:'A Fazer', waiting:'Aguardando', doing:'Em Andamento', done:'Concluído'};
+const DEFAULT_COLUMNS = [
+  {key:'todo', name:'A Fazer', color:'#9AAFC2', type:'active'},
+  {key:'waiting', name:'Aguardando', color:'#C9A868', type:'waiting'},
+  {key:'doing', name:'Em Andamento', color:'#5B7A94', type:'active'},
+  {key:'done', name:'Concluído', color:'#8FA88C', type:'done'}
+];
+const COLUMN_COLOR_PRESETS = ['#9AAFC2','#C9A868','#5B7A94','#8FA88C','#C48577','#B084CC','#5CC2C6','#D4826B'];
+let selectedColumnColor = COLUMN_COLOR_PRESETS[0];
+let editingColumnKey = null;
+
+function getColumns(){
+  return (state.columns && state.columns.length) ? state.columns : DEFAULT_COLUMNS;
+}
+function getColumn(key){
+  return getColumns().find(c=>c.key===key) || {key, name:key, color:'#9AAFC2', type:'active'};
+}
+function columnName(key){ return getColumn(key).name; }
+function columnColor(key){ return getColumn(key).color; }
+function columnType(key){ return getColumn(key).type; }
+function statusDotStyle(status){
+  const col = getColumn(status);
+  const cls = col.type === 'waiting' ? 'dot-hollow' : (col.type === 'done' ? 'dot-done' : '');
+  return {cls, style: `--col-color:${col.color}`};
+}
+
+async function persistColumns(){
+  const {error} = await sb.auth.updateUser({data: {kanban_columns: state.columns}});
+  if(error){alert('Erro ao salvar colunas: ' + error.message);return false;}
+  const {data} = await sb.auth.getSession();
+  session = data.session;
+  return true;
+}
+
+function renderColorSwatches(){
+  const wrap = document.getElementById('col-color-swatches');
+  if(!wrap) return;
+  wrap.innerHTML = COLUMN_COLOR_PRESETS.map(c=>`
+    <button type="button" class="color-swatch-btn ${c===selectedColumnColor?'selected':''}" style="background:${c}" onclick="selectColumnColor('${c}')"></button>
+  `).join('');
+}
+function selectColumnColor(c){
+  selectedColumnColor = c;
+  renderColorSwatches();
+}
+
+function openColumnModal(key){
+  editingColumnKey = key || null;
+  const modal = document.getElementById('column-modal');
+  const title = document.getElementById('column-modal-title');
+  const delBtn = document.getElementById('col-delete');
+  if(key){
+    const col = getColumn(key);
+    title.textContent = 'Editar coluna';
+    document.getElementById('col-name').value = col.name;
+    document.getElementById('col-type').value = col.type;
+    selectedColumnColor = col.color;
+    delBtn.style.display = getColumns().length > 1 ? '' : 'none';
+  } else {
+    title.textContent = 'Nova coluna';
+    document.getElementById('col-name').value = '';
+    document.getElementById('col-type').value = 'active';
+    selectedColumnColor = COLUMN_COLOR_PRESETS[0];
+    delBtn.style.display = 'none';
+  }
+  renderColorSwatches();
+  modal.classList.add('open');
+  setTimeout(()=>document.getElementById('col-name').focus(), 50);
+}
+
+function closeColumnModal(){
+  document.getElementById('column-modal').classList.remove('open');
+  editingColumnKey = null;
+}
+
+async function saveColumn(){
+  const name = document.getElementById('col-name').value.trim();
+  if(!name){document.getElementById('col-name').focus();return;}
+  const type = document.getElementById('col-type').value;
+  if(!state.columns) state.columns = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+  if(editingColumnKey){
+    const col = state.columns.find(c=>c.key===editingColumnKey);
+    if(col){col.name = name;col.type = type;col.color = selectedColumnColor;}
+  } else {
+    const key = 'col_' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+    state.columns.push({key, name, type, color: selectedColumnColor});
+  }
+  const ok = await persistColumns();
+  if(ok){closeColumnModal();render();}
+}
+
+async function deleteColumn(){
+  if(!editingColumnKey) return;
+  const cols = getColumns();
+  if(cols.length <= 1){alert('Precisa ter ao menos uma coluna.');return;}
+  const hasTasks = state.tasks.some(t=>t.status===editingColumnKey);
+  if(hasTasks && !confirm('Essa coluna tem tarefas — elas serão movidas para a primeira coluna restante. Continuar?')) return;
+  const fallback = cols.find(c=>c.key !== editingColumnKey);
+  const toMove = state.tasks.filter(t=>t.status===editingColumnKey);
+  for(const t of toMove){
+    t.status = fallback.key;
+    await updateTaskRemote(t.id, t);
+  }
+  state.columns = cols.filter(c=>c.key !== editingColumnKey);
+  const ok = await persistColumns();
+  if(ok){closeColumnModal();render();}
+}
+
+function populateStatusSelect(selectId, currentValue){
+  const sel = document.getElementById(selectId);
+  sel.innerHTML = getColumns().map(c=>`<option value="${c.key}">${esc(c.name)}</option>`).join('');
+  sel.value = currentValue;
+}
+
 const DEFAULT_CLIENTS = ['Elliz B (Donna da Lua)','Adelso Costa','Conteinner','Alex','Jmavell','Interno','TruthCommerce','Ascent','Espumart'];
 
 let state = {
   tasks: [],
+  columns: null,
   view: 'dashboard',
   editingId: null,
   calDate: new Date(),
   calSelectedDate: null,
-  justMovedId: null,
   miniCalDate: new Date(),
   dateFilter: 'all',
   filter: {client:'', status:'', search:''}
@@ -1785,7 +1805,7 @@ function setDateFilter(f){
 
 function priorityWeight(t){
   if(t.priority === 'urgent') return 4;
-  if(dateStatus(t.date) === 'overdue' && t.status !== 'done') return 3.5;
+  if(dateStatus(t.date) === 'overdue' && columnType(t.status) !== 'done') return 3.5;
   if(t.priority === 'high') return 3;
   if(dateStatus(t.date) === 'today') return 2;
   return 1;
@@ -1815,6 +1835,7 @@ async function checkAuth(){
     const name = getUserName();
     const savedTheme = (session.user.user_metadata || {}).theme || 'bluegray';
     applyTheme(savedTheme);
+    state.columns = (session.user.user_metadata || {}).kanban_columns || JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
     document.getElementById('user-email').textContent = email;
     document.getElementById('user-name-display').textContent = name;
     document.getElementById('user-avatar').textContent = name[0].toUpperCase();
@@ -1998,8 +2019,8 @@ function updateNav(){
   const dias = ['dom','seg','ter','qua','qui','sex','sáb'];
   const meses = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
   document.getElementById('today-date').textContent = `${dias[now.getDay()]}, ${now.getDate()} ${meses[now.getMonth()]}`;
-  const overdue = state.tasks.filter(t=>t.status!=='done' && dateStatus(t.date)==='overdue').length;
-  const today = state.tasks.filter(t=>t.status!=='done' && dateStatus(t.date)==='today').length;
+  const overdue = state.tasks.filter(t=>columnType(t.status)!=='done' && dateStatus(t.date)==='overdue').length;
+  const today = state.tasks.filter(t=>columnType(t.status)!=='done' && dateStatus(t.date)==='today').length;
   document.getElementById('today-hint').textContent = overdue > 0 ? `${overdue} atrasada${overdue>1?'s':''}` : today > 0 ? `${today} vence hoje` : 'tudo em dia';
 
   const list = document.getElementById('clients-list');
@@ -2018,36 +2039,17 @@ function render(){
   else if(state.view === 'calendar') m.innerHTML = renderCalendar();
   else if(state.view === 'table') m.innerHTML = renderTable();
   attachEvents();
-  if(state.view === 'dashboard') animateCounts();
-}
-
-function animateCounts(){
-  if(document.body.classList.contains('no-anim')) return;
-  document.querySelectorAll('.status-item .val').forEach(el=>{
-    const target = parseInt(el.textContent, 10);
-    if(isNaN(target)) return;
-    const dur = 700, start = performance.now();
-    const ease = t => 1 - Math.pow(1 - t, 3);
-    function step(now){
-      const p = Math.min((now - start) / dur, 1);
-      el.textContent = Math.round(ease(p) * target);
-      if(p < 1) requestAnimationFrame(step);
-    }
-    requestAnimationFrame(step);
-  });
 }
 
 function renderDashboard(){
   const now = new Date();
   const hrs = now.getHours();
   const saudacao = hrs < 12 ? 'Bom dia' : hrs < 18 ? 'Boa tarde' : 'Boa noite';
-  const todo = state.tasks.filter(t=>t.status==='todo').length;
-  const waiting = state.tasks.filter(t=>t.status==='waiting').length;
-  const doing = state.tasks.filter(t=>t.status==='doing').length;
-  const done = state.tasks.filter(t=>t.status==='done').length;
-  const overdue = state.tasks.filter(t=>t.status!=='done' && dateStatus(t.date)==='overdue').length;
+  const cols = getColumns();
+  const colCounts = cols.map(c=>({...c, count: state.tasks.filter(t=>t.status===c.key).length}));
+  const overdue = state.tasks.filter(t=>columnType(t.status)!=='done' && dateStatus(t.date)==='overdue').length;
   const acoes = state.tasks
-    .filter(t=>(t.status==='todo' || t.status==='doing') && matchesDateFilter(t, state.dateFilter))
+    .filter(t=>columnType(t.status)==='active' && matchesDateFilter(t, state.dateFilter))
     .sort((a,b)=>{
       const pa = priorityWeight(a), pb = priorityWeight(b);
       if(pa !== pb) return pb - pa;
@@ -2056,7 +2058,7 @@ function renderDashboard(){
       return a.date.localeCompare(b.date);
     });
   const aguardando = state.tasks
-    .filter(t=>t.status==='waiting' && matchesDateFilter(t, state.dateFilter))
+    .filter(t=>columnType(t.status)==='waiting' && matchesDateFilter(t, state.dateFilter))
     .sort((a,b)=>{
       const pa = priorityWeight(a), pb = priorityWeight(b);
       if(pa !== pb) return pb - pa;
@@ -2073,9 +2075,10 @@ function renderDashboard(){
       ? '<span class="priority-badge urgent">🔥 Urgente</span>'
       : isHigh ? '<span class="priority-badge high">Alta</span>' : '';
     const cls = isUrgent ? 'urgent' : (isHigh ? 'high' : '');
+    const dot = statusDotStyle(t.status);
     return `
       <div class="task-row ${cls}" onclick="openModal('${t.id}')">
-        <div class="task-check ${t.status}"></div>
+        <div class="task-check ${dot.cls}" style="${dot.style}"></div>
         <div class="task-title">${esc(t.title)}</div>
         ${badge}
         <div class="task-client">${esc(t.client || '—')}</div>
@@ -2101,10 +2104,7 @@ function renderDashboard(){
       </div>
     </div>
     <div class="status-row">
-      <div class="status-item"><div class="lbl">A fazer</div><div class="val">${todo}</div></div>
-      <div class="status-item"><div class="lbl">Aguardando</div><div class="val">${waiting}</div></div>
-      <div class="status-item"><div class="lbl">Em andamento</div><div class="val">${doing}</div></div>
-      <div class="status-item"><div class="lbl">Concluídas</div><div class="val">${done}</div></div>
+      ${colCounts.map(c=>`<div class="status-item"><div class="lbl">${esc(c.name)}</div><div class="val">${c.count}</div></div>`).join('')}
       <div class="status-item overdue"><div class="lbl">Atrasadas</div><div class="val">${overdue}</div></div>
     </div>
     <div class="date-filter">
@@ -2151,7 +2151,7 @@ function renderDashboard(){
 }
 
 function renderClientFocus(){
-  const active = state.tasks.filter(t=>t.status!=='done');
+  const active = state.tasks.filter(t=>columnType(t.status)!=='done');
   if(active.length === 0){
     return `<div class="empty" style="padding:26px 12px;font-size:12.5px;"><strong>Sem pendências</strong>Nenhum cliente ativo</div>`;
   }
@@ -2183,7 +2183,7 @@ function renderMiniCal(){
   const dow = ['D','S','T','Q','Q','S','S'];
   const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const today = new Date();
-  const tasksWithDate = new Set(state.tasks.filter(t=>t.date && t.status!=='done').map(t=>t.date));
+  const tasksWithDate = new Set(state.tasks.filter(t=>t.date && columnType(t.status)!=='done').map(t=>t.date));
 
   let cells = '';
   for(let i=startDow-1;i>=0;i--) cells += `<div class="mini-cal-day other">${prevMonthDays-i}</div>`;
@@ -2214,12 +2214,7 @@ function renderMiniCal(){
 function miniCalNav(delta){state.miniCalDate.setMonth(state.miniCalDate.getMonth()+delta);render();}
 
 function renderKanban(){
-  const cols = [
-    {key:'todo', name:'A Fazer'},
-    {key:'waiting', name:'Aguardando'},
-    {key:'doing', name:'Em Andamento'},
-    {key:'done', name:'Concluído'}
-  ];
+  const cols = getColumns();
   return `
     <div class="view-header">
       <div><div class="eyebrow">Fluxo de trabalho</div><h1>Kanban</h1></div>
@@ -2231,16 +2226,22 @@ function renderKanban(){
         return `
           <div class="glass kb-col" data-status="${col.key}" ondragover="dragOver(event)" ondrop="drop(event,'${col.key}')" ondragleave="dragLeave(event)">
             <div class="kb-col-head">
-              <div class="kb-col-title">${col.name}</div>
-              <div class="kb-col-count">${list.length}</div>
+              <div class="kb-col-title"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}</div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <div class="kb-col-count">${list.length}</div>
+                <button class="kb-col-edit" onclick="openColumnModal('${col.key}')" title="Editar coluna">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                </button>
+              </div>
             </div>
             <div class="kb-cards">
               ${list.length===0
                 ? `<div class="empty" style="padding:28px 8px;font-size:12px;"><strong>Nada aqui</strong>arraste ou crie</div>`
                 : list.map(t=>{
                   const badge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
+                  const doneCls = col.type === 'done' ? 'done' : '';
                   return `
-                  <div class="kb-card ${col.key}${t.id===state.justMovedId?' just-moved':''}" draggable="true" ondragstart="dragStart(event,'${t.id}')" onclick="openModal('${t.id}')">
+                  <div class="kb-card ${doneCls}" style="--col-color:${col.color}" draggable="true" ondragstart="dragStart(event,'${t.id}')" onclick="openModal('${t.id}')">
                     <div class="kb-card-client">${esc(t.client || '—')}</div>
                     <div class="kb-card-title">${esc(t.title)}</div>
                     <div class="kb-card-meta">
@@ -2252,6 +2253,10 @@ function renderKanban(){
             </div>
           </div>`;
       }).join('')}
+      <button class="kb-add-col" onclick="openColumnModal()">
+        <span class="kb-add-col-icon">+</span>
+        Nova coluna
+      </button>
     </div>`;
 }
 
@@ -2266,11 +2271,9 @@ async function drop(e, status){
   if(task && task.status !== status){
     const prev = task.status;
     task.status = status;
-    state.justMovedId = id;
     render();
-    setTimeout(()=>{state.justMovedId = null;}, 1000);
     const ok = await updateTaskRemote(id, task);
-    if(!ok){task.status = prev;state.justMovedId = null;render();}
+    if(!ok){task.status = prev;render();}
   }
 }
 
@@ -2297,7 +2300,7 @@ function renderCalendar(){
     cells += `
       <div class="cal-cell ${isToday?'today':''} ${isSelected?'selected':''}" data-date="${iso}">
         <div class="cal-cell-num">${day}</div>
-        ${list.map(t=>`<div class="cal-task ${t.status}" data-task-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</div>`).join('')}
+        ${list.map(t=>`<div class="cal-task" style="border-left-color:${columnColor(t.status)};${columnType(t.status)==='done'?'opacity:0.55;':''}" data-task-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</div>`).join('')}
       </div>`;
   }
   const filled = startDow + daysInMonth;
@@ -2352,7 +2355,7 @@ function renderDayPanel(iso, tasks){
             ${tasks.map(t=>{
               const priorityBadge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
               return `
-                <div class="day-task ${t.status}" onclick="openModal('${t.id}')">
+                <div class="day-task ${columnType(t.status)==='done'?'done':''}" style="--col-color:${columnColor(t.status)}" onclick="openModal('${t.id}')">
                   <div class="day-task-head">
                     <div class="day-task-title">${esc(t.title)}</div>
                     ${priorityBadge}
@@ -2360,7 +2363,7 @@ function renderDayPanel(iso, tasks){
                   <div class="day-task-meta">
                     <span>${esc(t.client || 'sem cliente')}</span>
                     <span>·</span>
-                    <span>${STATUSES[t.status]}</span>
+                    <span>${esc(columnName(t.status))}</span>
                   </div>
                   ${t.notes ? `<div class="day-task-notes">${esc(t.notes)}</div>` : ''}
                 </div>`;
@@ -2405,10 +2408,7 @@ function renderTable(){
         <input type="text" class="input search" id="f-search" placeholder="Buscar por título, cliente ou notas..." value="${esc(state.filter.search)}">
         <select class="select" id="f-status" style="width:auto;">
           <option value="">Todos status</option>
-          <option value="todo" ${state.filter.status==='todo'?'selected':''}>A Fazer</option>
-          <option value="waiting" ${state.filter.status==='waiting'?'selected':''}>Aguardando</option>
-          <option value="doing" ${state.filter.status==='doing'?'selected':''}>Em Andamento</option>
-          <option value="done" ${state.filter.status==='done'?'selected':''}>Concluído</option>
+          ${getColumns().map(c=>`<option value="${c.key}" ${state.filter.status===c.key?'selected':''}>${esc(c.name)}</option>`).join('')}
         </select>
         <select class="select" id="f-client" style="width:auto;">
           <option value="">Todos clientes</option>
@@ -2424,7 +2424,7 @@ function renderTable(){
                 <tr onclick="openModal('${t.id}')">
                   <td>${esc(t.title)}</td>
                   <td>${esc(t.client || '—')}</td>
-                  <td><span class="badge ${t.status}"><span class="badge-dot"></span>${STATUSES[t.status]}</span></td>
+                  <td><span class="badge"><span class="badge-dot" style="background:${columnColor(t.status)}"></span>${esc(columnName(t.status))}</span></td>
                   <td>${t.date ? fmtDateFull(t.date) : '—'}</td>
                 </tr>`).join('')}
             </tbody>
@@ -2465,7 +2465,7 @@ function openModal(id, prefillDate){
     title.textContent = 'Editar tarefa';
     document.getElementById('m-title').value = t.title || '';
     document.getElementById('m-client').value = t.client || '';
-    document.getElementById('m-status').value = t.status || 'todo';
+    populateStatusSelect('m-status', t.status || getColumns()[0].key);
     document.getElementById('m-date').value = t.date || '';
     document.getElementById('m-priority').value = t.priority || 'normal';
     document.getElementById('m-notes').value = t.notes || '';
@@ -2474,7 +2474,7 @@ function openModal(id, prefillDate){
     title.textContent = 'Nova tarefa';
     document.getElementById('m-title').value = '';
     document.getElementById('m-client').value = '';
-    document.getElementById('m-status').value = 'todo';
+    populateStatusSelect('m-status', getColumns()[0].key);
     document.getElementById('m-date').value = prefillDate || '';
     document.getElementById('m-priority').value = 'normal';
     document.getElementById('m-notes').value = '';
@@ -2501,10 +2501,6 @@ async function saveTask(){
     const ok = await updateTaskRemote(state.editingId, data);
     if(ok){
       const t = state.tasks.find(x=>x.id===state.editingId);
-      if(t.status !== data.status){
-        state.justMovedId = t.id;
-        setTimeout(()=>{state.justMovedId = null;}, 1000);
-      }
       Object.assign(t, data);
     }
   }else{
@@ -2530,7 +2526,7 @@ async function quickAdd(){
   const data = {
     title,
     client: document.getElementById('qa-client').value.trim(),
-    status: 'todo',
+    status: getColumns()[0].key,
     date: document.getElementById('qa-date').value,
     priority: 'normal',
     notes: ''
@@ -2570,12 +2566,14 @@ async function formatNotes(){
 
 document.getElementById('modal').addEventListener('click', (e)=>{if(e.target.id === 'modal') closeModal();});
 document.getElementById('settings-modal').addEventListener('click', (e)=>{if(e.target.id === 'settings-modal') closeSettings();});
+document.getElementById('column-modal').addEventListener('click', (e)=>{if(e.target.id === 'column-modal') closeColumnModal();});
 document.addEventListener('keydown', (e)=>{
   if(e.key === 'Escape'){
     closeModal();
     closeSettings();
+    closeColumnModal();
   }
-  if(e.key === 'n' && !document.getElementById('modal').classList.contains('open') && !document.getElementById('settings-modal').classList.contains('open') && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA'){
+  if(e.key === 'n' && !document.getElementById('modal').classList.contains('open') && !document.getElementById('settings-modal').classList.contains('open') && !document.getElementById('column-modal').classList.contains('open') && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA'){
     e.preventDefault();openModal();
   }
 });
