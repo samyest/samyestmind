@@ -1222,13 +1222,160 @@
     border:1px solid rgba(255,255,255,0.4);
   }
 
+  /* ---- Animations (gated by body.no-anim) ---- */
+  @keyframes scRise{from{opacity:0;transform:translateY(16px) scale(.98);filter:blur(7px);}to{opacity:1;transform:none;filter:blur(0);}}
+  @keyframes scHeader{from{opacity:0;transform:translateY(-10px);filter:blur(5px);}to{opacity:1;transform:none;filter:blur(0);}}
+  @keyframes scRowIn{from{opacity:0;transform:translateX(-12px);}to{opacity:1;transform:none;}}
+  @keyframes scPop{0%{opacity:0;transform:scale(.86) translateY(6px);}62%{opacity:1;transform:scale(1.025) translateY(0);}100%{transform:scale(1);}}
+  @keyframes scFade{from{opacity:0;}to{opacity:1;}}
+  @keyframes scModal{from{opacity:0;transform:translateY(18px) scale(.955);}to{opacity:1;transform:none;}}
+  @keyframes scMoveFlash{
+    0%{box-shadow:0 0 0 0 rgba(91,122,148,.55), 0 12px 28px rgba(90,110,130,.24);transform:translateY(-4px) scale(1.02);}
+    55%{box-shadow:0 0 0 7px rgba(91,122,148,.12), var(--shadow-soft);transform:translateY(0) scale(1);}
+    100%{box-shadow:0 0 0 14px rgba(91,122,148,0), var(--shadow-soft);}
+  }
+  @keyframes scPillPop{0%{transform:scale(.8);}55%{transform:scale(1.1);}100%{transform:scale(1);}}
+
+  body:not(.no-anim) main .view-header{animation:scHeader .5s cubic-bezier(.22,1,.36,1) both;}
+  body:not(.no-anim) main .status-row{animation:scRise .55s cubic-bezier(.22,1,.36,1) both .04s;}
+  body:not(.no-anim) main .date-filter{animation:scRise .55s cubic-bezier(.22,1,.36,1) both .09s;}
+  body:not(.no-anim) main .glass.panel,
+  body:not(.no-anim) main .glass.cal-view,
+  body:not(.no-anim) main .glass.table-view,
+  body:not(.no-anim) main .glass.day-panel{animation:scRise .58s cubic-bezier(.22,1,.36,1) both .12s;}
+  body:not(.no-anim) main .side-col > .glass{animation-delay:.18s;}
+
+  body:not(.no-anim) .task-row{animation:scRowIn .42s cubic-bezier(.22,1,.36,1) both;}
+  body:not(.no-anim) .task-row:nth-child(2){animation-delay:.16s;}
+  body:not(.no-anim) .task-row:nth-child(3){animation-delay:.21s;}
+  body:not(.no-anim) .task-row:nth-child(4){animation-delay:.26s;}
+  body:not(.no-anim) .task-row:nth-child(5){animation-delay:.31s;}
+  body:not(.no-anim) .task-row:nth-child(6){animation-delay:.36s;}
+  body:not(.no-anim) .task-row:nth-child(n+7){animation-delay:.41s;}
+
+  body:not(.no-anim) .day-panel-tasks .day-task{animation:scRowIn .42s cubic-bezier(.22,1,.36,1) both;}
+  body:not(.no-anim) .day-panel-tasks .day-task:nth-child(2){animation-delay:.06s;}
+  body:not(.no-anim) .day-panel-tasks .day-task:nth-child(3){animation-delay:.12s;}
+  body:not(.no-anim) .day-panel-tasks .day-task:nth-child(n+4){animation-delay:.18s;}
+
+  body:not(.no-anim) .client-item{animation:scRowIn .4s cubic-bezier(.22,1,.36,1) both;}
+  body:not(.no-anim) .client-item:nth-child(2){animation-delay:.05s;}
+  body:not(.no-anim) .client-item:nth-child(3){animation-delay:.1s;}
+  body:not(.no-anim) .client-item:nth-child(4){animation-delay:.15s;}
+  body:not(.no-anim) .client-item:nth-child(n+5){animation-delay:.2s;}
+
+  body:not(.no-anim) .task-table tbody tr{animation:scRowIn .38s cubic-bezier(.22,1,.36,1) both;}
+  body:not(.no-anim) .task-table tbody tr:nth-child(2){animation-delay:.04s;}
+  body:not(.no-anim) .task-table tbody tr:nth-child(3){animation-delay:.08s;}
+  body:not(.no-anim) .task-table tbody tr:nth-child(4){animation-delay:.12s;}
+  body:not(.no-anim) .task-table tbody tr:nth-child(5){animation-delay:.16s;}
+  body:not(.no-anim) .task-table tbody tr:nth-child(n+6){animation-delay:.2s;}
+
+  body:not(.no-anim) .cal-task{animation:scFade .34s ease both;}
+  body:not(.no-anim) .kb-cards .kb-card{animation:scPop .42s cubic-bezier(.34,1.56,.64,1) both;}
+  body:not(.no-anim) .kb-cards .kb-card:nth-child(2){animation-delay:.06s;}
+  body:not(.no-anim) .kb-cards .kb-card:nth-child(3){animation-delay:.12s;}
+  body:not(.no-anim) .kb-cards .kb-card:nth-child(4){animation-delay:.18s;}
+  body:not(.no-anim) .kb-cards .kb-card:nth-child(5){animation-delay:.24s;}
+  body:not(.no-anim) .kb-cards .kb-card:nth-child(n+6){animation-delay:.3s;}
+  body:not(.no-anim) .kb-card.just-moved{animation:scPop .42s cubic-bezier(.34,1.56,.64,1) both, scMoveFlash .95s ease-out;}
+
+  body:not(.no-anim) .date-pill.active{animation:scPillPop .34s cubic-bezier(.34,1.56,.64,1);}
+
+  body:not(.no-anim) .modal-bg.open{animation:scFade .22s ease both;}
+  body:not(.no-anim) .modal-bg.open .modal{animation:scModal .42s cubic-bezier(.34,1.56,.64,1) both;}
+  body:not(.no-anim) .auth-screen.show .auth-card{animation:scModal .5s cubic-bezier(.34,1.56,.64,1) both;}
+
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.001ms !important;animation-iteration-count:1 !important;}
+  }
+
+  /* ---- Animation toggle switch ---- */
+  .switch-row{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;
+    width:100%;text-align:left;cursor:pointer;
+    background:var(--glass-strong);border:1px solid var(--line);
+    padding:12px 14px;border-radius:10px;transition:border-color .15s ease;
+  }
+  .switch-row:hover{border-color:var(--text-muted);}
+  .switch-row .switch-label{font-size:13px;color:var(--text);line-height:1.4;}
+  .switch{
+    width:44px;height:26px;border-radius:20px;background:var(--line-strong);
+    position:relative;transition:background .2s ease;flex-shrink:0;
+  }
+  .switch.on{background:var(--accent);}
+  .switch::after{
+    content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;
+    border-radius:50%;background:#fff;transition:transform .2s ease;
+    box-shadow:0 1px 3px rgba(0,0,0,0.25);
+  }
+  .switch.on::after{transform:translateX(18px);}
+
+  /* ---- Mobile chrome (hidden on desktop) ---- */
+  .mobile-topbar,.mobile-bottomnav,.mobile-fab{display:none;}
+
   @media (max-width:900px){
     .app{grid-template-columns:1fr;}
     aside{display:none;}
+    main{padding:74px 16px 104px;}
     .status-row{width:100%;overflow-x:auto;}
     .dash-grid{grid-template-columns:1fr;}
     .kanban{grid-template-columns:1fr;}
-    main{padding:28px 20px;}
+    .kb-col{min-height:auto;}
+    .view-header{flex-direction:column;align-items:flex-start;gap:14px;margin-bottom:24px;}
+    .view-header h1{font-size:29px;}
+    .header-cta{display:none;}
+    .field-row{grid-template-columns:1fr;}
+    .cal-cell{min-height:76px;}
+    .table-filters{flex-wrap:wrap;}
+    .table-filters .search{flex:1 1 100%;}
+
+    .mobile-topbar{
+      display:flex;align-items:center;justify-content:space-between;
+      position:fixed;top:0;left:0;right:0;height:58px;padding:0 18px;z-index:50;
+      background:var(--glass-strong);
+      backdrop-filter:blur(24px) saturate(160%);
+      -webkit-backdrop-filter:blur(24px) saturate(160%);
+      border-bottom:1px solid var(--glass-border-soft);
+    }
+    .mobile-topbar-actions{display:flex;gap:6px;}
+    .mobile-icon-btn{
+      width:40px;height:40px;display:grid;place-items:center;border-radius:11px;
+      color:var(--text-muted);background:var(--glass);transition:transform .15s ease,color .15s ease;
+    }
+    .mobile-icon-btn:active{transform:scale(0.92);color:var(--accent);}
+    .mobile-icon-btn svg{width:19px;height:19px;stroke-width:1.9;}
+
+    .mobile-bottomnav{
+      display:grid;grid-template-columns:repeat(4,1fr);gap:2px;
+      position:fixed;bottom:0;left:0;right:0;z-index:50;
+      padding:8px 8px calc(8px + env(safe-area-inset-bottom));
+      background:var(--glass-strong);
+      backdrop-filter:blur(24px) saturate(160%);
+      -webkit-backdrop-filter:blur(24px) saturate(160%);
+      border-top:1px solid var(--glass-border-soft);
+    }
+    .mobile-bottomnav .nav-item{
+      flex-direction:column;gap:4px;padding:8px 4px;border-radius:12px;
+      justify-content:center;align-items:center;
+      font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.02em;text-transform:uppercase;
+      color:var(--text-muted);background:transparent;box-shadow:none;
+    }
+    .mobile-bottomnav .nav-item .nav-icon{width:21px;height:21px;color:var(--text-muted);}
+    .mobile-bottomnav .nav-item.active{background:transparent;box-shadow:none;color:var(--accent);font-weight:500;}
+    .mobile-bottomnav .nav-item.active .nav-icon{color:var(--accent);}
+    .mobile-bottomnav .nav-item:active{transform:scale(0.92);}
+
+    .mobile-fab{
+      display:grid;place-items:center;
+      position:fixed;right:18px;bottom:calc(82px + env(safe-area-inset-bottom));z-index:51;
+      width:56px;height:56px;border-radius:18px;
+      background:var(--accent);color:var(--accent-text);
+      box-shadow:0 8px 24px rgba(91,122,148,0.45);
+      font-size:30px;font-weight:300;line-height:1;
+      transition:transform .15s ease;
+    }
+    .mobile-fab:active{transform:scale(0.9);}
   }
 </style>
 </head>
@@ -1278,6 +1425,30 @@
       <button class="side-user-logout" onclick="logout()" title="Sair">SAIR</button>
     </div>
   </aside>
+
+  <div class="mobile-topbar">
+    <div class="brand" style="padding:0;margin:0;">
+      <div class="brand-dot">s</div>
+      <div class="brand-name">samyest<span>.</span>mind</div>
+    </div>
+    <div class="mobile-topbar-actions">
+      <button class="mobile-icon-btn" onclick="openSettings()" title="Configurações" aria-label="Configurações">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </button>
+      <button class="mobile-icon-btn" onclick="logout()" title="Sair" aria-label="Sair">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <nav class="mobile-bottomnav">
+    <button class="nav-item" data-view="dashboard"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>Início</button>
+    <button class="nav-item" data-view="kanban"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="14" rx="1.5"/></svg>Kanban</button>
+    <button class="nav-item" data-view="calendar"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Agenda</button>
+    <button class="nav-item" data-view="table"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M3 12h18M3 18h18"/></svg>Tarefas</button>
+  </nav>
+
+  <button class="mobile-fab" onclick="openModal()" title="Nova tarefa" aria-label="Nova tarefa">+</button>
 
   <main id="main">
     <div class="loading-state">carregando seu espaço...</div>
@@ -1339,6 +1510,13 @@
       <div class="field">
         <label>Tema de cores</label>
         <div class="theme-grid" id="theme-grid"></div>
+      </div>
+      <div class="field">
+        <label>Movimento</label>
+        <button class="switch-row" type="button" onclick="toggleAnim()">
+          <span class="switch-label">Animações ao trocar filtros e mover tarefas</span>
+          <span class="switch" id="anim-switch"></span>
+        </button>
       </div>
     </div>
     <div class="modal-foot">
@@ -1530,6 +1708,7 @@ function openSettings(){
       </div>
     </button>
   `).join('');
+  syncAnimToggle();
   document.getElementById('settings-modal').classList.add('open');
 }
 
@@ -1538,6 +1717,16 @@ function closeSettings(){
   if(currentTheme !== original) applyTheme(original);
   document.getElementById('settings-modal').classList.remove('open');
 }
+
+function isAnimOn(){return localStorage.getItem('samyest-mind-anim') !== '0';}
+function applyAnimPref(){document.body.classList.toggle('no-anim', !isAnimOn());}
+function syncAnimToggle(){const el = document.getElementById('anim-switch');if(el) el.classList.toggle('on', isAnimOn());}
+function toggleAnim(){
+  localStorage.setItem('samyest-mind-anim', isAnimOn() ? '0' : '1');
+  applyAnimPref();
+  syncAnimToggle();
+}
+applyAnimPref();
 
 function selectTheme(name){
   applyTheme(name);
@@ -1568,6 +1757,7 @@ let state = {
   editingId: null,
   calDate: new Date(),
   calSelectedDate: null,
+  justMovedId: null,
   miniCalDate: new Date(),
   dateFilter: 'all',
   filter: {client:'', status:'', search:''}
@@ -1828,6 +2018,23 @@ function render(){
   else if(state.view === 'calendar') m.innerHTML = renderCalendar();
   else if(state.view === 'table') m.innerHTML = renderTable();
   attachEvents();
+  if(state.view === 'dashboard') animateCounts();
+}
+
+function animateCounts(){
+  if(document.body.classList.contains('no-anim')) return;
+  document.querySelectorAll('.status-item .val').forEach(el=>{
+    const target = parseInt(el.textContent, 10);
+    if(isNaN(target)) return;
+    const dur = 700, start = performance.now();
+    const ease = t => 1 - Math.pow(1 - t, 3);
+    function step(now){
+      const p = Math.min((now - start) / dur, 1);
+      el.textContent = Math.round(ease(p) * target);
+      if(p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  });
 }
 
 function renderDashboard(){
@@ -2033,7 +2240,7 @@ function renderKanban(){
                 : list.map(t=>{
                   const badge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
                   return `
-                  <div class="kb-card ${col.key}" draggable="true" ondragstart="dragStart(event,'${t.id}')" onclick="openModal('${t.id}')">
+                  <div class="kb-card ${col.key}${t.id===state.justMovedId?' just-moved':''}" draggable="true" ondragstart="dragStart(event,'${t.id}')" onclick="openModal('${t.id}')">
                     <div class="kb-card-client">${esc(t.client || '—')}</div>
                     <div class="kb-card-title">${esc(t.title)}</div>
                     <div class="kb-card-meta">
@@ -2059,9 +2266,11 @@ async function drop(e, status){
   if(task && task.status !== status){
     const prev = task.status;
     task.status = status;
+    state.justMovedId = id;
     render();
+    setTimeout(()=>{state.justMovedId = null;}, 1000);
     const ok = await updateTaskRemote(id, task);
-    if(!ok){task.status = prev;render();}
+    if(!ok){task.status = prev;state.justMovedId = null;render();}
   }
 }
 
@@ -2292,6 +2501,10 @@ async function saveTask(){
     const ok = await updateTaskRemote(state.editingId, data);
     if(ok){
       const t = state.tasks.find(x=>x.id===state.editingId);
+      if(t.status !== data.status){
+        state.justMovedId = t.id;
+        setTimeout(()=>{state.justMovedId = null;}, 1000);
+      }
       Object.assign(t, data);
     }
   }else{
