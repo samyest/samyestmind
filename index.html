@@ -63,6 +63,10 @@
     -webkit-font-smoothing:antialiased;
     letter-spacing:-0.005em;
     position:relative;
+    transition:background .4s ease, color .4s ease;
+  }
+  .glass, .cal-cell, .day-task, .status-row, .auth-card{
+    transition:background .4s ease, border-color .4s ease, box-shadow .3s ease;
   }
 
   body::before, body::after{
@@ -87,6 +91,77 @@
   }
 
   button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
+
+  @keyframes fadeSlideUp{
+    from{opacity:0;transform:translateY(10px);}
+    to{opacity:1;transform:translateY(0);}
+  }
+  @keyframes fadeIn{
+    from{opacity:0;}
+    to{opacity:1;}
+  }
+  @keyframes popIn{
+    from{opacity:0;transform:scale(0.9);}
+    to{opacity:1;transform:scale(1);}
+  }
+  @keyframes urgentPulse{
+    0%,100%{box-shadow:0 0 0 0 rgba(196,133,119,0.35);}
+    50%{box-shadow:0 0 0 5px rgba(196,133,119,0);}
+  }
+  @keyframes dotPulse{
+    0%,80%,100%{opacity:0.25;transform:scale(0.85);}
+    40%{opacity:1;transform:scale(1);}
+  }
+  @keyframes toastIn{
+    from{opacity:0;transform:translate(-50%, 10px);}
+    to{opacity:1;transform:translate(-50%, 0);}
+  }
+
+  .view-header, .status-row, .date-filter, .panel, .kb-col, .cal-view, .table-view{
+    animation:fadeSlideUp .38s cubic-bezier(0.22,0.9,0.35,1) both;
+  }
+  .status-row{animation-delay:.03s;}
+  .date-filter{animation-delay:.05s;}
+  .dash-grid .panel:nth-of-type(1){animation-delay:.08s;}
+  .dash-grid .panel:nth-of-type(2){animation-delay:.13s;}
+  .dash-grid .panel:nth-of-type(3){animation-delay:.18s;}
+  .kanban .kb-col:nth-child(1){animation-delay:.04s;}
+  .kanban .kb-col:nth-child(2){animation-delay:.09s;}
+  .kanban .kb-col:nth-child(3){animation-delay:.14s;}
+  .kanban .kb-col:nth-child(4){animation-delay:.19s;}
+
+  .task-row, .kb-card, .day-task, .client-item{
+    animation:fadeSlideUp .32s ease both;
+  }
+  .task-row:nth-of-type(1), .kb-card:nth-of-type(1){animation-delay:.02s;}
+  .task-row:nth-of-type(2), .kb-card:nth-of-type(2){animation-delay:.06s;}
+  .task-row:nth-of-type(3), .kb-card:nth-of-type(3){animation-delay:.10s;}
+  .task-row:nth-of-type(4), .kb-card:nth-of-type(4){animation-delay:.14s;}
+  .task-row:nth-of-type(5), .kb-card:nth-of-type(5){animation-delay:.18s;}
+  .task-row:nth-of-type(n+6), .kb-card:nth-of-type(n+6){animation-delay:.2s;}
+
+  .priority-badge.urgent{animation:urgentPulse 2.2s ease-in-out infinite;}
+
+  .toast{
+    position:fixed;
+    left:50%;
+    bottom:calc(28px + env(safe-area-inset-bottom));
+    transform:translateX(-50%);
+    background:var(--text-strong);
+    color:var(--bg-base);
+    padding:11px 20px;
+    border-radius:30px;
+    font-size:13px;
+    font-weight:500;
+    box-shadow:0 8px 24px rgba(0,0,0,0.25);
+    z-index:300;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    animation:toastIn .3s cubic-bezier(0.22,0.9,0.35,1) both;
+    pointer-events:none;
+  }
+  .toast-dot{width:6px;height:6px;border-radius:50%;background:var(--done);flex-shrink:0;}
   input,select,textarea{font-family:inherit;color:var(--text);}
   ::selection{background:var(--palette-5);color:var(--text-strong);}
 
@@ -228,6 +303,20 @@
     transform:translateY(-1px);
     box-shadow:0 4px 14px rgba(91,122,148,0.35);
   }
+  .btn-primary:active, .btn-cta:active, .btn-secondary:active, .btn-danger:active, .auth-btn:active{
+    transform:scale(0.96);
+  }
+  .kb-card:active{transform:scale(0.98);}
+  .task-row:active, .day-task:active, .client-item:active{background:var(--glass-hover);}
+  .mobile-nav-item:active{transform:scale(0.9);}
+  .mobile-nav-item{transition:transform .15s ease, color .15s ease;}
+  .nav-item{transition:background .18s ease, transform .1s ease;}
+  .nav-item:active{transform:scale(0.98);}
+  .mini-cal-day{transition:background .12s ease, transform .1s ease;}
+  .mini-cal-day:active{transform:scale(0.88);}
+  .theme-card, .date-pill, .color-swatch-btn{transition:all .15s ease;}
+  .date-pill:active{transform:scale(0.94);}
+  .kb-col-edit:active, .settings-col-edit:active, .modal-close:active, .day-panel-close:active{transform:scale(0.88);}
 
   .header-cta{
     background:var(--glass);
@@ -315,7 +404,12 @@
     flex-direction:column;
     gap:2px;
     border-right:1px solid var(--line);
+    cursor:pointer;
+    border-radius:10px;
+    transition:background .15s ease, transform .1s ease;
   }
+  .status-item:hover{background:var(--glass-strong);}
+  .status-item:active{transform:scale(0.96);}
   .status-item:last-child{border-right:none;}
   .status-item .lbl{
     font-family:'JetBrains Mono',monospace;
@@ -629,6 +723,12 @@
     box-shadow:0 6px 20px rgba(90,110,130,0.10);
   }
   .kb-card:active{cursor:grabbing;}
+  .kb-card.dragging{
+    opacity:0.4;
+    transform:scale(1.04) rotate(1.5deg);
+    box-shadow:0 12px 30px rgba(43,54,68,0.25);
+  }
+  .kb-col.drag-over{transition:background .15s ease, border-color .15s ease;}
   .kb-card-client{
     font-family:'JetBrains Mono',monospace;
     font-size:10px;
@@ -876,13 +976,17 @@
     position:fixed;inset:0;
     background:rgba(43,54,68,0.35);
     backdrop-filter:blur(10px);
-    display:none;
+    display:flex;
     align-items:center;
     justify-content:center;
     z-index:100;
     padding:24px;
+    opacity:0;
+    visibility:hidden;
+    pointer-events:none;
+    transition:opacity .22s ease, visibility .22s;
   }
-  .modal-bg.open{display:flex;}
+  .modal-bg.open{opacity:1;visibility:visible;pointer-events:auto;}
   .modal{
     background:rgba(255,255,255,0.75);
     backdrop-filter:blur(30px) saturate(180%);
@@ -896,7 +1000,10 @@
     display:flex;
     flex-direction:column;
     overflow:hidden;
+    transform:scale(0.94) translateY(14px);
+    transition:transform .28s cubic-bezier(0.34, 1.4, 0.64, 1);
   }
+  .modal-bg.open .modal{transform:scale(1) translateY(0);}
   .modal-head{
     padding:22px 28px 16px;
     border-bottom:1px solid var(--line);
@@ -1018,6 +1125,15 @@
     font-family:'JetBrains Mono',monospace;
     font-size:12px;
   }
+  .loading-dots{display:inline-flex;gap:3px;margin-left:4px;vertical-align:middle;}
+  .loading-dots span{
+    width:4px;height:4px;
+    border-radius:50%;
+    background:var(--text-muted);
+    animation:dotPulse 1.4s ease-in-out infinite;
+  }
+  .loading-dots span:nth-child(2){animation-delay:.2s;}
+  .loading-dots span:nth-child(3){animation-delay:.4s;}
 
   .auth-screen{
     position:fixed;
@@ -1413,6 +1529,7 @@
     .mobile-topbar{display:flex;}
     .mobile-nav{display:flex;}
     main{padding:20px 16px calc(88px + env(safe-area-inset-bottom));}
+    .toast{bottom:calc(84px + env(safe-area-inset-bottom));}
     .view-header{flex-direction:column;align-items:flex-start;gap:14px;}
     .view-header h1{font-size:26px;}
     .kanban-header-actions{width:100%;flex-wrap:wrap;}
@@ -1619,7 +1736,10 @@
   </nav>
 
   <main id="main">
-    <div class="loading-state">carregando seu espaço...</div>
+    <div class="loading-state">
+      carregando seu espaço
+      <span class="loading-dots"><span></span><span></span><span></span></span>
+    </div>
   </main>
 </div>
 
@@ -1694,6 +1814,18 @@
         <button class="btn-primary" onclick="saveSettings()">Salvar</button>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="status-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-head-title" id="status-modal-title">Pendências</div>
+      <button class="modal-close" onclick="closeStatusModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="status-modal-body" style="padding-top:8px;padding-bottom:20px;"></div>
   </div>
 </div>
 
@@ -1991,6 +2123,53 @@ function renderColorSwatches(){
 function selectColumnColor(c){
   selectedColumnColor = c;
   renderColorSwatches();
+}
+
+function openStatusDetail(filterKey, label){
+  let list;
+  if(filterKey === 'overdue'){
+    list = state.tasks.filter(t=>columnType(t.status)!=='done' && dateStatus(t.date)==='overdue');
+  } else {
+    const key = filterKey.replace('col:', '');
+    list = state.tasks.filter(t=>t.status===key);
+  }
+  list.sort((a,b)=>{
+    const pa = priorityWeight(a), pb = priorityWeight(b);
+    if(pa !== pb) return pb - pa;
+    if(!a.date) return 1;
+    if(!b.date) return -1;
+    return a.date.localeCompare(b.date);
+  });
+
+  document.getElementById('status-modal-title').textContent = label;
+  const body = document.getElementById('status-modal-body');
+  if(list.length === 0){
+    body.innerHTML = `<div class="empty"><strong>Nada por aqui.</strong>Nenhuma tarefa nessa categoria.</div>`;
+  } else {
+    body.innerHTML = list.map(t=>{
+      const isUrgent = t.priority === 'urgent';
+      const isHigh = t.priority === 'high';
+      const badge = isUrgent
+        ? '<span class="priority-badge urgent">🔥 Urgente</span>'
+        : isHigh ? '<span class="priority-badge high">Alta</span>' : '';
+      const cls = isUrgent ? 'urgent' : (isHigh ? 'high' : '');
+      const dot = statusDotStyle(t.status);
+      return `
+        <div class="task-row ${cls}" onclick="closeStatusModal();openModal('${t.id}')">
+          <div class="task-check ${dot.cls}" style="${dot.style}"></div>
+          <div class="task-title">${esc(t.title)}</div>
+          <div class="task-date ${dateStatus(t.date)}">${t.date ? fmtDate(t.date) : '—'}</div>
+          <span class="task-row-break"></span>
+          ${badge}
+          <div class="task-client">${esc(t.client || '—')}</div>
+        </div>`;
+    }).join('');
+  }
+  document.getElementById('status-modal').classList.add('open');
+}
+
+function closeStatusModal(){
+  document.getElementById('status-modal').classList.remove('open');
 }
 
 function openColumnModal(key){
@@ -2302,6 +2481,37 @@ function dateStatus(iso){
   if(diff === 0) return 'today';
   return '';
 }
+let toastTimer = null;
+function showToast(msg){
+  const old = document.querySelector('.toast');
+  if(old) old.remove();
+  if(toastTimer) clearTimeout(toastTimer);
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = `<span class="toast-dot"></span>${esc(msg)}`;
+  document.body.appendChild(t);
+  toastTimer = setTimeout(()=>{
+    t.style.transition = 'opacity .25s ease, transform .25s ease';
+    t.style.opacity = '0';
+    t.style.transform = 'translate(-50%, 8px)';
+    setTimeout(()=>t.remove(), 250);
+  }, 2200);
+}
+
+function animateCount(el, target){
+  const start = 0;
+  const dur = 550;
+  const startTime = performance.now();
+  function tick(now){
+    const p = Math.min((now - startTime) / dur, 1);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(start + (target - start) * eased);
+    if(p < 1) requestAnimationFrame(tick);
+    else el.textContent = target;
+  }
+  requestAnimationFrame(tick);
+}
+
 function esc(str){
   const d = document.createElement('div');
   d.textContent = str || '';
@@ -2403,8 +2613,8 @@ function renderDashboard(){
       </div>
     </div>
     <div class="status-row">
-      ${colCounts.map(c=>`<div class="status-item"><div class="lbl">${esc(c.name)}</div><div class="val">${c.count}</div></div>`).join('')}
-      <div class="status-item overdue"><div class="lbl">Atrasadas</div><div class="val">${overdue}</div></div>
+      ${colCounts.map(c=>`<div class="status-item" onclick="openStatusDetail('col:${c.key}', '${esc(c.name).replace(/'/g,"\\'")}')"><div class="lbl">${esc(c.name)}</div><div class="val" data-count="${c.count}">0</div></div>`).join('')}
+      <div class="status-item overdue" onclick="openStatusDetail('overdue', 'Atrasadas')"><div class="lbl">Atrasadas</div><div class="val" data-count="${overdue}">0</div></div>
     </div>
     <div class="date-filter">
       <span class="date-filter-label">Prazo:</span>
@@ -2543,7 +2753,7 @@ function renderKanban(){
                   const badge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
                   const doneCls = col.type === 'done' ? 'done' : '';
                   return `
-                  <div class="kb-card ${doneCls}" style="--col-color:${col.color}" draggable="true" ondragstart="dragStart(event,'${t.id}')" onclick="openModal('${t.id}')">
+                  <div class="kb-card ${doneCls}" style="--col-color:${col.color}" draggable="true" ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)" onclick="openModal('${t.id}')">
                     <div class="kb-card-client">${esc(t.client || '—')}</div>
                     <div class="kb-card-title">${esc(t.title)}</div>
                     <div class="kb-card-meta">
@@ -2558,7 +2768,14 @@ function renderKanban(){
     </div>`;
 }
 
-function dragStart(e, id){e.dataTransfer.setData('text/plain', id);e.dataTransfer.effectAllowed = 'move';}
+function dragStart(e, id){
+  e.dataTransfer.setData('text/plain', id);
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(()=>e.target.classList.add('dragging'), 0);
+}
+function dragEnd(e){
+  e.target.classList.remove('dragging');
+}
 function dragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-over');}
 function dragLeave(e){e.currentTarget.classList.remove('drag-over');}
 async function drop(e, status){
@@ -2737,6 +2954,9 @@ function renderTable(){
 }
 
 function attachEvents(){
+  document.querySelectorAll('.status-item .val[data-count]').forEach(el=>{
+    animateCount(el, parseInt(el.dataset.count, 10) || 0);
+  });
   document.querySelectorAll('.nav-item, .mobile-nav-item').forEach(el=>{el.onclick = ()=>{state.view = el.dataset.view;render();window.scrollTo(0,0);};});
   const fs = document.getElementById('f-search');
   if(fs) fs.oninput = (e)=>{state.filter.search = e.target.value;render();document.getElementById('f-search').focus();};
@@ -2800,6 +3020,7 @@ async function saveTask(){
     priority: document.getElementById('m-priority').value,
     notes: document.getElementById('m-notes').value.trim()
   };
+  const isNew = !state.editingId;
   if(state.editingId){
     const ok = await updateTaskRemote(state.editingId, data);
     if(ok){
@@ -2811,6 +3032,7 @@ async function saveTask(){
     if(newTask) state.tasks.push(newTask);
   }
   closeModal();render();
+  showToast(isNew ? 'Tarefa criada' : 'Alterações salvas');
 }
 
 async function deleteTask(){
@@ -2820,6 +3042,7 @@ async function deleteTask(){
   if(ok){
     state.tasks = state.tasks.filter(t=>t.id !== state.editingId);
     closeModal();render();
+    showToast('Tarefa excluída');
   }
 }
 
@@ -2870,13 +3093,15 @@ async function formatNotes(){
 document.getElementById('modal').addEventListener('click', (e)=>{if(e.target.id === 'modal') closeModal();});
 document.getElementById('settings-modal').addEventListener('click', (e)=>{if(e.target.id === 'settings-modal') closeSettings();});
 document.getElementById('column-modal').addEventListener('click', (e)=>{if(e.target.id === 'column-modal') closeColumnModal();});
+document.getElementById('status-modal').addEventListener('click', (e)=>{if(e.target.id === 'status-modal') closeStatusModal();});
 document.addEventListener('keydown', (e)=>{
   if(e.key === 'Escape'){
     closeModal();
     closeSettings();
     closeColumnModal();
+    closeStatusModal();
   }
-  if(e.key === 'n' && !document.getElementById('modal').classList.contains('open') && !document.getElementById('settings-modal').classList.contains('open') && !document.getElementById('column-modal').classList.contains('open') && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA'){
+  if(e.key === 'n' && !document.getElementById('modal').classList.contains('open') && !document.getElementById('settings-modal').classList.contains('open') && !document.getElementById('column-modal').classList.contains('open') && !document.getElementById('status-modal').classList.contains('open') && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA'){
     e.preventDefault();openModal();
   }
 });
