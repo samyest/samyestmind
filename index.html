@@ -643,8 +643,10 @@
   }
   .kb-card-meta{
     display:flex;
+    flex-wrap:wrap;
     justify-content:space-between;
     align-items:center;
+    gap:6px;
     font-family:'JetBrains Mono',monospace;
     font-size:11px;
     color:var(--text-muted);
@@ -1405,9 +1407,17 @@
     main{padding:20px 16px calc(88px + env(safe-area-inset-bottom));}
     .view-header{flex-direction:column;align-items:flex-start;gap:14px;}
     .view-header h1{font-size:26px;}
+    .kanban-header-actions{width:100%;flex-wrap:wrap;}
+    .kanban-header-actions button{flex:1;min-width:130px;justify-content:center;}
     .header-cta{display:none;}
     .status-row{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
-    .status-item{padding:10px 14px;}
+    .status-item{
+      padding:10px 14px;
+      flex:0 0 auto;
+      min-width:82px;
+      white-space:nowrap;
+    }
+    .status-item .lbl{white-space:nowrap;}
     .dash-grid{grid-template-columns:1fr;gap:16px;}
     .panel{padding:16px;}
     .panel-title{font-size:14.5px;}
@@ -1441,10 +1451,18 @@
       padding-right:16px;
     }
     .kb-col{
-      min-width:82vw;
+      min-width:85vw;
+      max-width:85vw;
+      padding:16px;
       scroll-snap-align:start;
       flex-shrink:0;
     }
+    .kb-card{
+      padding:12px 13px;
+      overflow-wrap:break-word;
+    }
+    .kb-card-title{overflow-wrap:break-word;word-break:break-word;}
+    .priority-badge{white-space:nowrap;flex-shrink:0;}
 
     .cal-view{padding:14px 12px;}
     .cal-view-head{flex-direction:column;align-items:flex-start;gap:10px;}
@@ -2480,7 +2498,7 @@ function renderKanban(){
   return `
     <div class="view-header">
       <div><div class="eyebrow">Fluxo de trabalho</div><h1>Kanban</h1></div>
-      <div style="display:flex;gap:10px;">
+      <div class="kanban-header-actions" style="display:flex;gap:10px;">
         <button class="btn-secondary" onclick="openColumnModal()">+ Nova coluna</button>
         <button class="btn-primary" onclick="openModal()">+ Nova tarefa</button>
       </div>
