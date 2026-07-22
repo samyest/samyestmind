@@ -178,6 +178,7 @@
   main{
     overflow-y:auto;
     overflow-x:hidden;
+    touch-action:pan-y;
     padding:44px 56px 60px;
     position:relative;
   }
@@ -827,6 +828,7 @@
   .table-scroll{
     overflow-x:auto;
     -webkit-overflow-scrolling:touch;
+    touch-action:pan-x;
     max-width:100%;
   }
   .table-filters{
@@ -1416,14 +1418,23 @@
     .kanban-header-actions{width:100%;flex-wrap:wrap;}
     .kanban-header-actions button{flex:1;min-width:130px;justify-content:center;}
     .header-cta{display:none;}
-    .status-row{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
-    .status-item{
-      padding:10px 14px;
-      flex:0 0 auto;
-      min-width:82px;
-      white-space:nowrap;
+    .status-row{
+      display:grid;
+      grid-template-columns:repeat(2, 1fr);
+      width:100%;
+      gap:8px;
+      padding:8px;
+      overflow:visible;
     }
-    .status-item .lbl{white-space:nowrap;}
+    .status-item{
+      padding:10px 12px;
+      border-right:none;
+      background:rgba(255,255,255,0.3);
+      border-radius:10px;
+      white-space:nowrap;
+      overflow:hidden;
+    }
+    .status-item .lbl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .dash-grid{grid-template-columns:1fr;gap:16px;}
     .panel{padding:16px;}
     .panel-title{font-size:14.5px;}
@@ -1449,6 +1460,7 @@
       grid-template-columns:none;
       gap:12px;
       overflow-x:auto;
+      touch-action:pan-x;
       scroll-snap-type:x mandatory;
       -webkit-overflow-scrolling:touch;
       padding-bottom:8px;
@@ -2323,6 +2335,7 @@ function render(){
   else if(state.view === 'kanban') m.innerHTML = renderKanban();
   else if(state.view === 'calendar') m.innerHTML = renderCalendar();
   else if(state.view === 'table') m.innerHTML = renderTable();
+  m.scrollLeft = 0;
   attachEvents();
 }
 
