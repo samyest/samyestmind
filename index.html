@@ -13,6 +13,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root{
     --bg-base: #E9EDF1;
@@ -1357,6 +1358,12 @@
     display:inline-block;
     flex-shrink:0;
   }
+  .kb-col-hint{
+    font-size:11px;
+    color:var(--text-soft);
+    cursor:help;
+    margin-left:2px;
+  }
   .kb-col-edit{
     width:22px;height:22px;
     display:grid;place-items:center;
@@ -1806,6 +1813,14 @@
         </div>
         <div id="settings-columns-list"></div>
       </div>
+      <div class="field">
+        <div class="field-label-row">
+          <label>Google Calendar</label>
+          <span id="google-cal-status" style="font-family:'JetBrains Mono',monospace;font-size:11px;"></span>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">Tarefas com prazo aparecem automaticamente no seu Google Calendar.</p>
+        <button class="btn-secondary" id="google-cal-btn" onclick="connectGoogleCalendar()" style="width:100%;">Conectar</button>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn-danger" onclick="logout()">Sair da conta</button>
@@ -1922,6 +1937,11 @@
 const SUPABASE_URL = 'https://nufcsghiitooamcgukbw.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_H6te1T153XXpx57yR6A9Sw_uVm0G6vH';
 const ALLOW_SIGNUP = false;
+const GOOGLE_CLIENT_ID = 'COLE_SEU_CLIENT_ID_AQUI';
+const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+let googleTokenClient = null;
+let googleAccessToken = null;
+let googleTokenExpiry = 0;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let session = null;
 let authMode = 'signin';
@@ -2037,6 +2057,7 @@ function openSettings(){
     </button>
   `).join('');
   renderSettingsColumnsList();
+  updateGoogleStatusUI();
   document.getElementById('settings-modal').classList.add('open');
 }
 
@@ -2279,6 +2300,32 @@ function setDateFilter(f){
   render();
 }
 
+function isoDateFromTimestamp(ts){
+  const dt = new Date(ts);
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+}
+
+function lastSunday(){
+  const d = new Date();
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() - d.getDay());
+  return d;
+}
+
+function isHiddenFromKanban(t){
+  if(columnType(t.status) !== 'done') return false;
+  if(!t.completed_at) return true;
+  return new Date(t.completed_at) < lastSunday();
+}
+
+function resolveCompletedAt(newStatus, oldStatus, currentValue){
+  const newType = columnType(newStatus);
+  const oldType = oldStatus ? columnType(oldStatus) : null;
+  if(newType === 'done' && oldType !== 'done') return new Date().toISOString();
+  if(newType !== 'done' && oldType === 'done') return null;
+  return currentValue || null;
+}
+
 function priorityWeight(t){
   if(t.priority === 'urgent') return 4;
   if(dateStatus(t.date) === 'overdue' && columnType(t.status) !== 'done') return 3.5;
@@ -2373,6 +2420,109 @@ async function doAuth(){
   await checkAuth();
 }
 
+function isGoogleConnected(){
+  return googleAccessToken && Date.now() < googleTokenExpiry;
+}
+
+function initGoogleClient(){
+  if(googleTokenClient || typeof google === 'undefined' || GOOGLE_CLIENT_ID.includes('COLE_SEU')) return;
+  googleTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: GOOGLE_SCOPE,
+    callback: (resp)=>{
+      if(resp.error){
+        showToast('Erro ao conectar Google');
+        return;
+      }
+      googleAccessToken = resp.access_token;
+      googleTokenExpiry = Date.now() + (resp.expires_in * 1000) - 60000;
+      showToast('Google Calendar conectado');
+      updateGoogleStatusUI();
+    }
+  });
+}
+
+function connectGoogleCalendar(){
+  if(GOOGLE_CLIENT_ID.includes('COLE_SEU')){
+    alert('Configuração pendente: adicione o GOOGLE_CLIENT_ID no código.');
+    return;
+  }
+  initGoogleClient();
+  if(!googleTokenClient){
+    alert('Google ainda carregando, tenta de novo em 1 segundo.');
+    return;
+  }
+  googleTokenClient.requestAccessToken({prompt: isGoogleConnected() ? '' : 'consent'});
+}
+
+function disconnectGoogleCalendar(){
+  if(googleAccessToken){
+    google.accounts.oauth2.revoke(googleAccessToken, ()=>{});
+  }
+  googleAccessToken = null;
+  googleTokenExpiry = 0;
+  showToast('Google Calendar desconectado');
+  updateGoogleStatusUI();
+}
+
+function updateGoogleStatusUI(){
+  const el = document.getElementById('google-cal-status');
+  if(!el) return;
+  if(isGoogleConnected()){
+    el.innerHTML = `<span style="color:var(--done);">● Conectado</span>`;
+    document.getElementById('google-cal-btn').textContent = 'Desconectar';
+    document.getElementById('google-cal-btn').onclick = disconnectGoogleCalendar;
+  } else {
+    el.innerHTML = `<span style="color:var(--text-muted);">○ Não conectado</span>`;
+    document.getElementById('google-cal-btn').textContent = 'Conectar';
+    document.getElementById('google-cal-btn').onclick = connectGoogleCalendar;
+  }
+}
+
+async function syncTaskToGoogle(task){
+  if(!isGoogleConnected()) return;
+  try{
+    if(!task.date){
+      if(task.google_event_id) await deleteGoogleEvent(task);
+      return;
+    }
+    const body = {
+      summary: task.title,
+      description: [task.client ? `Cliente: ${task.client}` : '', task.notes || ''].filter(Boolean).join('\n'),
+      start: {date: task.date},
+      end: {date: task.date}
+    };
+    let url = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+    let method = 'POST';
+    if(task.google_event_id){
+      url += '/' + task.google_event_id;
+      method = 'PATCH';
+    }
+    const res = await fetch(url, {
+      method,
+      headers: {'Authorization': 'Bearer ' + googleAccessToken, 'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    if(res.ok){
+      const evt = await res.json();
+      if(evt.id && evt.id !== task.google_event_id){
+        task.google_event_id = evt.id;
+        await sb.from('tasks').update({google_event_id: evt.id}).eq('id', task.id);
+      }
+    }
+  }catch(e){}
+}
+
+async function deleteGoogleEvent(task){
+  if(!isGoogleConnected() || !task.google_event_id) return;
+  try{
+    await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${task.google_event_id}`, {
+      method: 'DELETE',
+      headers: {'Authorization': 'Bearer ' + googleAccessToken}
+    });
+  }catch(e){}
+}
+
 async function logout(){
   await sb.auth.signOut();
   location.reload();
@@ -2410,6 +2560,8 @@ async function loadTasks(){
     priority: t.priority || 'normal',
     date: t.date || '',
     notes: t.notes || '',
+    google_event_id: t.google_event_id || null,
+    completed_at: t.completed_at || null,
     created: new Date(t.created_at).getTime()
   }));
   render();
@@ -2423,7 +2575,8 @@ async function createTaskRemote(data){
     status: data.status,
     priority: data.priority,
     date: data.date || null,
-    notes: data.notes || null
+    notes: data.notes || null,
+    completed_at: data.completed_at || null
   }).select().single();
   if(error){alert('Erro ao criar tarefa: ' + error.message);return null;}
   return {
@@ -2434,19 +2587,23 @@ async function createTaskRemote(data){
     priority: task.priority,
     date: task.date || '',
     notes: task.notes || '',
+    google_event_id: null,
+    completed_at: task.completed_at || null,
     created: new Date(task.created_at).getTime()
   };
 }
 
 async function updateTaskRemote(id, data){
-  const {error} = await sb.from('tasks').update({
+  const payload = {
     title: data.title,
     client: data.client || null,
     status: data.status,
     priority: data.priority,
     date: data.date || null,
     notes: data.notes || null
-  }).eq('id', id);
+  };
+  if('completed_at' in data) payload.completed_at = data.completed_at || null;
+  const {error} = await sb.from('tasks').update(payload).eq('id', id);
   if(error){alert('Erro ao atualizar: ' + error.message);return false;}
   return true;
 }
@@ -2734,11 +2891,11 @@ function renderKanban(){
     </div>
     <div class="kanban">
       ${cols.map(col=>{
-        const list = state.tasks.filter(t=>t.status===col.key);
+        const list = state.tasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t));
         return `
           <div class="glass kb-col" data-status="${col.key}" ondragover="dragOver(event)" ondrop="drop(event,'${col.key}')" ondragleave="dragLeave(event)">
             <div class="kb-col-head">
-              <div class="kb-col-title"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}</div>
+              <div class="kb-col-title"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}${col.type==='done' ? '<span class="kb-col-hint" title="Concluídos somem toda semana no domingo — o histórico fica registrado no Calendário">↻</span>' : ''}</div>
               <div style="display:flex;align-items:center;gap:6px;">
                 <div class="kb-col-count">${list.length}</div>
                 <button class="kb-col-edit" onclick="openColumnModal('${col.key}')" title="Editar coluna">
@@ -2784,11 +2941,14 @@ async function drop(e, status){
   const id = e.dataTransfer.getData('text/plain');
   const task = state.tasks.find(t=>t.id===id);
   if(task && task.status !== status){
-    const prev = task.status;
+    const prevStatus = task.status;
+    const prevCompletedAt = task.completed_at;
+    task.completed_at = resolveCompletedAt(status, prevStatus, task.completed_at);
     task.status = status;
     render();
     const ok = await updateTaskRemote(id, task);
-    if(!ok){task.status = prev;render();}
+    if(!ok){task.status = prevStatus;task.completed_at = prevCompletedAt;render();}
+    else if(task.completed_at !== prevCompletedAt) syncTaskToGoogle(task);
   }
 }
 
@@ -2803,7 +2963,11 @@ function renderCalendar(){
   const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const today = new Date();
   const tasksByDate = {};
-  state.tasks.forEach(t=>{if(t.date){if(!tasksByDate[t.date]) tasksByDate[t.date] = [];tasksByDate[t.date].push(t);}});
+  state.tasks.forEach(t=>{
+    const isDone = columnType(t.status) === 'done';
+    const key = (isDone && t.completed_at) ? isoDateFromTimestamp(t.completed_at) : t.date;
+    if(key){if(!tasksByDate[key]) tasksByDate[key] = [];tasksByDate[key].push(t);}
+  });
 
   let cells = '';
   const prevMonthDays = new Date(year, month, 0).getDate();
@@ -2817,7 +2981,10 @@ function renderCalendar(){
     cells += `
       <div class="cal-cell ${isToday?'today':''} ${isSelected?'selected':''} ${list.length===0?'is-empty':''}" data-date="${iso}">
         <div class="cal-cell-num"><span class="cal-cell-dow">${dowShort[wd]} </span>${day}</div>
-        ${list.map(t=>`<div class="cal-task" style="border-left-color:${columnColor(t.status)};${columnType(t.status)==='done'?'opacity:0.55;':''}" data-task-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</div>`).join('')}
+        ${list.map(t=>{
+          const isDone = columnType(t.status)==='done';
+          return `<div class="cal-task" style="border-left-color:${columnColor(t.status)};${isDone?'opacity:0.6;':''}" data-task-id="${t.id}" title="${esc(t.title)}${isDone?' (concluída)':''}">${isDone?'✓ ':''}${esc(t.title)}</div>`;
+        }).join('')}
       </div>`;
   }
   const filled = startDow + daysInMonth;
@@ -3012,35 +3179,43 @@ function closeModal(){document.getElementById('modal').classList.remove('open');
 async function saveTask(){
   const title = document.getElementById('m-title').value.trim();
   if(!title){document.getElementById('m-title').focus();return;}
+  const newStatus = document.getElementById('m-status').value;
+  const existingTask = state.editingId ? state.tasks.find(x=>x.id===state.editingId) : null;
   const data = {
     title,
     client: document.getElementById('m-client').value.trim(),
-    status: document.getElementById('m-status').value,
+    status: newStatus,
     date: document.getElementById('m-date').value,
     priority: document.getElementById('m-priority').value,
-    notes: document.getElementById('m-notes').value.trim()
+    notes: document.getElementById('m-notes').value.trim(),
+    completed_at: resolveCompletedAt(newStatus, existingTask ? existingTask.status : null, existingTask ? existingTask.completed_at : null)
   };
   const isNew = !state.editingId;
+  let savedTask = null;
   if(state.editingId){
     const ok = await updateTaskRemote(state.editingId, data);
     if(ok){
       const t = state.tasks.find(x=>x.id===state.editingId);
       Object.assign(t, data);
+      savedTask = t;
     }
   }else{
     const newTask = await createTaskRemote(data);
-    if(newTask) state.tasks.push(newTask);
+    if(newTask){state.tasks.push(newTask);savedTask = newTask;}
   }
   closeModal();render();
   showToast(isNew ? 'Tarefa criada' : 'Alterações salvas');
+  if(savedTask) syncTaskToGoogle(savedTask);
 }
 
 async function deleteTask(){
   if(!state.editingId) return;
   if(!confirm('Excluir esta tarefa?')) return;
+  const t = state.tasks.find(x=>x.id===state.editingId);
   const ok = await deleteTaskRemote(state.editingId);
   if(ok){
-    state.tasks = state.tasks.filter(t=>t.id !== state.editingId);
+    if(t) deleteGoogleEvent(t);
+    state.tasks = state.tasks.filter(x=>x.id !== state.editingId);
     closeModal();render();
     showToast('Tarefa excluída');
   }
