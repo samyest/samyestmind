@@ -157,7 +157,7 @@ function renderSettingsColumnsList(){
 }
 
 function closeSettings(){
-  const original = (session?.user?.user_metadata?.theme) || 'bluegray';
+  const original = state.savedTheme || 'bluegray';
   if(currentTheme !== original) applyTheme(original);
   document.getElementById('settings-modal').classList.remove('open');
 }
@@ -181,6 +181,7 @@ async function saveSettings(){
   });
   if(error){alert('Erro ao salvar: ' + error.message);return;}
   state.myName = name;
+  state.savedTheme = currentTheme;
   document.getElementById('settings-modal').classList.remove('open');
   render();
   document.getElementById('user-name-display').textContent = name;
@@ -524,7 +525,8 @@ async function checkAuth(){
     const email = session.user.email;
     state.myName = myProfile.name;
     state.myAvatarUrl = myProfile.avatar_url || null;
-    applyTheme(myProfile.theme || 'bluegray');
+    state.savedTheme = myProfile.theme || 'bluegray';
+    applyTheme(state.savedTheme);
     state.columns = myProfile.kanban_columns || JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
     document.getElementById('user-email').textContent = email;
     document.getElementById('user-name-display').textContent = state.myName;
