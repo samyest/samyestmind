@@ -510,6 +510,7 @@ async function checkAuth(){
     document.getElementById('user-avatar').textContent = name[0].toUpperCase();
     await loadTasks();
     await loadProjects();
+    setupRealtime();
   } else {
     appEl.style.display = 'none';
     onbEl.classList.remove('show');
@@ -670,7 +671,69 @@ async function deleteGoogleEvent(task){
   }catch(e){}
 }
 
+let realtimeChannel = null;
+let realtimeDebounceTimer = null;
+let isRefreshing = false;
+
+function isEditingNotes(){
+  return document.activeElement && document.activeElement.id === 'project-notes-editor';
+}
+
+function safeRerender(){
+  if(isEditingNotes()) return;
+  render();
+}
+
+function scheduleRealtimeReload(kind){
+  if(realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
+  realtimeDebounceTimer = setTimeout(async ()=>{
+    await refreshAll(kind, true);
+  }, 500);
+}
+
+async function refreshAll(kind, silent){
+  if(isRefreshing) return;
+  isRefreshing = true;
+  const btns = document.querySelectorAll('.refresh-btn');
+  btns.forEach(b=>b.classList.add('spinning'));
+  try{
+    if(!kind || kind === 'tasks'){
+      await loadTasks();
+    }
+    if(!kind || kind === 'projects'){
+      await loadProjects();
+    }
+    safeRerender();
+    if(!silent) showToast('Atualizado');
+  }catch(e){}
+  isRefreshing = false;
+  setTimeout(()=>btns.forEach(b=>b.classList.remove('spinning')), 400);
+}
+
+function setupRealtime(){
+  if(realtimeChannel) return;
+  realtimeChannel = sb.channel('app-changes')
+    .on('postgres_changes', {event:'*', schema:'public', table:'tasks'}, ()=>{
+      scheduleRealtimeReload('tasks');
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'projects'}, ()=>{
+      scheduleRealtimeReload('projects');
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'project_members'}, ()=>{
+      scheduleRealtimeReload('projects');
+    })
+    .subscribe();
+}
+
+function teardownRealtime(){
+  if(realtimeChannel){
+    sb.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
+}
+
 async function logout(){
+  teardownRealtime();
   await sb.auth.signOut();
   location.reload();
 }
