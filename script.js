@@ -258,10 +258,10 @@ function selectColumnColor(c){
 function openStatusDetail(filterKey, label){
   let list;
   if(filterKey === 'overdue'){
-    list = state.tasks.filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='overdue');
+    list = personalTasks().filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='overdue');
   } else {
     const key = filterKey.replace('col:', '');
-    list = state.tasks.filter(t=>t.status===key);
+    list = personalTasks().filter(t=>t.status===key);
   }
   list.sort((a,b)=>{
     const pa = priorityWeight(a), pb = priorityWeight(b);
@@ -480,6 +480,16 @@ function lastSunday(){
   d.setHours(0,0,0,0);
   d.setDate(d.getDate() - d.getDay());
   return d;
+}
+
+function isVisibleInPersonalViews(t){
+  if(!t.project_id) return true;
+  if(!t.assigned_to) return true;
+  return t.assigned_to === session.user.id;
+}
+
+function personalTasks(){
+  return state.tasks.filter(isVisibleInPersonalViews);
 }
 
 function isHiddenFromKanban(t){
@@ -841,6 +851,7 @@ async function loadTasks(){
     google_event_id: t.google_event_id || null,
     completed_at: t.completed_at || null,
     project_id: t.project_id || null,
+    assigned_to: t.assigned_to || null,
     owner_id: t.user_id,
     created: new Date(t.created_at).getTime()
   }));
@@ -857,7 +868,8 @@ async function createTaskRemote(data){
     date: data.date || null,
     notes: data.notes || null,
     completed_at: data.completed_at || null,
-    project_id: data.project_id || null
+    project_id: data.project_id || null,
+    assigned_to: data.assigned_to || null
   }).select().single();
   if(error){alert('Erro ao criar tarefa: ' + error.message);return null;}
   return {
@@ -871,6 +883,7 @@ async function createTaskRemote(data){
     google_event_id: null,
     completed_at: task.completed_at || null,
     project_id: task.project_id || null,
+    assigned_to: task.assigned_to || null,
     owner_id: task.user_id,
     created: new Date(task.created_at).getTime()
   };
@@ -887,6 +900,7 @@ async function updateTaskRemote(id, data){
   };
   if('completed_at' in data) payload.completed_at = data.completed_at || null;
   if('project_id' in data) payload.project_id = data.project_id || null;
+  if('assigned_to' in data) payload.assigned_to = data.assigned_to || null;
   const {error} = await sb.from('tasks').update(payload).eq('id', id);
   if(error){alert('Erro ao atualizar: ' + error.message);return false;}
   return true;
@@ -1253,10 +1267,13 @@ function renderProjectPage(){
                   : list.map(t=>{
                     const badge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
                     const doneCls = col.type === 'done' ? 'done' : '';
+                    const assignee = getAssigneeLabel(t);
+                    const assigneeBadge = assignee ? `<span class="project-badge" style="margin-bottom:6px;">👤 ${esc(assignee)}</span>` : '';
                     return `
                     <div class="kb-card ${doneCls}" style="--col-color:${col.color}" draggable="true" ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)" onclick="openModal('${t.id}')">
                       <div class="kb-card-client">${esc(t.client || '—')}</div>
                       <div class="kb-card-title">${esc(t.title)}</div>
+                      ${assigneeBadge}
                       <div class="kb-card-meta">
                         <span class="${dateStatus(t.date)}">${t.date ? fmtDate(t.date) : 'sem prazo'}</span>
                         ${badge}
@@ -1277,6 +1294,17 @@ function openProjectsModal(){
 }
 function closeProjectsModal(){
   document.getElementById('projects-modal').classList.remove('open');
+}
+
+function getAssigneeLabel(t){
+  if(!t.assigned_to || !t.project_id) return null;
+  if(t.assigned_to === session.user.id) return 'Você';
+  const p = state.projects.find(x=>x.id===t.project_id);
+  if(!p) return null;
+  if(t.assigned_to === p.owner_id) return (p.ownerProfile && p.ownerProfile.name) || (p.owner_email ? p.owner_email.split('@')[0] : null);
+  const m = p.members.find(x=>x.user_id===t.assigned_to);
+  if(!m) return null;
+  return (m.profile && m.profile.name) || (m.invited_email ? m.invited_email.split('@')[0] : null);
 }
 
 function avatarChip(profile, fallbackChar){
@@ -1464,8 +1492,8 @@ function updateNav(){
   const dias = ['dom','seg','ter','qua','qui','sex','sáb'];
   const meses = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
   document.getElementById('today-date').textContent = `${dias[now.getDay()]}, ${now.getDate()} ${meses[now.getMonth()]}`;
-  const overdue = state.tasks.filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='overdue').length;
-  const today = state.tasks.filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='today').length;
+  const overdue = personalTasks().filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='overdue').length;
+  const today = personalTasks().filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='today').length;
   document.getElementById('today-hint').textContent = overdue > 0 ? `${overdue} atrasada${overdue>1?'s':''}` : today > 0 ? `${today} vence hoje` : 'tudo em dia';
 
   const list = document.getElementById('clients-list');
@@ -1494,9 +1522,10 @@ function renderDashboard(){
   const hrs = now.getHours();
   const saudacao = hrs < 12 ? 'Bom dia' : hrs < 18 ? 'Boa tarde' : 'Boa noite';
   const cols = getColumns();
-  const colCounts = cols.map(c=>({...c, count: state.tasks.filter(t=>t.status===c.key).length}));
-  const overdue = state.tasks.filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='overdue').length;
-  const acoes = state.tasks
+  const pTasks = personalTasks();
+  const colCounts = cols.map(c=>({...c, count: pTasks.filter(t=>t.status===c.key).length}));
+  const overdue = pTasks.filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='overdue').length;
+  const acoes = pTasks
     .filter(t=>taskColumnType(t)==='active' && matchesDateFilter(t, state.dateFilter))
     .sort((a,b)=>{
       const pa = priorityWeight(a), pb = priorityWeight(b);
@@ -1505,7 +1534,7 @@ function renderDashboard(){
       if(!b.date) return -1;
       return a.date.localeCompare(b.date);
     });
-  const aguardando = state.tasks
+  const aguardando = pTasks
     .filter(t=>taskColumnType(t)==='waiting' && matchesDateFilter(t, state.dateFilter))
     .sort((a,b)=>{
       const pa = priorityWeight(a), pb = priorityWeight(b);
@@ -1603,7 +1632,7 @@ function renderDashboard(){
 }
 
 function renderClientFocus(){
-  const active = state.tasks.filter(t=>taskColumnType(t)!=='done');
+  const active = personalTasks().filter(t=>taskColumnType(t)!=='done');
   if(active.length === 0){
     return `<div class="empty" style="padding:26px 12px;font-size:12.5px;"><strong>Sem pendências</strong>Nenhum cliente ativo</div>`;
   }
@@ -1635,7 +1664,7 @@ function renderMiniCal(){
   const dow = ['D','S','T','Q','Q','S','S'];
   const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const today = new Date();
-  const tasksWithDate = new Set(state.tasks.filter(t=>t.date && taskColumnType(t)!=='done').map(t=>t.date));
+  const tasksWithDate = new Set(personalTasks().filter(t=>t.date && taskColumnType(t)!=='done').map(t=>t.date));
 
   let cells = '';
   for(let i=startDow-1;i>=0;i--) cells += `<div class="mini-cal-day other">${prevMonthDays-i}</div>`;
@@ -1677,7 +1706,7 @@ function renderKanban(){
     </div>
     <div class="kanban">
       ${cols.map(col=>{
-        const list = state.tasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t));
+        const list = personalTasks().filter(t=>t.status===col.key && !isHiddenFromKanban(t));
         return `
           <div class="glass kb-col" data-status="${col.key}" ondragover="dragOver(event)" ondrop="drop(event,'${col.key}')" ondragleave="dragLeave(event)">
             <div class="kb-col-head">
@@ -1752,7 +1781,7 @@ function renderCalendar(){
   const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const today = new Date();
   const tasksByDate = {};
-  state.tasks.forEach(t=>{
+  personalTasks().forEach(t=>{
     const isDone = taskColumnType(t) === 'done';
     const key = (isDone && t.completed_at) ? isoDateFromTimestamp(t.completed_at) : t.date;
     if(key){if(!tasksByDate[key]) tasksByDate[key] = [];tasksByDate[key].push(t);}
@@ -1864,8 +1893,8 @@ function calNav(delta){state.calDate.setMonth(state.calDate.getMonth()+delta);re
 function calToday(){state.calDate = new Date();render();}
 
 function renderTable(){
-  const clientes = [...new Set(state.tasks.map(t=>t.client).filter(Boolean))].sort();
-  let filtered = [...state.tasks];
+  const clientes = [...new Set(personalTasks().map(t=>t.client).filter(Boolean))].sort();
+  let filtered = personalTasks();
   if(state.filter.status) filtered = filtered.filter(t=>t.status===state.filter.status);
   if(state.filter.client) filtered = filtered.filter(t=>t.client===state.filter.client);
   if(state.filter.search){
@@ -1949,6 +1978,7 @@ function openModal(id, prefillDate, prefillProjectId){
     document.getElementById('m-date').value = t.date || '';
     document.getElementById('m-priority').value = t.priority || 'normal';
     document.getElementById('m-project').value = t.project_id || '';
+    populateAssigneeSelect(t.project_id, t.assigned_to);
     document.getElementById('m-notes').value = t.notes || '';
     const isMine = t.owner_id === session.user.id;
     const canEdit = isMine || (t.project_id && canEditProject(t.project_id));
@@ -1962,12 +1992,14 @@ function openModal(id, prefillDate, prefillProjectId){
     document.getElementById('m-date').value = prefillDate || '';
     document.getElementById('m-priority').value = 'normal';
     document.getElementById('m-project').value = prefillProjectId || '';
+    populateAssigneeSelect(prefillProjectId, null);
     document.getElementById('m-notes').value = '';
     delBtn.style.display = 'none';
     document.querySelectorAll('#modal input, #modal select, #modal textarea').forEach(el=>{el.disabled = false;});
   }
   document.getElementById('m-project').onchange = (e)=>{
     populateStatusSelect('m-status', getProjectColumns(state.projects.find(p=>p.id===e.target.value))[0].key, e.target.value || null);
+    populateAssigneeSelect(e.target.value || null, null);
   };
   modal.classList.add('open');
   setTimeout(()=>document.getElementById('m-title').focus(), 50);
@@ -1986,6 +2018,26 @@ function populateProjectSelect(){
   sel.innerHTML = '<option value="">Pessoal (privado)</option>' + editableProjects.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
 }
 
+function populateAssigneeSelect(projectId, currentAssignee){
+  const field = document.getElementById('m-assignee-field');
+  const sel = document.getElementById('m-assignee');
+  if(!projectId){
+    field.style.display = 'none';
+    sel.innerHTML = '<option value="">Todo mundo do projeto</option>';
+    return;
+  }
+  const p = state.projects.find(x=>x.id===projectId);
+  if(!p){field.style.display = 'none';return;}
+  field.style.display = '';
+  const people = [];
+  people.push({id: p.owner_id, label: (p.ownerProfile && p.ownerProfile.name) || p.owner_email || 'Dono', isMe: p.owner_id === session.user.id});
+  p.members.filter(m=>m.status==='accepted' && m.user_id).forEach(m=>{
+    people.push({id: m.user_id, label: (m.profile && m.profile.name) || m.invited_email || 'Membro', isMe: m.user_id === session.user.id});
+  });
+  sel.innerHTML = '<option value="">Todo mundo do projeto</option>' + people.map(pe=>`<option value="${pe.id}">${esc(pe.label)}${pe.isMe ? ' (eu)' : ''}</option>`).join('');
+  sel.value = currentAssignee || '';
+}
+
 function closeModal(){document.getElementById('modal').classList.remove('open');state.editingId = null;}
 
 async function saveTask(){
@@ -2001,6 +2053,7 @@ async function saveTask(){
     priority: document.getElementById('m-priority').value,
     notes: document.getElementById('m-notes').value.trim(),
     project_id: document.getElementById('m-project').value || null,
+    assigned_to: document.getElementById('m-assignee').value || null,
     completed_at: resolveCompletedAt(newStatus, existingTask ? existingTask.status : null, existingTask ? existingTask.completed_at : null)
   };
   const isNew = !state.editingId;
