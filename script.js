@@ -76,6 +76,22 @@ const THEMES = {
     glassBorderSoft: 'rgba(255, 255, 255, 0.06)',
     line: 'rgba(255, 255, 255, 0.07)',
     lineStrong: 'rgba(255, 255, 255, 0.14)'
+  },
+  gremio: {
+    name: 'Grêmio',
+    bg: '#0A1428',
+    p5: '#1B3A6B', p6: '#2C5AA0', p8: '#3D7DD8',
+    accent: '#1560BD', accentHover: '#0D4A9C',
+    text: '#C9D6E8', textStrong: '#FFFFFF',
+    textMuted: '#7891B5', textSoft: '#3D5578',
+    accentText: '#FFFFFF',
+    glass: 'rgba(10, 20, 40, 0.55)',
+    glassStrong: 'rgba(16, 30, 56, 0.75)',
+    glassHover: 'rgba(24, 42, 74, 0.85)',
+    glassBorder: 'rgba(255, 255, 255, 0.10)',
+    glassBorderSoft: 'rgba(255, 255, 255, 0.06)',
+    line: 'rgba(255, 255, 255, 0.08)',
+    lineStrong: 'rgba(255, 255, 255, 0.16)'
   }
 };
 
