@@ -1083,10 +1083,13 @@ function renderProjectPage(){
   return `
     <div class="view-header">
       <div>
-        <div class="eyebrow" style="cursor:pointer;" onclick="state.view='dashboard';render();">← Projetos</div>
+        <div class="eyebrow">Projeto compartilhado</div>
         <h1>${esc(p.name)}</h1>
       </div>
       <div style="display:flex;gap:10px;">
+        <button class="btn-back" onclick="state.view='dashboard';render();" title="Voltar aos projetos">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        </button>
         <button class="btn-secondary" onclick="openProjectsModal()">👥 Membros</button>
         ${canEdit ? `<button class="btn-primary" onclick="openModal(null, '', '${p.id}')">+ Nova tarefa</button>` : ''}
       </div>

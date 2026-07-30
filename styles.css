@@ -344,7 +344,7 @@
     transform:translateY(-1px);
     box-shadow:0 4px 14px rgba(91,122,148,0.35);
   }
-  .btn-primary:active, .btn-cta:active, .btn-secondary:active, .btn-danger:active, .auth-btn:active{
+  .btn-primary:active, .btn-cta:active, .btn-secondary:active, .btn-danger:active, .auth-btn:active, .btn-back:active{
     transform:scale(0.96);
   }
   .kb-card:active{transform:scale(0.98);}
@@ -1129,6 +1129,23 @@
     color:var(--text);
   }
   .btn-secondary:hover{background:rgba(255,255,255,0.9);}
+
+  .btn-back{
+    width:38px;
+    display:grid;place-items:center;
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+    border-radius:10px;
+    color:var(--text);
+    transition:all .15s ease;
+    flex-shrink:0;
+  }
+  .btn-back:hover{
+    background:var(--accent);
+    color:white;
+    border-color:var(--accent);
+    transform:translateX(-2px);
+  }
 
   .field-label-row{
     display:flex;
