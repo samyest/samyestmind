@@ -107,6 +107,7 @@ function applyTheme(name){
 
 function openSettings(){
   document.getElementById('s-name').value = getUserName();
+  renderMyAvatar('settings-avatar-preview', getUserName());
   const grid = document.getElementById('theme-grid');
   grid.innerHTML = Object.entries(THEMES).map(([key, t])=>`
     <button class="theme-card ${key===currentTheme?'selected':''}" data-theme="${key}" onclick="selectTheme('${key}')">
@@ -159,11 +160,12 @@ async function saveSettings(){
   if(error){alert('Erro ao salvar: ' + error.message);return;}
   const {data} = await sb.auth.getSession();
   session = data.session;
+  await syncOwnProfile();
   document.getElementById('settings-modal').classList.remove('open');
   render();
   const userName = getUserName();
   document.getElementById('user-name-display').textContent = userName;
-  document.getElementById('user-avatar').textContent = userName[0].toUpperCase();
+  renderMyAvatar('user-avatar', userName);
 }
 const DEFAULT_COLUMNS = [
   {key:'todo', name:'A Fazer', color:'#9AAFC2', type:'active'},
@@ -507,7 +509,8 @@ async function checkAuth(){
     state.columns = (session.user.user_metadata || {}).kanban_columns || JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
     document.getElementById('user-email').textContent = email;
     document.getElementById('user-name-display').textContent = name;
-    document.getElementById('user-avatar').textContent = name[0].toUpperCase();
+    renderMyAvatar('user-avatar', name);
+    await syncOwnProfile();
     await loadTasks();
     await loadProjects();
     setupRealtime();
@@ -738,6 +741,58 @@ async function logout(){
   location.reload();
 }
 
+function getUserAvatarUrl(){
+  return (session.user.user_metadata || {}).avatar_url || null;
+}
+
+function renderMyAvatar(elId, name){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  const url = getUserAvatarUrl();
+  if(url){
+    el.innerHTML = `<img src="${esc(url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">`;
+  } else {
+    el.textContent = name[0].toUpperCase();
+  }
+}
+
+async function syncOwnProfile(){
+  const name = getUserName();
+  const avatar_url = getUserAvatarUrl();
+  await sb.from('profiles').upsert({id: session.user.id, name, avatar_url, updated_at: new Date().toISOString()});
+}
+
+async function uploadAvatar(fileInput){
+  const file = fileInput.files[0];
+  if(!file) return;
+  if(!file.type.startsWith('image/')){alert('Escolhe uma imagem.');return;}
+  if(file.size > 4 * 1024 * 1024){alert('Imagem muito grande (máx 4MB).');return;}
+
+  const ext = file.name.split('.').pop();
+  const path = `${session.user.id}/avatar.${ext}`;
+
+  const btn = document.getElementById('avatar-upload-label');
+  if(btn) btn.textContent = 'Enviando...';
+
+  const {error: upErr} = await sb.storage.from('avatars').upload(path, file, {upsert: true, cacheControl: '3600'});
+  if(upErr){alert('Erro ao enviar foto: ' + upErr.message);if(btn) btn.textContent = 'Trocar foto';return;}
+
+  const {data: urlData} = sb.storage.from('avatars').getPublicUrl(path);
+  const publicUrl = urlData.publicUrl + '?t=' + Date.now();
+
+  const {error: metaErr} = await sb.auth.updateUser({data: {avatar_url: publicUrl}});
+  if(metaErr){alert('Erro ao salvar: ' + metaErr.message);if(btn) btn.textContent = 'Trocar foto';return;}
+
+  const {data} = await sb.auth.getSession();
+  session = data.session;
+  await syncOwnProfile();
+
+  renderMyAvatar('user-avatar', getUserName());
+  renderMyAvatar('settings-avatar-preview', getUserName());
+  if(btn) btn.textContent = 'Trocar foto';
+  showToast('Foto atualizada');
+}
+
 function getUserName(){
   if(!session) return '';
   const meta = session.user.user_metadata || {};
@@ -851,6 +906,21 @@ async function loadProjects(){
     (allMembers || []).forEach(m=>{
       if(projectMap[m.project_id]) projectMap[m.project_id].members.push(m);
     });
+
+    const profileIds = new Set();
+    Object.values(projectMap).forEach(p=>{
+      if(p.owner_id) profileIds.add(p.owner_id);
+      p.members.forEach(m=>{if(m.user_id) profileIds.add(m.user_id);});
+    });
+    if(profileIds.size > 0){
+      const {data: profiles} = await sb.from('profiles').select('id, name, avatar_url').in('id', [...profileIds]);
+      const profileMap = {};
+      (profiles || []).forEach(pr=>{profileMap[pr.id] = pr;});
+      Object.values(projectMap).forEach(p=>{
+        p.ownerProfile = profileMap[p.owner_id] || null;
+        p.members.forEach(m=>{m.profile = m.user_id ? (profileMap[m.user_id] || null) : null;});
+      });
+    }
   }
 
   state.projects = Object.values(projectMap);
@@ -1182,6 +1252,14 @@ function closeProjectsModal(){
   document.getElementById('projects-modal').classList.remove('open');
 }
 
+function avatarChip(profile, fallbackChar){
+  const url = profile && profile.avatar_url;
+  if(url){
+    return `<div class="member-avatar"><img src="${esc(url)}" alt=""></div>`;
+  }
+  return `<div class="member-avatar member-avatar-fallback">${esc((fallbackChar||'?').toUpperCase())}</div>`;
+}
+
 function renderProjectsModal(){
   const body = document.getElementById('projects-modal-body');
   let html = '';
@@ -1228,7 +1306,8 @@ function renderProjectsModal(){
       const isOwner = p.myRole === 'owner';
       const ownerRow = !isOwner ? `
         <div class="member-row">
-          <div class="member-email">${esc(p.owner_email || '—')}</div>
+          ${avatarChip(p.ownerProfile, (p.owner_email||'?')[0])}
+          <div class="member-email">${esc((p.ownerProfile && p.ownerProfile.name) || p.owner_email || '—')}</div>
           <div class="member-status accepted">Dono</div>
         </div>` : '';
       const membersHtml = p.members.length === 0
@@ -1238,9 +1317,10 @@ function renderProjectsModal(){
             ? (isOwner
                 ? `Código: <span style="color:var(--text-strong);font-family:'JetBrains Mono',monospace;letter-spacing:0.08em;">${esc(m.code)}</span>`
                 : `<span style="color:var(--text-soft);">Convite por código, ainda não usado</span>`)
-            : esc(m.invited_email || '—');
+            : esc((m.profile && m.profile.name) || m.invited_email || '—');
           return `
           <div class="member-row">
+            ${avatarChip(m.profile, (m.invited_email||'?')[0])}
             <div class="member-email">${label}</div>
             <div class="member-status ${m.status}">${m.status === 'accepted' ? 'Ativo' : 'Pendente'} · ${m.role === 'editor' ? 'Editor' : 'Visualizador'}</div>
             ${isOwner ? `<button class="member-remove" onclick="removeMember('${m.id}')" title="Remover"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>` : ''}

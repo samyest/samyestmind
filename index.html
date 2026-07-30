@@ -157,6 +157,17 @@
     </div>
     <div class="modal-body">
       <div class="field">
+        <label>Foto de perfil</label>
+        <div style="display:flex;align-items:center;gap:14px;">
+          <div id="settings-avatar-preview" class="settings-avatar-preview">?</div>
+          <div>
+            <label id="avatar-upload-label" for="avatar-upload-input" class="btn-secondary" style="cursor:pointer;display:inline-block;">Trocar foto</label>
+            <input type="file" id="avatar-upload-input" accept="image/*" style="display:none;" onchange="uploadAvatar(this)">
+            <div style="font-size:11px;color:var(--text-soft);margin-top:6px;">JPG ou PNG, até 4MB</div>
+          </div>
+        </div>
+      </div>
+      <div class="field">
         <label>Como você quer ser chamado</label>
         <input type="text" class="input" id="s-name" placeholder="Seu nome">
       </div>
