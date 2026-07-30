@@ -156,17 +156,19 @@ function selectTheme(name){
 async function saveSettings(){
   const name = document.getElementById('s-name').value.trim();
   if(!name){alert('Preencha seu nome');return;}
-  await ensureFreshSession();
-  const {error} = await sb.auth.updateUser({data: {name, theme: currentTheme}});
+  const {error} = await sb.from('profiles').upsert({
+    id: session.user.id,
+    name,
+    theme: currentTheme,
+    avatar_url: state.myAvatarUrl,
+    updated_at: new Date().toISOString()
+  });
   if(error){alert('Erro ao salvar: ' + error.message);return;}
-  const {data} = await sb.auth.getSession();
-  session = data.session;
-  await syncOwnProfile();
+  state.myName = name;
   document.getElementById('settings-modal').classList.remove('open');
   render();
-  const userName = getUserName();
-  document.getElementById('user-name-display').textContent = userName;
-  renderMyAvatar('user-avatar', userName);
+  document.getElementById('user-name-display').textContent = name;
+  renderMyAvatar('user-avatar', name);
 }
 const DEFAULT_COLUMNS = [
   {key:'todo', name:'A Fazer', color:'#9AAFC2', type:'active'},
@@ -217,11 +219,8 @@ function taskDotStyle(t){
 }
 
 async function persistColumns(){
-  await ensureFreshSession();
-  const {error} = await sb.auth.updateUser({data: {kanban_columns: state.columns}});
+  const {error} = await sb.from('profiles').update({kanban_columns: state.columns}).eq('id', session.user.id);
   if(error){alert('Erro ao salvar colunas: ' + error.message);return false;}
-  const {data} = await sb.auth.getSession();
-  session = data.session;
   return true;
 }
 
@@ -414,6 +413,7 @@ let state = {
   tasks: [],
   columns: null,
   myAvatarUrl: null,
+  myName: null,
   projects: [],
   pendingInvites: [],
   view: 'dashboard',
@@ -485,13 +485,6 @@ function priorityWeight(t){
   return 1;
 }
 
-async function ensureFreshSession(){
-  try{
-    const {data} = await sb.auth.refreshSession();
-    if(data && data.session) session = data.session;
-  }catch(e){}
-}
-
 async function checkAuth(){
   const {data} = await sb.auth.getSession();
   session = data.session;
@@ -503,8 +496,8 @@ async function checkAuth(){
   }
   if(session){
     authEl.classList.remove('show');
-    const meta = session.user.user_metadata || {};
-    if(!meta.name){
+    const {data: myProfile} = await sb.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+    if(!myProfile || !myProfile.name){
       appEl.style.display = 'none';
       onbEl.classList.add('show');
       setTimeout(()=>document.getElementById('onboarding-name').focus(), 60);
@@ -513,14 +506,13 @@ async function checkAuth(){
     onbEl.classList.remove('show');
     appEl.style.display = 'grid';
     const email = session.user.email;
-    const name = getUserName();
-    const savedTheme = (session.user.user_metadata || {}).theme || 'bluegray';
-    applyTheme(savedTheme);
-    state.columns = (session.user.user_metadata || {}).kanban_columns || JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+    state.myName = myProfile.name;
+    state.myAvatarUrl = myProfile.avatar_url || null;
+    applyTheme(myProfile.theme || 'bluegray');
+    state.columns = myProfile.kanban_columns || JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
     document.getElementById('user-email').textContent = email;
-    document.getElementById('user-name-display').textContent = name;
-    await syncOwnProfile();
-    renderMyAvatar('user-avatar', name);
+    document.getElementById('user-name-display').textContent = state.myName;
+    renderMyAvatar('user-avatar', state.myName);
     await loadTasks();
     await loadProjects();
     setupRealtime();
@@ -540,13 +532,10 @@ async function saveOnboarding(){
   if(!name){errorEl.textContent = 'Digite seu nome.';errorEl.classList.add('show');return;}
   btn.disabled = true;
   btn.textContent = 'Salvando...';
-  await ensureFreshSession();
-  const {error} = await sb.auth.updateUser({data: {name}});
+  const {error} = await sb.from('profiles').upsert({id: session.user.id, name, theme: 'bluegray', updated_at: new Date().toISOString()});
   btn.disabled = false;
   btn.textContent = 'Continuar';
   if(error){errorEl.textContent = error.message;errorEl.classList.add('show');return;}
-  const {data} = await sb.auth.getSession();
-  session = data.session;
   await checkAuth();
 }
 
@@ -767,13 +756,6 @@ function renderMyAvatar(elId, name){
   }
 }
 
-async function syncOwnProfile(){
-  const name = getUserName();
-  const {data: existing} = await sb.from('profiles').select('avatar_url').eq('id', session.user.id).maybeSingle();
-  state.myAvatarUrl = (existing && existing.avatar_url) || null;
-  await sb.from('profiles').upsert({id: session.user.id, name, avatar_url: state.myAvatarUrl, updated_at: new Date().toISOString()});
-}
-
 async function uploadAvatar(fileInput){
   const file = fileInput.files[0];
   if(!file) return;
@@ -808,10 +790,8 @@ async function uploadAvatar(fileInput){
 }
 
 function getUserName(){
+  if(state.myName) return state.myName;
   if(!session) return '';
-  const meta = session.user.user_metadata || {};
-  if(meta.name) return meta.name;
-  if(meta.full_name) return meta.full_name.split(' ')[0];
   const emailPart = session.user.email.split('@')[0];
   const firstPart = emailPart.split(/[._-]/)[0];
   return firstPart.charAt(0).toUpperCase() + firstPart.slice(1);
@@ -821,11 +801,9 @@ async function editUserName(){
   const current = getUserName();
   const newName = prompt('Como você quer ser chamado?', current);
   if(!newName || newName.trim() === '' || newName === current) return;
-  await ensureFreshSession();
-  const {error} = await sb.auth.updateUser({data: {name: newName.trim()}});
+  const {error} = await sb.from('profiles').upsert({id: session.user.id, name: newName.trim(), updated_at: new Date().toISOString()});
   if(error){alert('Erro ao salvar nome: ' + error.message);return;}
-  const {data} = await sb.auth.getSession();
-  session = data.session;
+  state.myName = newName.trim();
   render();
 }
 
