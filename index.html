@@ -604,6 +604,10 @@
     border-color:var(--accent);
     background:rgba(255,255,255,0.8);
   }
+  .input:disabled, .select:disabled, textarea:disabled{
+    opacity:0.5;
+    cursor:not-allowed;
+  }
   .input::placeholder{color:var(--text-soft);}
   .select{cursor:pointer;}
 
@@ -1438,6 +1442,103 @@
   }
   .settings-col-edit:hover{color:var(--accent);background:var(--glass-strong);}
 
+  .project-card{
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:16px;
+    margin-bottom:12px;
+  }
+  .project-card-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:10px;
+  }
+  .project-card-name{
+    font-family:'Space Grotesk';
+    font-weight:500;
+    font-size:15px;
+    color:var(--text-strong);
+  }
+  .project-card-role{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:var(--text-muted);
+    background:var(--glass);
+    padding:3px 9px;
+    border-radius:20px;
+  }
+  .member-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:8px 0;
+    font-size:12.5px;
+    border-bottom:1px solid var(--line);
+  }
+  .member-row:last-child{border-bottom:none;}
+  .member-email{flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .member-status{
+    font-family:'JetBrains Mono',monospace;
+    font-size:9.5px;
+    text-transform:uppercase;
+    padding:2px 8px;
+    border-radius:20px;
+    background:var(--glass);
+    color:var(--text-muted);
+  }
+  .member-status.accepted{color:var(--done);}
+  .member-status.pending{color:var(--waiting);}
+  .member-remove{
+    color:var(--text-muted);
+    padding:2px 4px;
+    border-radius:4px;
+    flex-shrink:0;
+  }
+  .member-remove:hover{color:var(--danger);}
+  .invite-row{display:flex;gap:6px;margin-top:10px;}
+  .invite-row .input{flex:1;}
+  .invite-row select{
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:0 8px;
+    font-size:12px;
+    color:var(--text);
+  }
+  .pending-invite-card{
+    background:rgba(201,168,104,0.12);
+    border:1px solid rgba(201,168,104,0.3);
+    border-radius:12px;
+    padding:14px 16px;
+    margin-bottom:12px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+  }
+  .invite-dot-badge{
+    width:7px;height:7px;
+    border-radius:50%;
+    background:var(--waiting);
+    display:inline-block;
+  }
+  .project-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:4px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:9.5px;
+    color:var(--text-muted);
+    background:rgba(154,175,194,0.14);
+    padding:2px 8px;
+    border-radius:20px;
+    white-space:nowrap;
+  }
+
   .mobile-topbar{
     display:none;
     align-items:center;
@@ -1821,6 +1922,14 @@
         <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">Tarefas com prazo aparecem automaticamente no seu Google Calendar.</p>
         <button class="btn-secondary" id="google-cal-btn" onclick="connectGoogleCalendar()" style="width:100%;">Conectar</button>
       </div>
+      <div class="field">
+        <div class="field-label-row">
+          <label>Projetos compartilhados</label>
+          <span id="pending-invites-badge"></span>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">Gerencie projetos com outras pessoas — convide por email e escolha quem edita ou só visualiza.</p>
+        <button class="btn-secondary" style="width:100%;" onclick="closeSettings();openProjectsModal();">Abrir projetos</button>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn-danger" onclick="logout()">Sair da conta</button>
@@ -1841,6 +1950,22 @@
       </button>
     </div>
     <div class="modal-body" id="status-modal-body" style="padding-top:8px;padding-bottom:20px;"></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="projects-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-head-title">Projetos compartilhados</div>
+      <button class="modal-close" onclick="closeProjectsModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="projects-modal-body" style="padding-top:16px;"></div>
+    <div class="modal-foot">
+      <div></div>
+      <button class="btn-secondary" onclick="closeProjectsModal()">Fechar</button>
+    </div>
   </div>
 </div>
 
@@ -1914,6 +2039,12 @@
             <option value="urgent">🔥 Urgente</option>
           </select>
         </div>
+      </div>
+      <div class="field" id="m-project-field" style="display:none;">
+        <label>Projeto compartilhado</label>
+        <select class="select" id="m-project">
+          <option value="">Pessoal (privado)</option>
+        </select>
       </div>
       <div class="field">
         <div class="field-label-row">
@@ -2271,6 +2402,8 @@ const DEFAULT_CLIENTS = ['Elliz B (Donna da Lua)','Adelso Costa','Conteinner','A
 let state = {
   tasks: [],
   columns: null,
+  projects: [],
+  pendingInvites: [],
   view: 'dashboard',
   editingId: null,
   calDate: new Date(),
@@ -2298,6 +2431,11 @@ function matchesDateFilter(t, filter){
 function setDateFilter(f){
   state.dateFilter = f;
   render();
+}
+
+function projectName(id){
+  const p = state.projects.find(x=>x.id===id);
+  return p ? p.name : null;
 }
 
 function isoDateFromTimestamp(ts){
@@ -2363,6 +2501,7 @@ async function checkAuth(){
     document.getElementById('user-name-display').textContent = name;
     document.getElementById('user-avatar').textContent = name[0].toUpperCase();
     await loadTasks();
+    await loadProjects();
   } else {
     appEl.style.display = 'none';
     onbEl.classList.remove('show');
@@ -2562,6 +2701,8 @@ async function loadTasks(){
     notes: t.notes || '',
     google_event_id: t.google_event_id || null,
     completed_at: t.completed_at || null,
+    project_id: t.project_id || null,
+    owner_id: t.user_id,
     created: new Date(t.created_at).getTime()
   }));
   render();
@@ -2576,7 +2717,8 @@ async function createTaskRemote(data){
     priority: data.priority,
     date: data.date || null,
     notes: data.notes || null,
-    completed_at: data.completed_at || null
+    completed_at: data.completed_at || null,
+    project_id: data.project_id || null
   }).select().single();
   if(error){alert('Erro ao criar tarefa: ' + error.message);return null;}
   return {
@@ -2589,6 +2731,8 @@ async function createTaskRemote(data){
     notes: task.notes || '',
     google_event_id: null,
     completed_at: task.completed_at || null,
+    project_id: task.project_id || null,
+    owner_id: task.user_id,
     created: new Date(task.created_at).getTime()
   };
 }
@@ -2603,6 +2747,7 @@ async function updateTaskRemote(id, data){
     notes: data.notes || null
   };
   if('completed_at' in data) payload.completed_at = data.completed_at || null;
+  if('project_id' in data) payload.project_id = data.project_id || null;
   const {error} = await sb.from('tasks').update(payload).eq('id', id);
   if(error){alert('Erro ao atualizar: ' + error.message);return false;}
   return true;
@@ -2612,6 +2757,203 @@ async function deleteTaskRemote(id){
   const {error} = await sb.from('tasks').delete().eq('id', id);
   if(error){alert('Erro ao excluir: ' + error.message);return false;}
   return true;
+}
+
+async function loadProjects(){
+  const myEmail = session.user.email;
+
+  const {data: owned} = await sb.from('projects').select('*').eq('owner_id', session.user.id);
+  const {data: memberOf} = await sb.from('project_members').select('project_id, projects(*)').eq('user_id', session.user.id).eq('status', 'accepted');
+  const {data: pending} = await sb.from('project_members').select('*, projects(name)').eq('invited_email', myEmail).eq('status', 'pending');
+
+  const projectMap = {};
+  (owned || []).forEach(p=>{projectMap[p.id] = {...p, myRole: 'owner', members: []};});
+  (memberOf || []).forEach(m=>{
+    if(m.projects && !projectMap[m.project_id]){
+      projectMap[m.project_id] = {...m.projects, myRole: 'member', members: []};
+    }
+  });
+
+  const projectIds = Object.keys(projectMap);
+  if(projectIds.length > 0){
+    const {data: allMembers} = await sb.from('project_members').select('*').in('project_id', projectIds);
+    (allMembers || []).forEach(m=>{
+      if(projectMap[m.project_id]) projectMap[m.project_id].members.push(m);
+    });
+  }
+
+  state.projects = Object.values(projectMap);
+  state.pendingInvites = pending || [];
+  updatePendingInvitesBadge();
+}
+
+function updatePendingInvitesBadge(){
+  const el = document.getElementById('pending-invites-badge');
+  if(!el) return;
+  if(state.pendingInvites.length > 0){
+    el.innerHTML = `<span class="invite-dot-badge"></span> ${state.pendingInvites.length} convite${state.pendingInvites.length>1?'s':''}`;
+    el.style.color = 'var(--waiting)';
+    el.style.fontFamily = "'JetBrains Mono',monospace";
+    el.style.fontSize = '10.5px';
+  } else {
+    el.textContent = '';
+  }
+}
+
+function myRoleInProject(projectId){
+  const p = state.projects.find(x=>x.id===projectId);
+  if(!p) return null;
+  if(p.myRole === 'owner') return 'owner';
+  const m = p.members.find(x=>x.user_id===session.user.id);
+  return m ? m.role : null;
+}
+
+function canEditProject(projectId){
+  const role = myRoleInProject(projectId);
+  return role === 'owner' || role === 'editor';
+}
+
+async function createProject(){
+  const nameInput = document.getElementById('new-project-name');
+  const name = nameInput.value.trim();
+  if(!name){nameInput.focus();return;}
+  const {error} = await sb.from('projects').insert({name, owner_id: session.user.id});
+  if(error){alert('Erro ao criar projeto: ' + error.message);return;}
+  nameInput.value = '';
+  await loadProjects();
+  renderProjectsModal();
+  showToast('Projeto criado');
+}
+
+async function inviteToProject(projectId){
+  const emailInput = document.getElementById(`invite-email-${projectId}`);
+  const roleSelect = document.getElementById(`invite-role-${projectId}`);
+  const email = emailInput.value.trim().toLowerCase();
+  if(!email || !email.includes('@')){emailInput.focus();return;}
+  const {error} = await sb.from('project_members').insert({
+    project_id: projectId,
+    invited_email: email,
+    role: roleSelect.value,
+    status: 'pending'
+  });
+  if(error){alert('Erro ao convidar: ' + error.message);return;}
+  emailInput.value = '';
+  await loadProjects();
+  renderProjectsModal();
+  showToast('Convite enviado');
+}
+
+async function removeMember(memberId){
+  if(!confirm('Remover essa pessoa do projeto?')) return;
+  const {error} = await sb.from('project_members').delete().eq('id', memberId);
+  if(error){alert('Erro: ' + error.message);return;}
+  await loadProjects();
+  renderProjectsModal();
+  showToast('Removido');
+}
+
+async function acceptInvite(memberId){
+  const {error} = await sb.from('project_members').update({user_id: session.user.id, status: 'accepted'}).eq('id', memberId);
+  if(error){alert('Erro ao aceitar: ' + error.message);return;}
+  await loadProjects();
+  renderProjectsModal();
+  showToast('Convite aceito');
+  render();
+}
+
+async function declineInvite(memberId){
+  const {error} = await sb.from('project_members').delete().eq('id', memberId);
+  if(error){alert('Erro: ' + error.message);return;}
+  await loadProjects();
+  renderProjectsModal();
+}
+
+async function deleteProject(projectId){
+  if(!confirm('Excluir este projeto? As tarefas voltam a ser privadas, mas o projeto some pra todo mundo.')) return;
+  const {error} = await sb.from('projects').delete().eq('id', projectId);
+  if(error){alert('Erro: ' + error.message);return;}
+  await loadProjects();
+  renderProjectsModal();
+  showToast('Projeto excluído');
+  render();
+}
+
+function openProjectsModal(){
+  renderProjectsModal();
+  document.getElementById('projects-modal').classList.add('open');
+}
+function closeProjectsModal(){
+  document.getElementById('projects-modal').classList.remove('open');
+}
+
+function renderProjectsModal(){
+  const body = document.getElementById('projects-modal-body');
+  let html = '';
+
+  if(state.pendingInvites.length > 0){
+    html += state.pendingInvites.map(inv=>`
+      <div class="pending-invite-card">
+        <div>
+          <div style="font-weight:500;color:var(--text-strong);font-size:13.5px;">${esc(inv.projects ? inv.projects.name : 'Projeto')}</div>
+          <div style="font-size:11.5px;color:var(--text-muted);">Convite como ${inv.role === 'editor' ? 'editor' : 'visualizador'}</div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn-secondary" style="padding:7px 12px;font-size:12px;" onclick="declineInvite('${inv.id}')">Recusar</button>
+          <button class="btn-primary" style="padding:7px 12px;font-size:12px;" onclick="acceptInvite('${inv.id}')">Aceitar</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  html += `
+    <div class="field" style="margin-bottom:18px;">
+      <label>Criar novo projeto</label>
+      <div class="invite-row">
+        <input type="text" class="input" id="new-project-name" placeholder="Nome do projeto" onkeypress="if(event.key==='Enter')createProject()">
+        <button class="btn-primary" style="flex-shrink:0;padding:0 16px;" onclick="createProject()">Criar</button>
+      </div>
+    </div>
+  `;
+
+  if(state.projects.length === 0){
+    html += `<div class="empty"><strong>Nenhum projeto ainda.</strong>Crie um acima pra convidar alguém.</div>`;
+  } else {
+    html += state.projects.map(p=>{
+      const isOwner = p.myRole === 'owner';
+      const membersHtml = p.members.length === 0
+        ? `<div style="font-size:12px;color:var(--text-soft);padding:6px 0;">Ninguém convidado ainda.</div>`
+        : p.members.map(m=>`
+          <div class="member-row">
+            <div class="member-email">${esc(m.invited_email)}</div>
+            <div class="member-status ${m.status}">${m.status === 'accepted' ? 'Ativo' : 'Pendente'} · ${m.role === 'editor' ? 'Editor' : 'Visualizador'}</div>
+            ${isOwner ? `<button class="member-remove" onclick="removeMember('${m.id}')" title="Remover"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>` : ''}
+          </div>
+        `).join('');
+
+      return `
+        <div class="project-card">
+          <div class="project-card-head">
+            <div class="project-card-name">${esc(p.name)}</div>
+            <div class="project-card-role">${isOwner ? 'Dono' : myRoleInProject(p.id) === 'editor' ? 'Editor' : 'Visualizador'}</div>
+          </div>
+          ${membersHtml}
+          ${isOwner ? `
+            <div class="invite-row">
+              <input type="email" class="input" id="invite-email-${p.id}" placeholder="Email pra convidar">
+              <select id="invite-role-${p.id}">
+                <option value="editor">Editor</option>
+                <option value="viewer">Visualizador</option>
+              </select>
+              <button class="btn-secondary" style="flex-shrink:0;padding:0 14px;" onclick="inviteToProject('${p.id}')">Convidar</button>
+            </div>
+            <button class="btn-danger" style="width:100%;margin-top:10px;" onclick="deleteProject('${p.id}')">Excluir projeto</button>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  body.innerHTML = html;
 }
 
 function fmtDate(iso){
@@ -2741,6 +3083,8 @@ function renderDashboard(){
       : isHigh ? '<span class="priority-badge high">Alta</span>' : '';
     const cls = isUrgent ? 'urgent' : (isHigh ? 'high' : '');
     const dot = statusDotStyle(t.status);
+    const pName = t.project_id ? projectName(t.project_id) : null;
+    const projBadge = pName ? `<span class="project-badge">👥 ${esc(pName)}</span>` : '';
     return `
       <div class="task-row ${cls}" onclick="openModal('${t.id}')">
         <div class="task-check ${dot.cls}" style="${dot.style}"></div>
@@ -2748,6 +3092,7 @@ function renderDashboard(){
         <div class="task-date ${dateStatus(t.date)}">${t.date ? fmtDate(t.date) : '—'}</div>
         <span class="task-row-break"></span>
         ${badge}
+        ${projBadge}
         <div class="task-client">${esc(t.client || '—')}</div>
       </div>`;
   };
@@ -2909,10 +3254,13 @@ function renderKanban(){
                 : list.map(t=>{
                   const badge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
                   const doneCls = col.type === 'done' ? 'done' : '';
+                  const pName = t.project_id ? projectName(t.project_id) : null;
+                  const projBadge = pName ? `<span class="project-badge" style="margin-bottom:6px;">👥 ${esc(pName)}</span>` : '';
                   return `
                   <div class="kb-card ${doneCls}" style="--col-color:${col.color}" draggable="true" ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)" onclick="openModal('${t.id}')">
                     <div class="kb-card-client">${esc(t.client || '—')}</div>
                     <div class="kb-card-title">${esc(t.title)}</div>
+                    ${projBadge}
                     <div class="kb-card-meta">
                       <span class="${dateStatus(t.date)}">${t.date ? fmtDate(t.date) : 'sem prazo'}</span>
                       ${badge}
@@ -3149,6 +3497,7 @@ function openModal(id, prefillDate){
   const modal = document.getElementById('modal');
   const title = document.getElementById('modal-title');
   const delBtn = document.getElementById('m-delete');
+  populateProjectSelect();
   if(id){
     const t = state.tasks.find(x=>x.id===id);
     if(!t) return;
@@ -3158,8 +3507,12 @@ function openModal(id, prefillDate){
     populateStatusSelect('m-status', t.status || getColumns()[0].key);
     document.getElementById('m-date').value = t.date || '';
     document.getElementById('m-priority').value = t.priority || 'normal';
+    document.getElementById('m-project').value = t.project_id || '';
     document.getElementById('m-notes').value = t.notes || '';
-    delBtn.style.display = '';
+    const isMine = t.owner_id === session.user.id;
+    const canEdit = isMine || (t.project_id && canEditProject(t.project_id));
+    delBtn.style.display = canEdit ? '' : 'none';
+    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format').forEach(el=>{el.disabled = !canEdit;});
   }else{
     title.textContent = 'Nova tarefa';
     document.getElementById('m-title').value = '';
@@ -3167,11 +3520,26 @@ function openModal(id, prefillDate){
     populateStatusSelect('m-status', getColumns()[0].key);
     document.getElementById('m-date').value = prefillDate || '';
     document.getElementById('m-priority').value = 'normal';
+    document.getElementById('m-project').value = '';
     document.getElementById('m-notes').value = '';
     delBtn.style.display = 'none';
+    document.querySelectorAll('#modal input, #modal select, #modal textarea').forEach(el=>{el.disabled = false;});
   }
   modal.classList.add('open');
   setTimeout(()=>document.getElementById('m-title').focus(), 50);
+}
+
+function populateProjectSelect(){
+  const editableProjects = state.projects.filter(p=>p.myRole === 'owner' || myRoleInProject(p.id) === 'editor');
+  const field = document.getElementById('m-project-field');
+  const sel = document.getElementById('m-project');
+  if(editableProjects.length === 0){
+    field.style.display = 'none';
+    sel.innerHTML = '<option value="">Pessoal (privado)</option>';
+    return;
+  }
+  field.style.display = '';
+  sel.innerHTML = '<option value="">Pessoal (privado)</option>' + editableProjects.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
 }
 
 function closeModal(){document.getElementById('modal').classList.remove('open');state.editingId = null;}
@@ -3188,6 +3556,7 @@ async function saveTask(){
     date: document.getElementById('m-date').value,
     priority: document.getElementById('m-priority').value,
     notes: document.getElementById('m-notes').value.trim(),
+    project_id: document.getElementById('m-project').value || null,
     completed_at: resolveCompletedAt(newStatus, existingTask ? existingTask.status : null, existingTask ? existingTask.completed_at : null)
   };
   const isNew = !state.editingId;
@@ -3269,14 +3638,16 @@ document.getElementById('modal').addEventListener('click', (e)=>{if(e.target.id 
 document.getElementById('settings-modal').addEventListener('click', (e)=>{if(e.target.id === 'settings-modal') closeSettings();});
 document.getElementById('column-modal').addEventListener('click', (e)=>{if(e.target.id === 'column-modal') closeColumnModal();});
 document.getElementById('status-modal').addEventListener('click', (e)=>{if(e.target.id === 'status-modal') closeStatusModal();});
+document.getElementById('projects-modal').addEventListener('click', (e)=>{if(e.target.id === 'projects-modal') closeProjectsModal();});
 document.addEventListener('keydown', (e)=>{
   if(e.key === 'Escape'){
     closeModal();
     closeSettings();
     closeColumnModal();
     closeStatusModal();
+    closeProjectsModal();
   }
-  if(e.key === 'n' && !document.getElementById('modal').classList.contains('open') && !document.getElementById('settings-modal').classList.contains('open') && !document.getElementById('column-modal').classList.contains('open') && !document.getElementById('status-modal').classList.contains('open') && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA'){
+  if(e.key === 'n' && !document.getElementById('modal').classList.contains('open') && !document.getElementById('settings-modal').classList.contains('open') && !document.getElementById('column-modal').classList.contains('open') && !document.getElementById('status-modal').classList.contains('open') && !document.getElementById('projects-modal').classList.contains('open') && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA'){
     e.preventDefault();openModal();
   }
 });
