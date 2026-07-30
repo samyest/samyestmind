@@ -338,6 +338,7 @@ let state = {
   projects: [],
   pendingInvites: [],
   view: 'dashboard',
+  currentProjectId: null,
   editingId: null,
   calDate: new Date(),
   calSelectedDate: null,
@@ -753,8 +754,9 @@ function renderSidebarProjects(){
     html += `<div class="nav-label">Projetos</div>`;
     html += state.projects.map(p=>{
       const role = p.myRole === 'owner' ? 'Dono' : (myRoleInProject(p.id) === 'editor' ? 'Editor' : 'Vendo');
+      const isActive = state.view === 'project' && state.currentProjectId === p.id;
       return `
-        <button class="sidebar-project-item" onclick="openProjectsModal()" title="${esc(p.name)}">
+        <button class="sidebar-project-item ${isActive?'active':''}" onclick="openProjectView('${p.id}')" title="${esc(p.name)}">
           <span class="sidebar-project-dot"></span>
           <span class="sidebar-project-name">${esc(p.name)}</span>
           <span class="sidebar-project-role">${role}</span>
@@ -881,6 +883,132 @@ async function deleteProject(projectId){
   renderProjectsModal();
   showToast('Projeto excluído');
   render();
+}
+
+function openProjectView(projectId){
+  state.currentProjectId = projectId;
+  state.view = 'project';
+  render();
+  window.scrollTo(0,0);
+}
+
+let notesSaveTimer = null;
+function scheduleProjectNotesSave(){
+  if(notesSaveTimer) clearTimeout(notesSaveTimer);
+  notesSaveTimer = setTimeout(saveProjectNotes, 900);
+}
+
+async function saveProjectNotes(){
+  const el = document.getElementById('project-notes-editor');
+  if(!el) return;
+  const p = state.projects.find(x=>x.id===state.currentProjectId);
+  if(!p) return;
+  const html = el.innerHTML;
+  const {error} = await sb.from('projects').update({notes: html}).eq('id', p.id);
+  if(!error){
+    p.notes = html;
+    const indicator = document.getElementById('notes-save-indicator');
+    if(indicator){
+      indicator.textContent = 'Salvo';
+      indicator.style.opacity = '1';
+      setTimeout(()=>{indicator.style.opacity = '0';}, 1500);
+    }
+  }
+}
+
+function execEditorCmd(cmd, value){
+  document.getElementById('project-notes-editor').focus();
+  document.execCommand(cmd, false, value || null);
+  scheduleProjectNotesSave();
+}
+
+function insertProjectImage(){
+  const url = prompt('Cole o link da imagem:');
+  if(!url) return;
+  document.getElementById('project-notes-editor').focus();
+  document.execCommand('insertImage', false, url);
+  scheduleProjectNotesSave();
+}
+
+function renderProjectPage(){
+  const p = state.projects.find(x=>x.id===state.currentProjectId);
+  if(!p){
+    return `<div class="view-header"><div><div class="eyebrow">Projeto</div><h1>Não encontrado</h1></div></div>
+      <div class="empty"><strong>Esse projeto não existe mais ou você não tem acesso.</strong><button class="btn-secondary" style="margin-top:12px;" onclick="state.view='dashboard';render();">Voltar</button></div>`;
+  }
+  const isOwner = p.myRole === 'owner';
+  const role = myRoleInProject(p.id);
+  const canEdit = isOwner || role === 'editor';
+  const projectTasks = state.tasks.filter(t=>t.project_id===p.id);
+  const cols = getColumns();
+  const activeCount = projectTasks.filter(t=>columnType(t.status)!=='done').length;
+
+  return `
+    <div class="view-header">
+      <div>
+        <div class="eyebrow" style="cursor:pointer;" onclick="state.view='dashboard';render();">← Projetos</div>
+        <h1>${esc(p.name)}</h1>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn-secondary" onclick="openProjectsModal()">👥 Membros</button>
+        ${canEdit ? `<button class="btn-primary" onclick="openModal(null, '', '${p.id}')">+ Nova tarefa</button>` : ''}
+      </div>
+    </div>
+
+    <div class="glass panel" style="margin-bottom:20px;">
+      <div class="panel-head">
+        <div class="panel-title">📝 Notas do projeto</div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="notes-save-indicator" style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--done);opacity:0;transition:opacity .3s;">Salvo</span>
+          ${canEdit ? `
+          <div style="display:flex;gap:4px;">
+            <button class="editor-btn" onclick="execEditorCmd('bold')" title="Negrito"><b>B</b></button>
+            <button class="editor-btn" onclick="execEditorCmd('italic')" title="Itálico"><i>I</i></button>
+            <button class="editor-btn" onclick="execEditorCmd('formatBlock','H3')" title="Título">H</button>
+            <button class="editor-btn" onclick="execEditorCmd('insertUnorderedList')" title="Lista">•</button>
+            <button class="editor-btn" onclick="insertProjectImage()" title="Imagem">🖼</button>
+          </div>` : ''}
+        </div>
+      </div>
+      <div id="project-notes-editor" class="project-notes-editor" ${canEdit ? 'contenteditable="true"' : ''} oninput="scheduleProjectNotesSave()" data-placeholder="${canEdit ? 'Escreva aqui — contexto, links, decisões do projeto...' : 'Nenhuma nota ainda.'}">${p.notes || ''}</div>
+    </div>
+
+    <div class="glass panel" style="padding-bottom:20px;">
+      <div class="panel-head">
+        <div class="panel-title">Tarefas do projeto</div>
+        <div class="panel-hint">${activeCount} ativa${activeCount!==1?'s':''} · ${projectTasks.length} no total</div>
+      </div>
+      <div class="kanban" style="margin-top:4px;">
+        ${cols.map(col=>{
+          const list = projectTasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t));
+          return `
+            <div class="glass kb-col" data-status="${col.key}" ondragover="dragOver(event)" ondrop="drop(event,'${col.key}')" ondragleave="dragLeave(event)">
+              <div class="kb-col-head">
+                <div class="kb-col-title"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}</div>
+                <div class="kb-col-count">${list.length}</div>
+              </div>
+              <div class="kb-cards">
+                ${list.length===0
+                  ? `<div class="empty" style="padding:22px 8px;font-size:12px;"><strong>Nada aqui</strong></div>`
+                  : list.map(t=>{
+                    const badge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
+                    const doneCls = col.type === 'done' ? 'done' : '';
+                    return `
+                    <div class="kb-card ${doneCls}" style="--col-color:${col.color}" draggable="true" ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)" onclick="openModal('${t.id}')">
+                      <div class="kb-card-client">${esc(t.client || '—')}</div>
+                      <div class="kb-card-title">${esc(t.title)}</div>
+                      <div class="kb-card-meta">
+                        <span class="${dateStatus(t.date)}">${t.date ? fmtDate(t.date) : 'sem prazo'}</span>
+                        ${badge}
+                      </div>
+                    </div>`;
+                  }).join('')}
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
 }
 
 function openProjectsModal(){
@@ -1066,6 +1194,7 @@ function updateNav(){
     state.tasks.forEach(t=>{if(t.client) set.add(t.client);});
     list.innerHTML = [...set].map(c=>`<option value="${esc(c)}">`).join('');
   }
+  renderSidebarProjects();
 }
 
 function render(){
@@ -1075,6 +1204,7 @@ function render(){
   else if(state.view === 'kanban') m.innerHTML = renderKanban();
   else if(state.view === 'calendar') m.innerHTML = renderCalendar();
   else if(state.view === 'table') m.innerHTML = renderTable();
+  else if(state.view === 'project') m.innerHTML = renderProjectPage();
   m.scrollLeft = 0;
   attachEvents();
 }
@@ -1523,7 +1653,7 @@ function attachEvents(){
   });
 }
 
-function openModal(id, prefillDate){
+function openModal(id, prefillDate, prefillProjectId){
   state.editingId = id || null;
   const modal = document.getElementById('modal');
   const title = document.getElementById('modal-title');
@@ -1551,7 +1681,7 @@ function openModal(id, prefillDate){
     populateStatusSelect('m-status', getColumns()[0].key);
     document.getElementById('m-date').value = prefillDate || '';
     document.getElementById('m-priority').value = 'normal';
-    document.getElementById('m-project').value = '';
+    document.getElementById('m-project').value = prefillProjectId || '';
     document.getElementById('m-notes').value = '';
     delBtn.style.display = 'none';
     document.querySelectorAll('#modal input, #modal select, #modal textarea').forEach(el=>{el.disabled = false;});
