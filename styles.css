@@ -170,7 +170,6 @@
   .brand{
     display:flex;
     align-items:center;
-    justify-content:space-between;
     gap:11px;
     padding:0 6px 28px;
     margin-bottom:12px;
