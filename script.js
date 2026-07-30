@@ -156,6 +156,7 @@ function selectTheme(name){
 async function saveSettings(){
   const name = document.getElementById('s-name').value.trim();
   if(!name){alert('Preencha seu nome');return;}
+  await ensureFreshSession();
   const {error} = await sb.auth.updateUser({data: {name, theme: currentTheme}});
   if(error){alert('Erro ao salvar: ' + error.message);return;}
   const {data} = await sb.auth.getSession();
@@ -216,6 +217,7 @@ function taskDotStyle(t){
 }
 
 async function persistColumns(){
+  await ensureFreshSession();
   const {error} = await sb.auth.updateUser({data: {kanban_columns: state.columns}});
   if(error){alert('Erro ao salvar colunas: ' + error.message);return false;}
   const {data} = await sb.auth.getSession();
@@ -483,6 +485,13 @@ function priorityWeight(t){
   return 1;
 }
 
+async function ensureFreshSession(){
+  try{
+    const {data} = await sb.auth.refreshSession();
+    if(data && data.session) session = data.session;
+  }catch(e){}
+}
+
 async function checkAuth(){
   const {data} = await sb.auth.getSession();
   session = data.session;
@@ -531,6 +540,7 @@ async function saveOnboarding(){
   if(!name){errorEl.textContent = 'Digite seu nome.';errorEl.classList.add('show');return;}
   btn.disabled = true;
   btn.textContent = 'Salvando...';
+  await ensureFreshSession();
   const {error} = await sb.auth.updateUser({data: {name}});
   btn.disabled = false;
   btn.textContent = 'Continuar';
@@ -811,6 +821,7 @@ async function editUserName(){
   const current = getUserName();
   const newName = prompt('Como você quer ser chamado?', current);
   if(!newName || newName.trim() === '' || newName === current) return;
+  await ensureFreshSession();
   const {error} = await sb.auth.updateUser({data: {name: newName.trim()}});
   if(error){alert('Erro ao salvar nome: ' + error.message);return;}
   const {data} = await sb.auth.getSession();
