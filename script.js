@@ -983,7 +983,7 @@ async function joinByCode(){
   input.value = '';
   await loadProjects();
   renderProjectsModal();
-  showToast('Você entrou no projeto!');
+  showToast(data.already_member ? 'Você já era membro desse projeto' : 'Você entrou no projeto!');
   render();
 }
 
@@ -997,8 +997,20 @@ async function removeMember(memberId){
 }
 
 async function acceptInvite(memberId){
+  const invite = state.pendingInvites.find(i=>i.id===memberId);
   const {error} = await sb.from('project_members').update({user_id: session.user.id, status: 'accepted'}).eq('id', memberId);
-  if(error){alert('Erro ao aceitar: ' + error.message);return;}
+  if(error){
+    if(error.code === '23505' || (error.message||'').includes('duplicate')){
+      await sb.from('project_members').delete().eq('id', memberId);
+      await loadProjects();
+      renderProjectsModal();
+      showToast('Você já era membro desse projeto');
+      render();
+      return;
+    }
+    alert('Erro ao aceitar: ' + error.message);
+    return;
+  }
   await loadProjects();
   renderProjectsModal();
   showToast('Convite aceito');
@@ -1223,7 +1235,9 @@ function renderProjectsModal(){
         ? `<div style="font-size:12px;color:var(--text-soft);padding:6px 0;">Ninguém convidado ainda.</div>`
         : p.members.map(m=>{
           const label = m.code
-            ? `Código: <span style="color:var(--text-strong);font-family:'JetBrains Mono',monospace;letter-spacing:0.08em;">${esc(m.code)}</span>`
+            ? (isOwner
+                ? `Código: <span style="color:var(--text-strong);font-family:'JetBrains Mono',monospace;letter-spacing:0.08em;">${esc(m.code)}</span>`
+                : `<span style="color:var(--text-soft);">Convite por código, ainda não usado</span>`)
             : esc(m.invited_email || '—');
           return `
           <div class="member-row">
