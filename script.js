@@ -91,7 +91,8 @@ const THEMES = {
     glassBorder: 'rgba(255, 255, 255, 0.10)',
     glassBorderSoft: 'rgba(255, 255, 255, 0.06)',
     line: 'rgba(255, 255, 255, 0.08)',
-    lineStrong: 'rgba(255, 255, 255, 0.16)'
+    lineStrong: 'rgba(255, 255, 255, 0.16)',
+    bgPhoto: 'gremio-bg.jpg'
   }
 };
 
@@ -119,6 +120,7 @@ function applyTheme(name){
   r.setProperty('--glass-border-soft', t.glassBorderSoft || 'rgba(255,255,255,0.5)');
   r.setProperty('--line', t.line || 'rgba(122, 142, 162, 0.14)');
   r.setProperty('--line-strong', t.lineStrong || 'rgba(122, 142, 162, 0.22)');
+  document.body.classList.toggle('theme-bg-photo', !!t.bgPhoto);
 }
 
 function openSettings(){

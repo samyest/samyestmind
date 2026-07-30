@@ -74,6 +74,19 @@
     opacity:0.55;
   }
 
+  body.theme-bg-photo{
+    background-image:
+      linear-gradient(rgba(6,12,26,0.88), rgba(6,12,26,0.94)),
+      url('gremio-bg.jpg');
+    background-size:cover;
+    background-position:center 20%;
+    background-attachment:fixed;
+    background-repeat:no-repeat;
+  }
+  body.theme-bg-photo::before, body.theme-bg-photo::after{
+    opacity:0.25;
+  }
+
   button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
 
   @keyframes fadeSlideUp{
