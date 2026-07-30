@@ -1090,6 +1090,9 @@ function renderProjectPage(){
         <button class="btn-back" onclick="state.view='dashboard';render();" title="Voltar aos projetos">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
         </button>
+        <button class="btn-back refresh-btn" onclick="refreshAll()" title="Atualizar agora">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        </button>
         <button class="btn-secondary" onclick="openProjectsModal()">👥 Membros</button>
         ${canEdit ? `<button class="btn-primary" onclick="openModal(null, '', '${p.id}')">+ Nova tarefa</button>` : ''}
       </div>
