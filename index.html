@@ -2843,6 +2843,46 @@ async function inviteToProject(projectId){
   showToast('Convite enviado');
 }
 
+function genInviteCode(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for(let i=0;i<6;i++) code += chars[Math.floor(Math.random()*chars.length)];
+  return code;
+}
+
+async function generateInviteCode(projectId){
+  const roleSelect = document.getElementById(`code-role-${projectId}`);
+  const code = genInviteCode();
+  const {error} = await sb.from('project_members').insert({
+    project_id: projectId,
+    invited_email: null,
+    role: roleSelect.value,
+    status: 'pending',
+    code
+  });
+  if(error){alert('Erro ao gerar código: ' + error.message);return;}
+  await loadProjects();
+  renderProjectsModal();
+  showToast(`Código gerado: ${code}`);
+}
+
+async function joinByCode(){
+  const input = document.getElementById('join-code-input');
+  const code = input.value.trim().toUpperCase();
+  if(!code){input.focus();return;}
+  const {data, error} = await sb.rpc('accept_invite_by_code', {p_code: code});
+  if(error){alert('Erro: ' + error.message);return;}
+  if(!data || !data.success){
+    alert(data && data.error ? data.error : 'Código inválido ou já usado.');
+    return;
+  }
+  input.value = '';
+  await loadProjects();
+  renderProjectsModal();
+  showToast('Você entrou no projeto!');
+  render();
+}
+
 async function removeMember(memberId){
   if(!confirm('Remover essa pessoa do projeto?')) return;
   const {error} = await sb.from('project_members').delete().eq('id', memberId);
@@ -2907,6 +2947,16 @@ function renderProjectsModal(){
 
   html += `
     <div class="field" style="margin-bottom:18px;">
+      <label>Entrar com código de convite</label>
+      <div class="invite-row">
+        <input type="text" class="input" id="join-code-input" placeholder="Ex: 7F3K2A" maxlength="6" style="text-transform:uppercase;letter-spacing:0.1em;" onkeypress="if(event.key==='Enter')joinByCode()">
+        <button class="btn-primary" style="flex-shrink:0;padding:0 16px;" onclick="joinByCode()">Entrar</button>
+      </div>
+    </div>
+  `;
+
+  html += `
+    <div class="field" style="margin-bottom:18px;">
       <label>Criar novo projeto</label>
       <div class="invite-row">
         <input type="text" class="input" id="new-project-name" placeholder="Nome do projeto" onkeypress="if(event.key==='Enter')createProject()">
@@ -2922,13 +2972,17 @@ function renderProjectsModal(){
       const isOwner = p.myRole === 'owner';
       const membersHtml = p.members.length === 0
         ? `<div style="font-size:12px;color:var(--text-soft);padding:6px 0;">Ninguém convidado ainda.</div>`
-        : p.members.map(m=>`
+        : p.members.map(m=>{
+          const label = m.code
+            ? `Código: <span style="color:var(--text-strong);font-family:'JetBrains Mono',monospace;letter-spacing:0.08em;">${esc(m.code)}</span>`
+            : esc(m.invited_email || '—');
+          return `
           <div class="member-row">
-            <div class="member-email">${esc(m.invited_email)}</div>
+            <div class="member-email">${label}</div>
             <div class="member-status ${m.status}">${m.status === 'accepted' ? 'Ativo' : 'Pendente'} · ${m.role === 'editor' ? 'Editor' : 'Visualizador'}</div>
             ${isOwner ? `<button class="member-remove" onclick="removeMember('${m.id}')" title="Remover"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>` : ''}
-          </div>
-        `).join('');
+          </div>`;
+        }).join('');
 
       return `
         <div class="project-card">
@@ -2945,6 +2999,18 @@ function renderProjectsModal(){
                 <option value="viewer">Visualizador</option>
               </select>
               <button class="btn-secondary" style="flex-shrink:0;padding:0 14px;" onclick="inviteToProject('${p.id}')">Convidar</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+              <div style="flex:1;height:1px;background:var(--line);"></div>
+              <span style="font-size:10.5px;color:var(--text-soft);font-family:'JetBrains Mono',monospace;">ou</span>
+              <div style="flex:1;height:1px;background:var(--line);"></div>
+            </div>
+            <div class="invite-row">
+              <select id="code-role-${p.id}" style="flex:1;">
+                <option value="editor">Gerar código — Editor</option>
+                <option value="viewer">Gerar código — Visualizador</option>
+              </select>
+              <button class="btn-secondary" style="flex-shrink:0;padding:0 14px;" onclick="generateInviteCode('${p.id}')">Gerar</button>
             </div>
             <button class="btn-danger" style="width:100%;margin-top:10px;" onclick="deleteProject('${p.id}')">Excluir projeto</button>
           ` : ''}
