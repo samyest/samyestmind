@@ -411,6 +411,7 @@ const DEFAULT_CLIENTS = ['Elliz B (Donna da Lua)','Adelso Costa','Conteinner','A
 let state = {
   tasks: [],
   columns: null,
+  myAvatarUrl: null,
   projects: [],
   pendingInvites: [],
   view: 'dashboard',
@@ -509,8 +510,8 @@ async function checkAuth(){
     state.columns = (session.user.user_metadata || {}).kanban_columns || JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
     document.getElementById('user-email').textContent = email;
     document.getElementById('user-name-display').textContent = name;
-    renderMyAvatar('user-avatar', name);
     await syncOwnProfile();
+    renderMyAvatar('user-avatar', name);
     await loadTasks();
     await loadProjects();
     setupRealtime();
@@ -742,7 +743,7 @@ async function logout(){
 }
 
 function getUserAvatarUrl(){
-  return (session.user.user_metadata || {}).avatar_url || null;
+  return state.myAvatarUrl || null;
 }
 
 function renderMyAvatar(elId, name){
@@ -758,8 +759,9 @@ function renderMyAvatar(elId, name){
 
 async function syncOwnProfile(){
   const name = getUserName();
-  const avatar_url = getUserAvatarUrl();
-  await sb.from('profiles').upsert({id: session.user.id, name, avatar_url, updated_at: new Date().toISOString()});
+  const {data: existing} = await sb.from('profiles').select('avatar_url').eq('id', session.user.id).maybeSingle();
+  state.myAvatarUrl = (existing && existing.avatar_url) || null;
+  await sb.from('profiles').upsert({id: session.user.id, name, avatar_url: state.myAvatarUrl, updated_at: new Date().toISOString()});
 }
 
 async function uploadAvatar(fileInput){
@@ -780,13 +782,15 @@ async function uploadAvatar(fileInput){
   const {data: urlData} = sb.storage.from('avatars').getPublicUrl(path);
   const publicUrl = urlData.publicUrl + '?t=' + Date.now();
 
-  const {error: metaErr} = await sb.auth.updateUser({data: {avatar_url: publicUrl}});
-  if(metaErr){alert('Erro ao salvar: ' + metaErr.message);if(btn) btn.textContent = 'Trocar foto';return;}
+  const {error: dbErr} = await sb.from('profiles').upsert({
+    id: session.user.id,
+    name: getUserName(),
+    avatar_url: publicUrl,
+    updated_at: new Date().toISOString()
+  });
+  if(dbErr){alert('Erro ao salvar: ' + dbErr.message);if(btn) btn.textContent = 'Trocar foto';return;}
 
-  const {data} = await sb.auth.getSession();
-  session = data.session;
-  await syncOwnProfile();
-
+  state.myAvatarUrl = publicUrl;
   renderMyAvatar('user-avatar', getUserName());
   renderMyAvatar('settings-avatar-preview', getUserName());
   if(btn) btn.textContent = 'Trocar foto';
