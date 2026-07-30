@@ -190,6 +190,29 @@ function statusDotStyle(status){
   return {cls, style: `--col-color:${col.color}`};
 }
 
+function getProjectColumns(project){
+  return (project && project.columns && project.columns.length) ? project.columns : DEFAULT_COLUMNS;
+}
+function columnsForTask(t){
+  if(t.project_id){
+    const p = state.projects.find(x=>x.id===t.project_id);
+    if(p) return getProjectColumns(p);
+  }
+  return getColumns();
+}
+function getColumnForTask(t){
+  const cols = columnsForTask(t);
+  return cols.find(c=>c.key===t.status) || {key:t.status, name:t.status, color:'#9AAFC2', type:'active'};
+}
+function taskColumnName(t){ return getColumnForTask(t).name; }
+function taskColumnColor(t){ return getColumnForTask(t).color; }
+function taskColumnType(t){ return getColumnForTask(t).type; }
+function taskDotStyle(t){
+  const col = getColumnForTask(t);
+  const cls = col.type === 'waiting' ? 'dot-hollow' : (col.type === 'done' ? 'dot-done' : '');
+  return {cls, style: `--col-color:${col.color}`};
+}
+
 async function persistColumns(){
   const {error} = await sb.auth.updateUser({data: {kanban_columns: state.columns}});
   if(error){alert('Erro ao salvar colunas: ' + error.message);return false;}
@@ -213,7 +236,7 @@ function selectColumnColor(c){
 function openStatusDetail(filterKey, label){
   let list;
   if(filterKey === 'overdue'){
-    list = state.tasks.filter(t=>columnType(t.status)!=='done' && dateStatus(t.date)==='overdue');
+    list = state.tasks.filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='overdue');
   } else {
     const key = filterKey.replace('col:', '');
     list = state.tasks.filter(t=>t.status===key);
@@ -238,7 +261,7 @@ function openStatusDetail(filterKey, label){
         ? '<span class="priority-badge urgent">🔥 Urgente</span>'
         : isHigh ? '<span class="priority-badge high">Alta</span>' : '';
       const cls = isUrgent ? 'urgent' : (isHigh ? 'high' : '');
-      const dot = statusDotStyle(t.status);
+      const dot = taskDotStyle(t);
       return `
         <div class="task-row ${cls}" onclick="closeStatusModal();openModal('${t.id}')">
           <div class="task-check ${dot.cls}" style="${dot.style}"></div>
@@ -257,17 +280,21 @@ function closeStatusModal(){
   document.getElementById('status-modal').classList.remove('open');
 }
 
-function openColumnModal(key){
+let editingColumnProjectId = null;
+
+function openColumnModal(key, projectId){
   editingColumnKey = key || null;
+  editingColumnProjectId = projectId || null;
   const modal = document.getElementById('column-modal');
   const title = document.getElementById('column-modal-title');
   const delBtn = document.getElementById('col-delete');
+  const cols = projectId ? getProjectColumns(state.projects.find(p=>p.id===projectId)) : getColumns();
   if(key){
-    const col = getColumn(key);
+    const col = cols.find(c=>c.key===key) || {name:key, color:COLUMN_COLOR_PRESETS[0]};
     title.textContent = 'Editar coluna';
     document.getElementById('col-name').value = col.name;
     selectedColumnColor = col.color;
-    delBtn.style.display = getColumns().length > 1 ? '' : 'none';
+    delBtn.style.display = cols.length > 1 ? '' : 'none';
   } else {
     title.textContent = 'Nova coluna';
     document.getElementById('col-name').value = '';
@@ -282,11 +309,37 @@ function openColumnModal(key){
 function closeColumnModal(){
   document.getElementById('column-modal').classList.remove('open');
   editingColumnKey = null;
+  editingColumnProjectId = null;
+}
+
+async function persistProjectColumns(projectId, cols){
+  const {error} = await sb.from('projects').update({columns: cols}).eq('id', projectId);
+  if(error){alert('Erro ao salvar colunas do projeto: ' + error.message);return false;}
+  const p = state.projects.find(x=>x.id===projectId);
+  if(p) p.columns = cols;
+  return true;
 }
 
 async function saveColumn(){
   const name = document.getElementById('col-name').value.trim();
   if(!name){document.getElementById('col-name').focus();return;}
+
+  if(editingColumnProjectId){
+    const p = state.projects.find(x=>x.id===editingColumnProjectId);
+    if(!p) return;
+    let cols = JSON.parse(JSON.stringify(getProjectColumns(p)));
+    if(editingColumnKey){
+      const col = cols.find(c=>c.key===editingColumnKey);
+      if(col){col.name = name;col.color = selectedColumnColor;}
+    } else {
+      const key = 'col_' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+      cols.push({key, name, type: 'active', color: selectedColumnColor});
+    }
+    const ok = await persistProjectColumns(editingColumnProjectId, cols);
+    if(ok){closeColumnModal();render();}
+    return;
+  }
+
   if(!state.columns) state.columns = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
   if(editingColumnKey){
     const col = state.columns.find(c=>c.key===editingColumnKey);
@@ -305,12 +358,32 @@ async function saveColumn(){
 
 async function deleteColumn(){
   if(!editingColumnKey) return;
+
+  if(editingColumnProjectId){
+    const p = state.projects.find(x=>x.id===editingColumnProjectId);
+    if(!p) return;
+    let cols = JSON.parse(JSON.stringify(getProjectColumns(p)));
+    if(cols.length <= 1){alert('Precisa ter ao menos uma coluna.');return;}
+    const hasTasks = state.tasks.some(t=>t.project_id===editingColumnProjectId && t.status===editingColumnKey);
+    if(hasTasks && !confirm('Essa coluna tem tarefas — elas serão movidas para a primeira coluna restante. Continuar?')) return;
+    const fallback = cols.find(c=>c.key !== editingColumnKey);
+    const toMove = state.tasks.filter(t=>t.project_id===editingColumnProjectId && t.status===editingColumnKey);
+    for(const t of toMove){
+      t.status = fallback.key;
+      await updateTaskRemote(t.id, t);
+    }
+    cols = cols.filter(c=>c.key !== editingColumnKey);
+    const ok = await persistProjectColumns(editingColumnProjectId, cols);
+    if(ok){closeColumnModal();render();}
+    return;
+  }
+
   const cols = getColumns();
   if(cols.length <= 1){alert('Precisa ter ao menos uma coluna.');return;}
-  const hasTasks = state.tasks.some(t=>t.status===editingColumnKey);
+  const hasTasks = state.tasks.some(t=>!t.project_id && t.status===editingColumnKey);
   if(hasTasks && !confirm('Essa coluna tem tarefas — elas serão movidas para a primeira coluna restante. Continuar?')) return;
   const fallback = cols.find(c=>c.key !== editingColumnKey);
-  const toMove = state.tasks.filter(t=>t.status===editingColumnKey);
+  const toMove = state.tasks.filter(t=>!t.project_id && t.status===editingColumnKey);
   for(const t of toMove){
     t.status = fallback.key;
     await updateTaskRemote(t.id, t);
@@ -324,9 +397,10 @@ async function deleteColumn(){
   }
 }
 
-function populateStatusSelect(selectId, currentValue){
+function populateStatusSelect(selectId, currentValue, projectId){
   const sel = document.getElementById(selectId);
-  sel.innerHTML = getColumns().map(c=>`<option value="${c.key}">${esc(c.name)}</option>`).join('');
+  const cols = projectId ? getProjectColumns(state.projects.find(p=>p.id===projectId)) : getColumns();
+  sel.innerHTML = cols.map(c=>`<option value="${c.key}">${esc(c.name)}</option>`).join('');
   sel.value = currentValue;
 }
 
@@ -385,7 +459,7 @@ function lastSunday(){
 }
 
 function isHiddenFromKanban(t){
-  if(columnType(t.status) !== 'done') return false;
+  if(taskColumnType(t) !== 'done') return false;
   if(!t.completed_at) return true;
   return new Date(t.completed_at) < lastSunday();
 }
@@ -400,7 +474,7 @@ function resolveCompletedAt(newStatus, oldStatus, currentValue){
 
 function priorityWeight(t){
   if(t.priority === 'urgent') return 4;
-  if(dateStatus(t.date) === 'overdue' && columnType(t.status) !== 'done') return 3.5;
+  if(dateStatus(t.date) === 'overdue' && taskColumnType(t) !== 'done') return 3.5;
   if(t.priority === 'high') return 3;
   if(dateStatus(t.date) === 'today') return 2;
   return 1;
@@ -940,8 +1014,8 @@ function renderProjectPage(){
   const role = myRoleInProject(p.id);
   const canEdit = isOwner || role === 'editor';
   const projectTasks = state.tasks.filter(t=>t.project_id===p.id);
-  const cols = getColumns();
-  const activeCount = projectTasks.filter(t=>columnType(t.status)!=='done').length;
+  const cols = getProjectColumns(p);
+  const activeCount = projectTasks.filter(t=>taskColumnType(t)!=='done').length;
 
   return `
     <div class="view-header">
@@ -976,7 +1050,10 @@ function renderProjectPage(){
     <div class="glass panel" style="padding-bottom:20px;">
       <div class="panel-head">
         <div class="panel-title">Tarefas do projeto</div>
-        <div class="panel-hint">${activeCount} ativa${activeCount!==1?'s':''} · ${projectTasks.length} no total</div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          ${canEdit ? `<button class="btn-format" onclick="openColumnModal(null, '${p.id}')">+ Nova coluna</button>` : ''}
+          <div class="panel-hint">${activeCount} ativa${activeCount!==1?'s':''} · ${projectTasks.length} no total</div>
+        </div>
       </div>
       <div class="kanban" style="margin-top:4px;">
         ${cols.map(col=>{
@@ -985,7 +1062,12 @@ function renderProjectPage(){
             <div class="glass kb-col" data-status="${col.key}" ondragover="dragOver(event)" ondrop="drop(event,'${col.key}')" ondragleave="dragLeave(event)">
               <div class="kb-col-head">
                 <div class="kb-col-title"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}</div>
-                <div class="kb-col-count">${list.length}</div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <div class="kb-col-count">${list.length}</div>
+                  ${canEdit ? `<button class="kb-col-edit" onclick="openColumnModal('${col.key}', '${p.id}')" title="Editar coluna">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                  </button>` : ''}
+                </div>
               </div>
               <div class="kb-cards">
                 ${list.length===0
@@ -1184,8 +1266,8 @@ function updateNav(){
   const dias = ['dom','seg','ter','qua','qui','sex','sáb'];
   const meses = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
   document.getElementById('today-date').textContent = `${dias[now.getDay()]}, ${now.getDate()} ${meses[now.getMonth()]}`;
-  const overdue = state.tasks.filter(t=>columnType(t.status)!=='done' && dateStatus(t.date)==='overdue').length;
-  const today = state.tasks.filter(t=>columnType(t.status)!=='done' && dateStatus(t.date)==='today').length;
+  const overdue = state.tasks.filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='overdue').length;
+  const today = state.tasks.filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='today').length;
   document.getElementById('today-hint').textContent = overdue > 0 ? `${overdue} atrasada${overdue>1?'s':''}` : today > 0 ? `${today} vence hoje` : 'tudo em dia';
 
   const list = document.getElementById('clients-list');
@@ -1215,9 +1297,9 @@ function renderDashboard(){
   const saudacao = hrs < 12 ? 'Bom dia' : hrs < 18 ? 'Boa tarde' : 'Boa noite';
   const cols = getColumns();
   const colCounts = cols.map(c=>({...c, count: state.tasks.filter(t=>t.status===c.key).length}));
-  const overdue = state.tasks.filter(t=>columnType(t.status)!=='done' && dateStatus(t.date)==='overdue').length;
+  const overdue = state.tasks.filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='overdue').length;
   const acoes = state.tasks
-    .filter(t=>columnType(t.status)==='active' && matchesDateFilter(t, state.dateFilter))
+    .filter(t=>taskColumnType(t)==='active' && matchesDateFilter(t, state.dateFilter))
     .sort((a,b)=>{
       const pa = priorityWeight(a), pb = priorityWeight(b);
       if(pa !== pb) return pb - pa;
@@ -1226,7 +1308,7 @@ function renderDashboard(){
       return a.date.localeCompare(b.date);
     });
   const aguardando = state.tasks
-    .filter(t=>columnType(t.status)==='waiting' && matchesDateFilter(t, state.dateFilter))
+    .filter(t=>taskColumnType(t)==='waiting' && matchesDateFilter(t, state.dateFilter))
     .sort((a,b)=>{
       const pa = priorityWeight(a), pb = priorityWeight(b);
       if(pa !== pb) return pb - pa;
@@ -1243,7 +1325,7 @@ function renderDashboard(){
       ? '<span class="priority-badge urgent">🔥 Urgente</span>'
       : isHigh ? '<span class="priority-badge high">Alta</span>' : '';
     const cls = isUrgent ? 'urgent' : (isHigh ? 'high' : '');
-    const dot = statusDotStyle(t.status);
+    const dot = taskDotStyle(t);
     const pName = t.project_id ? projectName(t.project_id) : null;
     const projBadge = pName ? `<span class="project-badge">👥 ${esc(pName)}</span>` : '';
     return `
@@ -1323,7 +1405,7 @@ function renderDashboard(){
 }
 
 function renderClientFocus(){
-  const active = state.tasks.filter(t=>columnType(t.status)!=='done');
+  const active = state.tasks.filter(t=>taskColumnType(t)!=='done');
   if(active.length === 0){
     return `<div class="empty" style="padding:26px 12px;font-size:12.5px;"><strong>Sem pendências</strong>Nenhum cliente ativo</div>`;
   }
@@ -1355,7 +1437,7 @@ function renderMiniCal(){
   const dow = ['D','S','T','Q','Q','S','S'];
   const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const today = new Date();
-  const tasksWithDate = new Set(state.tasks.filter(t=>t.date && columnType(t.status)!=='done').map(t=>t.date));
+  const tasksWithDate = new Set(state.tasks.filter(t=>t.date && taskColumnType(t)!=='done').map(t=>t.date));
 
   let cells = '';
   for(let i=startDow-1;i>=0;i--) cells += `<div class="mini-cal-day other">${prevMonthDays-i}</div>`;
@@ -1473,7 +1555,7 @@ function renderCalendar(){
   const today = new Date();
   const tasksByDate = {};
   state.tasks.forEach(t=>{
-    const isDone = columnType(t.status) === 'done';
+    const isDone = taskColumnType(t) === 'done';
     const key = (isDone && t.completed_at) ? isoDateFromTimestamp(t.completed_at) : t.date;
     if(key){if(!tasksByDate[key]) tasksByDate[key] = [];tasksByDate[key].push(t);}
   });
@@ -1491,8 +1573,8 @@ function renderCalendar(){
       <div class="cal-cell ${isToday?'today':''} ${isSelected?'selected':''} ${list.length===0?'is-empty':''}" data-date="${iso}">
         <div class="cal-cell-num"><span class="cal-cell-dow">${dowShort[wd]} </span>${day}</div>
         ${list.map(t=>{
-          const isDone = columnType(t.status)==='done';
-          return `<div class="cal-task" style="border-left-color:${columnColor(t.status)};${isDone?'opacity:0.6;':''}" data-task-id="${t.id}" title="${esc(t.title)}${isDone?' (concluída)':''}">${isDone?'✓ ':''}${esc(t.title)}</div>`;
+          const isDone = taskColumnType(t)==='done';
+          return `<div class="cal-task" style="border-left-color:${taskColumnColor(t)};${isDone?'opacity:0.6;':''}" data-task-id="${t.id}" title="${esc(t.title)}${isDone?' (concluída)':''}">${isDone?'✓ ':''}${esc(t.title)}</div>`;
         }).join('')}
       </div>`;
   }
@@ -1551,7 +1633,7 @@ function renderDayPanel(iso, tasks){
             ${tasks.map(t=>{
               const priorityBadge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
               return `
-                <div class="day-task ${columnType(t.status)==='done'?'done':''}" style="--col-color:${columnColor(t.status)}" onclick="openModal('${t.id}')">
+                <div class="day-task ${taskColumnType(t)==='done'?'done':''}" style="--col-color:${taskColumnColor(t)}" onclick="openModal('${t.id}')">
                   <div class="day-task-head">
                     <div class="day-task-title">${esc(t.title)}</div>
                     ${priorityBadge}
@@ -1559,7 +1641,7 @@ function renderDayPanel(iso, tasks){
                   <div class="day-task-meta">
                     <span>${esc(t.client || 'sem cliente')}</span>
                     <span>·</span>
-                    <span>${esc(columnName(t.status))}</span>
+                    <span>${esc(taskColumnName(t))}</span>
                   </div>
                   ${t.notes ? `<div class="day-task-notes">${esc(t.notes)}</div>` : ''}
                 </div>`;
@@ -1620,7 +1702,7 @@ function renderTable(){
                 <tr onclick="openModal('${t.id}')">
                   <td>${esc(t.title)}</td>
                   <td>${esc(t.client || '—')}</td>
-                  <td><span class="badge"><span class="badge-dot" style="background:${columnColor(t.status)}"></span>${esc(columnName(t.status))}</span></td>
+                  <td><span class="badge"><span class="badge-dot" style="background:${taskColumnColor(t)}"></span>${esc(taskColumnName(t))}</span></td>
                   <td>${t.date ? fmtDateFull(t.date) : '—'}</td>
                 </tr>`).join('')}
             </tbody>
@@ -1665,7 +1747,7 @@ function openModal(id, prefillDate, prefillProjectId){
     title.textContent = 'Editar tarefa';
     document.getElementById('m-title').value = t.title || '';
     document.getElementById('m-client').value = t.client || '';
-    populateStatusSelect('m-status', t.status || getColumns()[0].key);
+    populateStatusSelect('m-status', t.status || getColumns()[0].key, t.project_id);
     document.getElementById('m-date').value = t.date || '';
     document.getElementById('m-priority').value = t.priority || 'normal';
     document.getElementById('m-project').value = t.project_id || '';
@@ -1678,7 +1760,7 @@ function openModal(id, prefillDate, prefillProjectId){
     title.textContent = 'Nova tarefa';
     document.getElementById('m-title').value = '';
     document.getElementById('m-client').value = '';
-    populateStatusSelect('m-status', getColumns()[0].key);
+    populateStatusSelect('m-status', getProjectColumns(state.projects.find(p=>p.id===prefillProjectId))[0].key, prefillProjectId);
     document.getElementById('m-date').value = prefillDate || '';
     document.getElementById('m-priority').value = 'normal';
     document.getElementById('m-project').value = prefillProjectId || '';
@@ -1686,6 +1768,9 @@ function openModal(id, prefillDate, prefillProjectId){
     delBtn.style.display = 'none';
     document.querySelectorAll('#modal input, #modal select, #modal textarea').forEach(el=>{el.disabled = false;});
   }
+  document.getElementById('m-project').onchange = (e)=>{
+    populateStatusSelect('m-status', getProjectColumns(state.projects.find(p=>p.id===e.target.value))[0].key, e.target.value || null);
+  };
   modal.classList.add('open');
   setTimeout(()=>document.getElementById('m-title').focus(), 50);
 }
