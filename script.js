@@ -1107,6 +1107,20 @@ async function declineInvite(memberId){
   renderProjectsModal();
 }
 
+async function leaveProject(projectId){
+  if(!confirm('Sair deste projeto? Você perde o acesso às tarefas compartilhadas dele.')) return;
+  const {error} = await sb.from('project_members').delete().eq('project_id', projectId).eq('user_id', session.user.id);
+  if(error){alert('Erro ao sair: ' + error.message);return;}
+  if(state.view === 'project' && state.currentProjectId === projectId){
+    state.view = 'dashboard';
+    state.currentProjectId = null;
+  }
+  await loadProjects();
+  renderProjectsModal();
+  showToast('Você saiu do projeto');
+  render();
+}
+
 async function deleteProject(projectId){
   if(!confirm('Excluir este projeto? As tarefas voltam a ser privadas, mas o projeto some pra todo mundo.')) return;
   const {error} = await sb.from('projects').delete().eq('id', projectId);
@@ -1370,7 +1384,9 @@ function renderProjectsModal(){
               <button class="btn-secondary" style="flex-shrink:0;padding:0 14px;" onclick="generateInviteCode('${p.id}')">Gerar</button>
             </div>
             <button class="btn-danger" style="width:100%;margin-top:10px;" onclick="deleteProject('${p.id}')">Excluir projeto</button>
-          ` : ''}
+          ` : `
+            <button class="btn-danger" style="width:100%;margin-top:12px;" onclick="leaveProject('${p.id}')">Sair do projeto</button>
+          `}
         </div>
       `;
     }).join('');
