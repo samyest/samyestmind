@@ -921,7 +921,7 @@ async function createProject(){
   const nameInput = document.getElementById('new-project-name');
   const name = nameInput.value.trim();
   if(!name){nameInput.focus();return;}
-  const {error} = await sb.from('projects').insert({name, owner_id: session.user.id});
+  const {error} = await sb.from('projects').insert({name, owner_id: session.user.id, owner_email: session.user.email});
   if(error){alert('Erro ao criar projeto: ' + error.message);return;}
   nameInput.value = '';
   await loadProjects();
@@ -1214,6 +1214,11 @@ function renderProjectsModal(){
   } else {
     html += state.projects.map(p=>{
       const isOwner = p.myRole === 'owner';
+      const ownerRow = !isOwner ? `
+        <div class="member-row">
+          <div class="member-email">${esc(p.owner_email || '—')}</div>
+          <div class="member-status accepted">Dono</div>
+        </div>` : '';
       const membersHtml = p.members.length === 0
         ? `<div style="font-size:12px;color:var(--text-soft);padding:6px 0;">Ninguém convidado ainda.</div>`
         : p.members.map(m=>{
@@ -1234,6 +1239,7 @@ function renderProjectsModal(){
             <div class="project-card-name">${esc(p.name)}</div>
             <div class="project-card-role">${isOwner ? 'Dono' : myRoleInProject(p.id) === 'editor' ? 'Editor' : 'Visualizador'}</div>
           </div>
+          ${ownerRow}
           ${membersHtml}
           ${isOwner ? `
             <div class="invite-row">
