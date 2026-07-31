@@ -2302,7 +2302,7 @@ function openModal(id, prefillDate, prefillProjectId){
     const isMine = t.owner_id === session.user.id;
     const canEdit = isMine || (t.project_id && canEditProject(t.project_id));
     delBtn.style.display = canEdit ? '' : 'none';
-    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format').forEach(el=>{el.disabled = !canEdit;});
+    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn').forEach(el=>{el.disabled = !canEdit;});
     commentsField.style.display = '';
     currentCommentTaskId = id;
     document.getElementById('task-comments-list').innerHTML = `<div class="empty" style="padding:16px 12px;font-size:11.5px;">Carregando...</div>`;

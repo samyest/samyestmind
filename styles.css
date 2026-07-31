@@ -1296,6 +1296,19 @@
   }
   .btn-secondary:hover{background:var(--glass-hover);}
 
+  .time-clear-btn{
+    width:32px;height:32px;
+    flex-shrink:0;
+    display:grid;place-items:center;
+    color:var(--text-muted);
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+    border-radius:8px;
+    transition:all .15s ease;
+  }
+  .time-clear-btn:hover{color:var(--danger);background:rgba(196,133,119,0.1);border-color:rgba(196,133,119,0.3);}
+  .time-clear-btn:disabled{opacity:0.5;cursor:not-allowed;}
+
   .btn-back{
     width:38px;
     height:38px;
