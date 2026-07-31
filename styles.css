@@ -680,6 +680,74 @@
   .input::placeholder{color:var(--text-soft);}
   .select{cursor:pointer;}
 
+  .today-alert{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:18px 20px;
+    margin-bottom:20px;
+    cursor:pointer;
+    background:linear-gradient(135deg, #FF9142, #E24E3D);
+    border:none;
+    box-shadow:0 8px 24px rgba(226,78,61,0.30), inset 0 1px 0 rgba(255,255,255,0.25);
+    transition:transform .18s ease, box-shadow .18s ease;
+    position:relative;
+    overflow:hidden;
+  }
+  .today-alert:hover{
+    transform:translateY(-2px);
+    box-shadow:0 12px 30px rgba(226,78,61,0.38), inset 0 1px 0 rgba(255,255,255,0.25);
+  }
+  .today-alert:active{transform:translateY(0) scale(0.98);}
+  .today-alert-icon{
+    font-size:34px;
+    line-height:1;
+    flex-shrink:0;
+    filter:drop-shadow(0 2px 6px rgba(0,0,0,0.25));
+    animation:flamePulse 1.8s ease-in-out infinite;
+  }
+  @keyframes flamePulse{
+    0%,100%{transform:scale(1) rotate(0deg);}
+    50%{transform:scale(1.12) rotate(-3deg);}
+  }
+  .today-alert-body{flex:1;min-width:0;}
+  .today-alert-label{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:0.1em;
+    color:rgba(255,255,255,0.85);
+    margin-bottom:3px;
+    font-weight:600;
+  }
+  .today-alert-title{
+    font-family:'Space Grotesk';
+    font-weight:600;
+    font-size:15.5px;
+    color:white;
+    line-height:1.25;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .today-alert-sub{
+    font-size:12px;
+    color:rgba(255,255,255,0.8);
+    margin-top:3px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .today-alert.today-alert-calm{
+    background:var(--glass);
+    box-shadow:var(--shadow-soft);
+    cursor:default;
+  }
+  .today-alert.today-alert-calm:hover{transform:none;box-shadow:var(--shadow-soft);}
+  .today-alert.today-alert-calm .today-alert-icon{animation:none;filter:none;font-size:26px;}
+  .today-alert.today-alert-calm .today-alert-title{color:var(--text-strong);font-size:14px;}
+  .today-alert.today-alert-calm .today-alert-sub{color:var(--text-muted);}
+
   .mini-cal-head{
     display:flex;
     justify-content:space-between;

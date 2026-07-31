@@ -1752,6 +1752,7 @@ function renderDashboard(){
         ` : ''}
       </div>
       <div class="side-col">
+        ${renderTodayAlert()}
         <div class="glass panel">${renderMiniCal()}</div>
       </div>
     </div>
@@ -1779,6 +1780,40 @@ function renderClientFocus(){
         <div class="client-count">${count}</div>
       </div>`;
   }).join('');
+}
+
+function renderTodayAlert(){
+  const candidates = personalTasks().filter(t=>{
+    if(taskColumnType(t)!=='active') return false;
+    const ds = dateStatus(t.date);
+    return ds === 'today' || ds === 'overdue';
+  });
+
+  if(candidates.length === 0){
+    return `
+      <div class="glass today-alert today-alert-calm">
+        <div class="today-alert-icon">✅</div>
+        <div class="today-alert-body">
+          <div class="today-alert-title">Nada urgente hoje</div>
+          <div class="today-alert-sub">Aproveita pra respirar</div>
+        </div>
+      </div>`;
+  }
+
+  candidates.sort((a,b)=>priorityWeight(b) - priorityWeight(a));
+  const top = candidates[0];
+  const isOverdue = dateStatus(top.date) === 'overdue';
+  const restCount = candidates.length - 1;
+
+  return `
+    <div class="glass today-alert" onclick="openModal('${top.id}')">
+      <div class="today-alert-icon">🔥</div>
+      <div class="today-alert-body">
+        <div class="today-alert-label">${isOverdue ? 'Atrasada' : 'Prioridade de hoje'}</div>
+        <div class="today-alert-title">${esc(top.title)}</div>
+        <div class="today-alert-sub">${esc(top.client || 'Sem cliente')}${restCount > 0 ? ` · +${restCount} pendente${restCount>1?'s':''}` : ''}</div>
+      </div>
+    </div>`;
 }
 
 function renderMiniCal(){
