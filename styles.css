@@ -629,6 +629,13 @@
   }
   .task-row.urgent:hover{background:rgba(196,133,119,0.11);}
   .task-row.high{box-shadow:inset 3px 0 0 #C9A868;padding-left:16px;}
+  .task-row.done-highlight{
+    background:color-mix(in srgb, var(--col-color, var(--done)) 14%, transparent);
+    box-shadow:inset 5px 0 0 var(--col-color, var(--done));
+    padding-left:18px;
+  }
+  .task-row.done-highlight:hover{background:color-mix(in srgb, var(--col-color, var(--done)) 22%, transparent);}
+  .task-row.done-highlight .task-title{opacity:0.85;}
 
   .empty{
     padding:48px 20px;

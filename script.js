@@ -295,15 +295,17 @@ function openStatusDetail(filterKey, label){
     body.innerHTML = `<div class="empty"><strong>Nada por aqui.</strong>Nenhuma tarefa nessa categoria.</div>`;
   } else {
     body.innerHTML = list.map(t=>{
+      const isDone = taskColumnType(t) === 'done';
       const isUrgent = t.priority === 'urgent';
       const isHigh = t.priority === 'high';
       const badge = isUrgent
         ? '<span class="priority-badge urgent">🔥 Urgente</span>'
         : isHigh ? '<span class="priority-badge high">Alta</span>' : '';
-      const cls = isUrgent ? 'urgent' : (isHigh ? 'high' : '');
+      const cls = isDone ? 'done-highlight' : (isUrgent ? 'urgent' : (isHigh ? 'high' : ''));
+      const rowStyle = isDone ? `--col-color:${taskColumnColor(t)};` : '';
       const dot = taskDotStyle(t);
       return `
-        <div class="task-row ${cls}" onclick="closeStatusModal();openModal('${t.id}')">
+        <div class="task-row ${cls}" style="${rowStyle}" onclick="closeStatusModal();openModal('${t.id}')">
           <div class="task-check ${dot.cls}" style="${dot.style}"></div>
           <div class="task-title">${esc(t.title)}</div>
           <div class="task-date ${dateStatus(t.date)}">${t.date ? fmtDate(t.date) : '—'}</div>
