@@ -281,13 +281,7 @@ function openStatusDetail(filterKey, label){
     const key = filterKey.replace('col:', '');
     list = personalTasks().filter(t=>t.status===key);
   }
-  list.sort((a,b)=>{
-    const pa = priorityWeight(a), pb = priorityWeight(b);
-    if(pa !== pb) return pb - pa;
-    if(!a.date) return 1;
-    if(!b.date) return -1;
-    return a.date.localeCompare(b.date);
-  });
+  list = sortByDateThenPriority(list);
 
   document.getElementById('status-modal-title').textContent = label;
   const body = document.getElementById('status-modal-body');
@@ -1652,24 +1646,12 @@ function renderDashboard(){
   const pTasks = personalTasks();
   const colCounts = cols.map(c=>({...c, count: pTasks.filter(t=>t.status===c.key).length}));
   const overdue = pTasks.filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='overdue').length;
-  const acoes = pTasks
-    .filter(t=>taskColumnType(t)==='active' && matchesDateFilter(t, state.dateFilter))
-    .sort((a,b)=>{
-      const pa = priorityWeight(a), pb = priorityWeight(b);
-      if(pa !== pb) return pb - pa;
-      if(!a.date) return 1;
-      if(!b.date) return -1;
-      return a.date.localeCompare(b.date);
-    });
-  const aguardando = pTasks
-    .filter(t=>taskColumnType(t)==='waiting' && matchesDateFilter(t, state.dateFilter))
-    .sort((a,b)=>{
-      const pa = priorityWeight(a), pb = priorityWeight(b);
-      if(pa !== pb) return pb - pa;
-      if(!a.date) return 1;
-      if(!b.date) return -1;
-      return a.date.localeCompare(b.date);
-    });
+  const acoes = sortByDateThenPriority(
+    pTasks.filter(t=>taskColumnType(t)==='active' && matchesDateFilter(t, state.dateFilter))
+  );
+  const aguardando = sortByDateThenPriority(
+    pTasks.filter(t=>taskColumnType(t)==='waiting' && matchesDateFilter(t, state.dateFilter))
+  );
   const dataStr = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'});
 
   const renderTaskRow = (t)=>{
