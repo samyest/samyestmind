@@ -223,9 +223,14 @@
   <div class="modal">
     <div class="modal-head">
       <div class="modal-head-title" id="status-modal-title">Pendências</div>
-      <button class="modal-close" onclick="closeStatusModal()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="modal-close" id="status-modal-add-btn" style="display:none;" title="Nova tarefa nesse dia">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <button class="modal-close" onclick="closeStatusModal()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
     </div>
     <div class="modal-body" id="status-modal-body" style="padding-top:8px;padding-bottom:20px;"></div>
   </div>

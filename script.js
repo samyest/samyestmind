@@ -278,6 +278,7 @@ function selectColumnColor(c){
 }
 
 function openStatusDetail(filterKey, label){
+  document.getElementById('status-modal-add-btn').style.display = 'none';
   let list;
   if(filterKey === 'overdue'){
     list = personalTasks().filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='overdue');
@@ -788,6 +789,7 @@ function startAlarmChecker(){
 
 function stopAlarmChecker(){
   if(alarmCheckTimer){clearInterval(alarmCheckTimer);alarmCheckTimer = null;}
+  stopAlarmSoundLoop();
 }
 
 function checkAlarms(){
@@ -806,6 +808,8 @@ function checkAlarms(){
     fireAlarm(t);
   });
 }
+
+let alarmSoundInterval = null;
 
 function playAlarmSound(){
   try{
@@ -828,8 +832,21 @@ function playAlarmSound(){
   }catch(e){}
 }
 
+function startAlarmSoundLoop(){
+  stopAlarmSoundLoop();
+  playAlarmSound();
+  alarmSoundInterval = setInterval(playAlarmSound, 1300);
+  setTimeout(stopAlarmSoundLoop, 10000);
+}
+
+function stopAlarmSoundLoop(){
+  if(alarmSoundInterval){clearInterval(alarmSoundInterval);alarmSoundInterval = null;}
+  const btn = document.getElementById('alarm-stop-sound-btn');
+  if(btn) btn.style.display = 'none';
+}
+
 function fireAlarm(task){
-  if(state.soundEnabled !== false) playAlarmSound();
+  if(state.soundEnabled !== false) startAlarmSoundLoop();
   showAlarmBanner(task);
   if(window.Notification && Notification.permission === 'granted'){
     try{
@@ -838,12 +855,19 @@ function fireAlarm(task){
   }
 }
 
+function closeAlarmBanner(){
+  stopAlarmSoundLoop();
+  const el = document.getElementById('alarm-banner');
+  if(el) el.remove();
+}
+
 function showAlarmBanner(task){
   const old = document.getElementById('alarm-banner');
   if(old) old.remove();
   const el = document.createElement('div');
   el.id = 'alarm-banner';
   el.className = 'alarm-banner';
+  const showStopBtn = state.soundEnabled !== false;
   el.innerHTML = `
     <div class="alarm-banner-icon">⏰</div>
     <div class="alarm-banner-body">
@@ -852,8 +876,9 @@ function showAlarmBanner(task){
       ${task.client ? `<div class="alarm-banner-sub">${esc(task.client)}</div>` : ''}
     </div>
     <div class="alarm-banner-actions">
-      <button class="btn-primary" onclick="document.getElementById('alarm-banner').remove();openModal('${task.id}')">Ver tarefa</button>
-      <button class="alarm-banner-dismiss" onclick="document.getElementById('alarm-banner').remove();" title="Silenciar">
+      <button class="btn-primary" onclick="closeAlarmBanner();openModal('${task.id}')">Ver tarefa</button>
+      <button class="alarm-banner-stop" id="alarm-stop-sound-btn" style="${showStopBtn ? '' : 'display:none;'}" onclick="stopAlarmSoundLoop()">🔇 Parar som</button>
+      <button class="alarm-banner-dismiss" onclick="closeAlarmBanner();" title="Fechar">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>`;
@@ -1915,6 +1940,9 @@ function openMiniCalDay(iso){
   list = sortByDateThenPriority(list);
 
   document.getElementById('status-modal-title').textContent = label;
+  const addBtn = document.getElementById('status-modal-add-btn');
+  addBtn.style.display = '';
+  addBtn.onclick = ()=>{closeStatusModal();openModal(null, iso);};
   const body = document.getElementById('status-modal-body');
   if(list.length === 0){
     body.innerHTML = `<div class="empty"><strong>Nada agendado.</strong>Nenhuma tarefa pra esse dia.</div>`;
@@ -2285,7 +2313,7 @@ function openModal(id, prefillDate, prefillProjectId){
     document.getElementById('m-client').value = '';
     populateStatusSelect('m-status', getProjectColumns(state.projects.find(p=>p.id===prefillProjectId))[0].key, prefillProjectId);
     document.getElementById('m-date').value = prefillDate || '';
-    document.getElementById('m-time').value = '';
+    document.getElementById('m-time').value = `${String(new Date().getHours()).padStart(2,'0')}:${String(new Date().getMinutes()).padStart(2,'0')}`;
     document.getElementById('m-priority').value = 'normal';
     document.getElementById('m-project').value = prefillProjectId || '';
     populateAssigneeSelect(prefillProjectId, null);
