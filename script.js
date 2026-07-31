@@ -1801,17 +1801,42 @@ function renderTodayAlert(){
 }
 
 function openMiniCalDay(iso){
-  flushNotesIfPending();
   const [y,m,d] = iso.split('-').map(Number);
-  state.calDate = new Date(y, m-1, 1);
-  state.calSelectedDate = iso;
-  state.view = 'calendar';
-  render();
-  window.scrollTo(0,0);
-  setTimeout(()=>{
-    const panel = document.querySelector('.day-panel');
-    if(panel) panel.scrollIntoView({behavior:'smooth', block:'nearest'});
-  }, 60);
+  const dt = new Date(y, m-1, d);
+  const dias = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+  const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  const label = `${dias[dt.getDay()]}, ${d} de ${meses[m-1]}`;
+
+  let list = personalTasks().filter(t=>t.date === iso);
+  list = sortByDateThenPriority(list);
+
+  document.getElementById('status-modal-title').textContent = label;
+  const body = document.getElementById('status-modal-body');
+  if(list.length === 0){
+    body.innerHTML = `<div class="empty"><strong>Nada agendado.</strong>Nenhuma tarefa pra esse dia.</div>`;
+  } else {
+    body.innerHTML = list.map(t=>{
+      const isDone = taskColumnType(t) === 'done';
+      const isUrgent = t.priority === 'urgent';
+      const isHigh = t.priority === 'high';
+      const badge = isUrgent
+        ? '<span class="priority-badge urgent">🔥 Urgente</span>'
+        : isHigh ? '<span class="priority-badge high">Alta</span>' : '';
+      const cls = isDone ? 'done-highlight' : (isUrgent ? 'urgent' : (isHigh ? 'high' : ''));
+      const rowStyle = isDone ? `--col-color:${taskColumnColor(t)};` : '';
+      const dot = taskDotStyle(t);
+      return `
+        <div class="task-row ${cls}" style="${rowStyle}" onclick="closeStatusModal();openModal('${t.id}')">
+          <div class="task-check ${dot.cls}" style="${dot.style}"></div>
+          <div class="task-title">${esc(t.title)}</div>
+          <div class="task-date ${dateStatus(t.date)}">${fmtDate(t.date)}</div>
+          <span class="task-row-break"></span>
+          ${badge}
+          <div class="task-client">${esc(t.client || '—')}</div>
+        </div>`;
+    }).join('');
+  }
+  document.getElementById('status-modal').classList.add('open');
 }
 
 function renderMiniCal(){
