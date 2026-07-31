@@ -1315,6 +1315,87 @@
     flex-shrink:0;
     overflow:hidden;
   }
+  .comments-list{
+    max-height:260px;
+    overflow-y:auto;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+    padding:4px 2px;
+    margin-bottom:12px;
+  }
+  .comments-list::-webkit-scrollbar{width:5px;}
+  .comments-list::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:3px;}
+  .comment-item{
+    display:flex;
+    gap:10px;
+    align-items:flex-start;
+  }
+  .comment-body{
+    flex:1;
+    min-width:0;
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:10px 12px;
+  }
+  .comment-head{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-bottom:4px;
+  }
+  .comment-author{
+    font-weight:600;
+    font-size:12.5px;
+    color:var(--text-strong);
+  }
+  .comment-time{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    color:var(--text-soft);
+    flex:1;
+  }
+  .comment-delete{
+    color:var(--text-soft);
+    padding:2px;
+    border-radius:4px;
+    flex-shrink:0;
+  }
+  .comment-delete:hover{color:var(--danger);background:rgba(196,133,119,0.12);}
+  .comment-text{
+    font-size:13px;
+    color:var(--text);
+    line-height:1.5;
+    white-space:pre-wrap;
+    word-break:break-word;
+  }
+  .comment-composer{
+    display:flex;
+    gap:8px;
+    align-items:flex-end;
+  }
+  .comment-composer textarea{
+    flex:1;
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:9px 12px;
+    font-size:13px;
+    color:var(--text);
+    outline:none;
+    resize:none;
+    font-family:inherit;
+    line-height:1.4;
+    transition:all .15s ease;
+  }
+  .comment-composer textarea:focus{border-color:var(--accent);background:rgba(255,255,255,0.8);}
+  .comment-send-btn{
+    padding:9px 16px;
+    flex-shrink:0;
+    height:fit-content;
+  }
+
   .settings-avatar-preview{
     width:56px;height:56px;
     background:linear-gradient(135deg, var(--palette-8), var(--palette-6));
@@ -1518,6 +1599,19 @@
     border-color:var(--text-strong);
     box-shadow:0 0 0 2px var(--glass-strong);
   }
+  .color-swatch-custom{
+    position:relative;
+    display:grid;
+    place-items:center;
+    background:var(--glass-strong);
+    border:2px dashed var(--line-strong);
+    color:var(--text-muted);
+    font-size:14px;
+    font-weight:600;
+    overflow:hidden;
+  }
+  .color-swatch-custom.selected{border-style:solid;}
+  .color-swatch-custom:hover{color:var(--accent);border-color:var(--accent);}
 
   .settings-col-item{
     display:flex;

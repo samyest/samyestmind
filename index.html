@@ -327,6 +327,14 @@
         </div>
         <textarea id="m-notes" placeholder="Escreva o resumo bruto e clique em Formatar — a IA organiza pra você."></textarea>
       </div>
+      <div class="field" id="m-comments-field" style="display:none;">
+        <label>💬 Comentários</label>
+        <div id="task-comments-list" class="comments-list"></div>
+        <div class="comment-composer">
+          <textarea id="comment-input" placeholder="Escreva um comentário... (Enter envia, Shift+Enter quebra linha)" rows="2" onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendComment();}"></textarea>
+          <button class="btn-primary comment-send-btn" onclick="sendComment()">Enviar</button>
+        </div>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn-danger" id="m-delete" onclick="deleteTask()">Excluir</button>

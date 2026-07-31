@@ -781,6 +781,12 @@ function setupRealtime(){
     .on('postgres_changes', {event:'*', schema:'public', table:'project_members'}, ()=>{
       scheduleRealtimeReload('projects');
     })
+    .on('postgres_changes', {event:'*', schema:'public', table:'task_comments'}, (payload)=>{
+      const affectedId = (payload.new && payload.new.task_id) || (payload.old && payload.old.task_id);
+      if(affectedId && affectedId === currentCommentTaskId && document.getElementById('modal').classList.contains('open')){
+        refreshComments();
+      }
+    })
     .subscribe();
 }
 
@@ -1331,6 +1337,87 @@ function getAssigneeLabel(t){
   const m = p.members.find(x=>x.user_id===t.assigned_to);
   if(!m) return null;
   return (m.profile && m.profile.name) || (m.invited_email ? m.invited_email.split('@')[0] : null);
+}
+
+let currentCommentTaskId = null;
+let commentProfileCache = {};
+
+function fmtCommentTime(iso){
+  const d = new Date(iso);
+  const dias = ['dom','seg','ter','qua','qui','sex','sáb'];
+  const meses = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const time = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  if(isToday) return `Hoje, ${time}`;
+  return `${d.getDate()} ${meses[d.getMonth()]}, ${time}`;
+}
+
+async function loadTaskComments(taskId){
+  const {data, error} = await sb.from('task_comments').select('*').eq('task_id', taskId).order('created_at', {ascending: true});
+  if(error){console.error(error);return [];}
+  const userIds = [...new Set(data.map(c=>c.user_id))].filter(id=>!commentProfileCache[id]);
+  if(userIds.length){
+    const {data: profiles} = await sb.from('profiles').select('id,name,avatar_url').in('id', userIds);
+    (profiles || []).forEach(p=>{commentProfileCache[p.id] = p;});
+  }
+  return data.map(c=>({...c, profile: commentProfileCache[c.user_id] || null}));
+}
+
+function renderCommentsList(comments){
+  const wrap = document.getElementById('task-comments-list');
+  if(!wrap) return;
+  if(comments.length === 0){
+    wrap.innerHTML = `<div class="empty" style="padding:20px 12px;font-size:12px;"><strong>Nenhum comentário ainda.</strong>Seja o primeiro a escrever algo.</div>`;
+    return;
+  }
+  wrap.innerHTML = comments.map(c=>{
+    const name = (c.profile && c.profile.name) || 'Alguém';
+    const mine = c.user_id === session.user.id;
+    return `
+      <div class="comment-item">
+        ${avatarChip(c.profile, name[0])}
+        <div class="comment-body">
+          <div class="comment-head">
+            <span class="comment-author">${esc(name)}${mine ? ' (você)' : ''}</span>
+            <span class="comment-time">${fmtCommentTime(c.created_at)}</span>
+            ${mine ? `<button class="comment-delete" onclick="deleteComment('${c.id}')" title="Excluir"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>` : ''}
+          </div>
+          <div class="comment-text">${esc(c.content)}</div>
+        </div>
+      </div>`;
+  }).join('');
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+async function refreshComments(){
+  if(!currentCommentTaskId) return;
+  const comments = await loadTaskComments(currentCommentTaskId);
+  renderCommentsList(comments);
+}
+
+async function sendComment(){
+  const input = document.getElementById('comment-input');
+  const content = input.value.trim();
+  if(!content || !currentCommentTaskId) return;
+  const btn = document.querySelector('.comment-send-btn');
+  if(btn) btn.disabled = true;
+  const {error} = await sb.from('task_comments').insert({
+    task_id: currentCommentTaskId,
+    user_id: session.user.id,
+    content
+  });
+  if(btn) btn.disabled = false;
+  if(error){alert('Erro ao comentar: ' + error.message);return;}
+  input.value = '';
+  await refreshComments();
+}
+
+async function deleteComment(commentId){
+  if(!confirm('Excluir esse comentário?')) return;
+  const {error} = await sb.from('task_comments').delete().eq('id', commentId);
+  if(error){alert('Erro: ' + error.message);return;}
+  await refreshComments();
 }
 
 function avatarChip(profile, fallbackChar){
@@ -1993,6 +2080,7 @@ function openModal(id, prefillDate, prefillProjectId){
   const modal = document.getElementById('modal');
   const title = document.getElementById('modal-title');
   const delBtn = document.getElementById('m-delete');
+  const commentsField = document.getElementById('m-comments-field');
   populateProjectSelect();
   if(id){
     const t = state.tasks.find(x=>x.id===id);
@@ -2010,6 +2098,10 @@ function openModal(id, prefillDate, prefillProjectId){
     const canEdit = isMine || (t.project_id && canEditProject(t.project_id));
     delBtn.style.display = canEdit ? '' : 'none';
     document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format').forEach(el=>{el.disabled = !canEdit;});
+    commentsField.style.display = '';
+    currentCommentTaskId = id;
+    document.getElementById('task-comments-list').innerHTML = `<div class="empty" style="padding:16px 12px;font-size:11.5px;">Carregando...</div>`;
+    refreshComments();
   }else{
     title.textContent = 'Nova tarefa';
     document.getElementById('m-title').value = '';
@@ -2022,6 +2114,8 @@ function openModal(id, prefillDate, prefillProjectId){
     document.getElementById('m-notes').value = '';
     delBtn.style.display = 'none';
     document.querySelectorAll('#modal input, #modal select, #modal textarea').forEach(el=>{el.disabled = false;});
+    commentsField.style.display = 'none';
+    currentCommentTaskId = null;
   }
   document.getElementById('m-project').onchange = (e)=>{
     populateStatusSelect('m-status', getProjectColumns(state.projects.find(p=>p.id===e.target.value))[0].key, e.target.value || null);
@@ -2064,7 +2158,7 @@ function populateAssigneeSelect(projectId, currentAssignee){
   sel.value = currentAssignee || '';
 }
 
-function closeModal(){document.getElementById('modal').classList.remove('open');state.editingId = null;}
+function closeModal(){document.getElementById('modal').classList.remove('open');state.editingId = null;currentCommentTaskId = null;}
 
 async function saveTask(){
   const title = document.getElementById('m-title').value.trim();
