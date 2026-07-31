@@ -1800,6 +1800,20 @@ function renderTodayAlert(){
     </div>`;
 }
 
+function openMiniCalDay(iso){
+  flushNotesIfPending();
+  const [y,m,d] = iso.split('-').map(Number);
+  state.calDate = new Date(y, m-1, 1);
+  state.calSelectedDate = iso;
+  state.view = 'calendar';
+  render();
+  window.scrollTo(0,0);
+  setTimeout(()=>{
+    const panel = document.querySelector('.day-panel');
+    if(panel) panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+  }, 60);
+}
+
 function renderMiniCal(){
   const d = state.miniCalDate;
   const year = d.getFullYear(), month = d.getMonth();
@@ -1818,7 +1832,7 @@ function renderMiniCal(){
     const iso = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const isToday = today.getDate()===day && today.getMonth()===month && today.getFullYear()===year;
     const hasTask = tasksWithDate.has(iso);
-    cells += `<div class="mini-cal-day ${isToday?'today':''} ${hasTask?'has-task':''}">${day}</div>`;
+    cells += `<div class="mini-cal-day ${isToday?'today':''} ${hasTask?'has-task':''}" onclick="openMiniCalDay('${iso}')">${day}</div>`;
   }
   const filled = startDow + daysInMonth;
   const trailing = (7 - filled % 7) % 7;
