@@ -128,6 +128,7 @@ function applyTheme(name){
 
 function openSettings(){
   document.getElementById('s-name').value = getUserName();
+  document.getElementById('s-sound').checked = state.soundEnabled !== false;
   renderMyAvatar('settings-avatar-preview', getUserName());
   const grid = document.getElementById('theme-grid');
   grid.innerHTML = Object.entries(THEMES).map(([key, t])=>`
@@ -177,16 +178,19 @@ function selectTheme(name){
 async function saveSettings(){
   const name = document.getElementById('s-name').value.trim();
   if(!name){alert('Preencha seu nome');return;}
+  const soundEnabled = document.getElementById('s-sound').checked;
   const {error} = await sb.from('profiles').upsert({
     id: session.user.id,
     name,
     theme: currentTheme,
     avatar_url: state.myAvatarUrl,
+    sound_enabled: soundEnabled,
     updated_at: new Date().toISOString()
   });
   if(error){alert('Erro ao salvar: ' + error.message);return;}
   state.myName = name;
   state.savedTheme = currentTheme;
+  state.soundEnabled = soundEnabled;
   document.getElementById('settings-modal').classList.remove('open');
   render();
   document.getElementById('user-name-display').textContent = name;
@@ -302,7 +306,7 @@ function openStatusDetail(filterKey, label){
         <div class="task-row ${cls}" style="${rowStyle}" onclick="closeStatusModal();openModal('${t.id}')">
           <div class="task-check ${dot.cls}" style="${dot.style}"></div>
           <div class="task-title">${esc(t.title)}</div>
-          <div class="task-date ${dateStatus(t.date)}">${t.date ? fmtDate(t.date) : '—'}</div>
+          <div class="task-date ${dateStatus(t.date)}">${dateWithTime(t)}</div>
           <span class="task-row-break"></span>
           ${badge}
           <div class="task-client">${esc(t.client || '—')}</div>
@@ -563,6 +567,7 @@ async function checkAuth(){
     state.myName = myProfile.name;
     state.myAvatarUrl = myProfile.avatar_url || null;
     state.savedTheme = myProfile.theme || 'bluegray';
+    state.soundEnabled = myProfile.sound_enabled !== false;
     applyTheme(state.savedTheme);
     state.columns = myProfile.kanban_columns || JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
     document.getElementById('user-email').textContent = email;
@@ -571,6 +576,7 @@ async function checkAuth(){
     await loadTasks();
     await loadProjects();
     setupRealtime();
+    startAlarmChecker();
   } else {
     appEl.style.display = 'none';
     onbEl.classList.remove('show');
@@ -768,6 +774,95 @@ async function refreshAll(kind, silent){
   setTimeout(()=>btns.forEach(b=>b.classList.remove('spinning')), 400);
 }
 
+let alarmedTaskKeys = new Set();
+let alarmCheckTimer = null;
+
+function startAlarmChecker(){
+  if(alarmCheckTimer) return;
+  if(window.Notification && Notification.permission === 'default'){
+    try{ Notification.requestPermission(); }catch(e){}
+  }
+  checkAlarms();
+  alarmCheckTimer = setInterval(checkAlarms, 20000);
+}
+
+function stopAlarmChecker(){
+  if(alarmCheckTimer){clearInterval(alarmCheckTimer);alarmCheckTimer = null;}
+}
+
+function checkAlarms(){
+  if(!state.tasks || !state.tasks.length) return;
+  const now = new Date();
+  const todayIso = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const nowHM = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+  personalTasks().forEach(t=>{
+    if(!t.time || t.date !== todayIso) return;
+    if(taskColumnType(t) === 'done') return;
+    if(t.time !== nowHM) return;
+    const key = `${t.id}_${t.date}_${t.time}`;
+    if(alarmedTaskKeys.has(key)) return;
+    alarmedTaskKeys.add(key);
+    fireAlarm(t);
+  });
+}
+
+function playAlarmSound(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const notes = [880, 1108, 1318];
+    notes.forEach((freq, i)=>{
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const start = ctx.currentTime + i * 0.16;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.22, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.32);
+      osc.start(start);
+      osc.stop(start + 0.34);
+    });
+  }catch(e){}
+}
+
+function fireAlarm(task){
+  if(state.soundEnabled !== false) playAlarmSound();
+  showAlarmBanner(task);
+  if(window.Notification && Notification.permission === 'granted'){
+    try{
+      new Notification('⏰ ' + task.title, {body: task.client || 'Está na hora!', tag: task.id});
+    }catch(e){}
+  }
+}
+
+function showAlarmBanner(task){
+  const old = document.getElementById('alarm-banner');
+  if(old) old.remove();
+  const el = document.createElement('div');
+  el.id = 'alarm-banner';
+  el.className = 'alarm-banner';
+  el.innerHTML = `
+    <div class="alarm-banner-icon">⏰</div>
+    <div class="alarm-banner-body">
+      <div class="alarm-banner-label">Está na hora</div>
+      <div class="alarm-banner-title">${esc(task.title)}</div>
+      ${task.client ? `<div class="alarm-banner-sub">${esc(task.client)}</div>` : ''}
+    </div>
+    <div class="alarm-banner-actions">
+      <button class="btn-primary" onclick="document.getElementById('alarm-banner').remove();openModal('${task.id}')">Ver tarefa</button>
+      <button class="alarm-banner-dismiss" onclick="document.getElementById('alarm-banner').remove();" title="Silenciar">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>`;
+  document.body.appendChild(el);
+  setTimeout(()=>{
+    if(document.getElementById('alarm-banner') === el) el.remove();
+  }, 15000);
+}
+
 function setupRealtime(){
   if(realtimeChannel) return;
   realtimeChannel = sb.channel('app-changes')
@@ -798,6 +893,7 @@ function teardownRealtime(){
 
 async function logout(){
   teardownRealtime();
+  stopAlarmChecker();
   await sb.auth.signOut();
   location.reload();
 }
@@ -878,6 +974,7 @@ async function loadTasks(){
     status: t.status || 'todo',
     priority: t.priority || 'normal',
     date: t.date || '',
+    time: t.time || '',
     notes: t.notes || '',
     google_event_id: t.google_event_id || null,
     completed_at: t.completed_at || null,
@@ -897,6 +994,7 @@ async function createTaskRemote(data){
     status: data.status,
     priority: data.priority,
     date: data.date || null,
+    time: data.time || null,
     notes: data.notes || null,
     completed_at: data.completed_at || null,
     project_id: data.project_id || null,
@@ -910,6 +1008,7 @@ async function createTaskRemote(data){
     status: task.status,
     priority: task.priority,
     date: task.date || '',
+    time: task.time || '',
     notes: task.notes || '',
     google_event_id: null,
     completed_at: task.completed_at || null,
@@ -929,6 +1028,7 @@ async function updateTaskRemote(id, data){
     date: data.date || null,
     notes: data.notes || null
   };
+  if('time' in data) payload.time = data.time || null;
   if('completed_at' in data) payload.completed_at = data.completed_at || null;
   if('project_id' in data) payload.project_id = data.project_id || null;
   if('assigned_to' in data) payload.assigned_to = data.assigned_to || null;
@@ -1315,7 +1415,7 @@ function renderProjectPage(){
                       <div class="kb-card-title">${esc(t.title)}</div>
                       ${assigneeBadge}
                       <div class="kb-card-meta">
-                        <span class="${dateStatus(t.date)}">${t.date ? fmtDate(t.date) : 'sem prazo'}</span>
+                        <span class="${dateStatus(t.date)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>
                         ${badge}
                       </div>
                     </div>`;
@@ -1549,6 +1649,10 @@ function fmtDate(iso){
   const [y,m,d] = iso.split('-');
   return `${d}/${m}`;
 }
+function dateWithTime(t){
+  if(!t.date) return '—';
+  return t.time ? `${fmtDate(t.date)} ⏰${t.time}` : fmtDate(t.date);
+}
 function fmtDateFull(iso){
   if(!iso) return 'Sem prazo';
   const [y,m,d] = iso.split('-');
@@ -1668,7 +1772,7 @@ function renderDashboard(){
       <div class="task-row ${cls}" onclick="openModal('${t.id}')">
         <div class="task-check ${dot.cls}" style="${dot.style}"></div>
         <div class="task-title">${esc(t.title)}</div>
-        <div class="task-date ${dateStatus(t.date)}">${t.date ? fmtDate(t.date) : '—'}</div>
+        <div class="task-date ${dateStatus(t.date)}">${dateWithTime(t)}</div>
         <span class="task-row-break"></span>
         ${badge}
         ${projBadge}
@@ -1829,7 +1933,7 @@ function openMiniCalDay(iso){
         <div class="task-row ${cls}" style="${rowStyle}" onclick="closeStatusModal();openModal('${t.id}')">
           <div class="task-check ${dot.cls}" style="${dot.style}"></div>
           <div class="task-title">${esc(t.title)}</div>
-          <div class="task-date ${dateStatus(t.date)}">${fmtDate(t.date)}</div>
+          <div class="task-date ${dateStatus(t.date)}">${dateWithTime(t)}</div>
           <span class="task-row-break"></span>
           ${badge}
           <div class="task-client">${esc(t.client || '—')}</div>
@@ -1917,7 +2021,7 @@ function renderKanban(){
                     <div class="kb-card-title">${esc(t.title)}</div>
                     ${projBadge}
                     <div class="kb-card-meta">
-                      <span class="${dateStatus(t.date)}">${t.date ? fmtDate(t.date) : 'sem prazo'}</span>
+                      <span class="${dateStatus(t.date)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>
                       ${badge}
                     </div>
                   </div>`;
@@ -2162,6 +2266,7 @@ function openModal(id, prefillDate, prefillProjectId){
     document.getElementById('m-client').value = t.client || '';
     populateStatusSelect('m-status', t.status || getColumns()[0].key, t.project_id);
     document.getElementById('m-date').value = t.date || '';
+    document.getElementById('m-time').value = t.time || '';
     document.getElementById('m-priority').value = t.priority || 'normal';
     document.getElementById('m-project').value = t.project_id || '';
     populateAssigneeSelect(t.project_id, t.assigned_to);
@@ -2180,6 +2285,7 @@ function openModal(id, prefillDate, prefillProjectId){
     document.getElementById('m-client').value = '';
     populateStatusSelect('m-status', getProjectColumns(state.projects.find(p=>p.id===prefillProjectId))[0].key, prefillProjectId);
     document.getElementById('m-date').value = prefillDate || '';
+    document.getElementById('m-time').value = '';
     document.getElementById('m-priority').value = 'normal';
     document.getElementById('m-project').value = prefillProjectId || '';
     populateAssigneeSelect(prefillProjectId, null);
@@ -2242,6 +2348,7 @@ async function saveTask(){
     client: document.getElementById('m-client').value.trim(),
     status: newStatus,
     date: document.getElementById('m-date').value,
+    time: document.getElementById('m-time').value,
     priority: document.getElementById('m-priority').value,
     notes: document.getElementById('m-notes').value.trim(),
     project_id: document.getElementById('m-project').value || null,
