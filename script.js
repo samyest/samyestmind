@@ -195,7 +195,16 @@ const DEFAULT_COLUMNS = [
   {key:'doing', name:'Em Andamento', color:'#5B7A94', type:'active'},
   {key:'done', name:'Concluído', color:'#8FA88C', type:'done'}
 ];
-const COLUMN_COLOR_PRESETS = ['#9AAFC2','#C9A868','#5B7A94','#8FA88C','#C48577','#B084CC','#5CC2C6','#D4826B'];
+const COLUMN_COLOR_PRESETS = [
+  '#9AAFC2','#7D9AB3','#5B7A94','#3D5578',
+  '#C9A868','#D4A93F','#B8863D','#8F6A2E',
+  '#8FA88C','#5CA05A','#3D7A4A','#2C5F3B',
+  '#C48577','#D4826B','#B85C48','#933A2C',
+  '#B084CC','#9B5FBF','#7A3FA0','#5C2C7A',
+  '#5CC2C6','#3D9FA3','#2C7A7D','#1F5A5C',
+  '#E0899E','#C9587A','#A83D5C','#822C46',
+  '#6B7280','#4B5563','#374151','#1F2937'
+];
 let selectedColumnColor = COLUMN_COLOR_PRESETS[0];
 let editingColumnKey = null;
 
@@ -246,9 +255,15 @@ async function persistColumns(){
 function renderColorSwatches(){
   const wrap = document.getElementById('col-color-swatches');
   if(!wrap) return;
+  const isCustom = !COLUMN_COLOR_PRESETS.includes(selectedColumnColor);
   wrap.innerHTML = COLUMN_COLOR_PRESETS.map(c=>`
     <button type="button" class="color-swatch-btn ${c===selectedColumnColor?'selected':''}" style="background:${c}" onclick="selectColumnColor('${c}')"></button>
-  `).join('');
+  `).join('') + `
+    <label class="color-swatch-btn color-swatch-custom ${isCustom?'selected':''}" style="${isCustom ? `background:${selectedColumnColor};` : ''}" title="Escolher outra cor">
+      ${isCustom ? '' : '<span>+</span>'}
+      <input type="color" value="${selectedColumnColor}" oninput="selectColumnColor(this.value)" style="opacity:0;position:absolute;inset:0;width:100%;height:100%;cursor:pointer;border:none;padding:0;">
+    </label>
+  `;
 }
 function selectColumnColor(c){
   selectedColumnColor = c;
@@ -512,6 +527,17 @@ function priorityWeight(t){
   if(t.priority === 'high') return 3;
   if(dateStatus(t.date) === 'today') return 2;
   return 1;
+}
+
+function sortByDateThenPriority(list){
+  const rawPriority = t => t.priority === 'urgent' ? 3 : t.priority === 'high' ? 2 : 1;
+  return list.slice().sort((a,b)=>{
+    if(!a.date && !b.date) return rawPriority(b) - rawPriority(a);
+    if(!a.date) return 1;
+    if(!b.date) return -1;
+    if(a.date !== b.date) return a.date.localeCompare(b.date);
+    return rawPriority(b) - rawPriority(a);
+  });
 }
 
 async function checkAuth(){
@@ -1249,7 +1275,7 @@ function renderProjectPage(){
       </div>
       <div class="kanban" style="margin-top:4px;">
         ${cols.map(col=>{
-          const list = projectTasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t));
+          const list = sortByDateThenPriority(projectTasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t)));
           return `
             <div class="glass kb-col" data-status="${col.key}" ondragover="dragOver(event)" ondrop="drop(event,'${col.key}')" ondragleave="dragLeave(event)">
               <div class="kb-col-head">
@@ -1706,7 +1732,7 @@ function renderKanban(){
     </div>
     <div class="kanban">
       ${cols.map(col=>{
-        const list = personalTasks().filter(t=>t.status===col.key && !isHiddenFromKanban(t));
+        const list = sortByDateThenPriority(personalTasks().filter(t=>t.status===col.key && !isHiddenFromKanban(t)));
         return `
           <div class="glass kb-col" data-status="${col.key}" ondragover="dragOver(event)" ondrop="drop(event,'${col.key}')" ondragleave="dragLeave(event)">
             <div class="kb-col-head">
