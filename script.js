@@ -1180,7 +1180,16 @@ async function deleteProject(projectId){
   render();
 }
 
+function flushNotesIfPending(){
+  if(notesSaveTimer){
+    clearTimeout(notesSaveTimer);
+    notesSaveTimer = null;
+    saveProjectNotes();
+  }
+}
+
 function openProjectView(projectId){
+  flushNotesIfPending();
   state.currentProjectId = projectId;
   state.view = 'project';
   render();
@@ -1245,7 +1254,7 @@ function renderProjectPage(){
         <h1>${esc(p.name)}</h1>
       </div>
       <div style="display:flex;gap:10px;">
-        <button class="btn-back" onclick="state.view='dashboard';render();" title="Voltar aos projetos">
+        <button class="btn-back" onclick="flushNotesIfPending();state.view='dashboard';render();" title="Voltar aos projetos">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
         </button>
         <button class="btn-back refresh-btn" onclick="refreshAll()" title="Atualizar agora">
@@ -2058,7 +2067,7 @@ function attachEvents(){
   document.querySelectorAll('.status-item .val[data-count]').forEach(el=>{
     animateCount(el, parseInt(el.dataset.count, 10) || 0);
   });
-  document.querySelectorAll('.nav-item, .mobile-nav-item').forEach(el=>{el.onclick = ()=>{state.view = el.dataset.view;render();window.scrollTo(0,0);};});
+  document.querySelectorAll('.nav-item, .mobile-nav-item').forEach(el=>{el.onclick = ()=>{flushNotesIfPending();state.view = el.dataset.view;render();window.scrollTo(0,0);};});
   const fs = document.getElementById('f-search');
   if(fs) fs.oninput = (e)=>{state.filter.search = e.target.value;render();document.getElementById('f-search').focus();};
   const fst = document.getElementById('f-status');
