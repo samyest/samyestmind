@@ -1399,7 +1399,7 @@
     line-height:1.4;
     transition:all .15s ease;
   }
-  .comment-composer textarea:focus{border-color:var(--accent);background:rgba(255,255,255,0.8);}
+  .comment-composer textarea:focus{border-color:var(--accent);background:var(--glass-hover);}
   .comment-send-btn{
     padding:9px 16px;
     flex-shrink:0;
