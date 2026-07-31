@@ -63,6 +63,7 @@ const THEMES = {
   },
   graphite: {
     name: 'Grafite',
+    dark: true,
     bg: '#141821',
     p5: '#2A3140', p6: '#3D4557', p8: '#5A6478',
     accent: '#C7CDD6', accentHover: '#DDE2E9',
@@ -79,6 +80,7 @@ const THEMES = {
   },
   gremio: {
     name: 'Grêmio',
+    dark: true,
     bg: '#0A1428',
     p5: '#1B3A6B', p6: '#2C5AA0', p8: '#3D7DD8',
     accent: '#1560BD', accentHover: '#0D4A9C',
@@ -121,6 +123,7 @@ function applyTheme(name){
   r.setProperty('--line', t.line || 'rgba(122, 142, 162, 0.14)');
   r.setProperty('--line-strong', t.lineStrong || 'rgba(122, 142, 162, 0.22)');
   document.body.classList.toggle('theme-bg-photo', !!t.bgPhoto);
+  document.documentElement.style.colorScheme = t.dark ? 'dark' : 'light';
 }
 
 function openSettings(){

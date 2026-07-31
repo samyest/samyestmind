@@ -159,7 +159,7 @@
     pointer-events:none;
   }
   .toast-dot{width:6px;height:6px;border-radius:50%;background:var(--done);flex-shrink:0;}
-  input,select,textarea{font-family:inherit;color:var(--text);}
+  input,select,textarea{font-family:inherit;color:var(--text);caret-color:var(--text);}
   ::selection{background:var(--palette-5);color:var(--text-strong);}
 
   .app{
