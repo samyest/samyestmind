@@ -441,7 +441,7 @@ function populateStatusSelect(selectId, currentValue, projectId){
   sel.value = currentValue;
 }
 
-const DEFAULT_CLIENTS = ['Elliz B (Donna da Lua)','Adelso Costa','Conteinner','Alex','Jmavell','Interno','TruthCommerce','Ascent','Espumart'];
+const DEFAULT_CLIENTS = [];
 
 let state = {
   tasks: [],
