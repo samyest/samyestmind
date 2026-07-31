@@ -165,11 +165,10 @@
   input:-webkit-autofill:focus,
   textarea:-webkit-autofill,
   textarea:-webkit-autofill:focus{
-    -webkit-text-fill-color:var(--text) !important;
-    -webkit-box-shadow:0 0 0 1000px var(--glass-strong) inset !important;
-    box-shadow:0 0 0 1000px var(--glass-strong) inset !important;
-    caret-color:var(--text) !important;
-    transition:background-color 9999s ease-in-out 0s;
+    -webkit-text-fill-color:#1a1a1a !important;
+    -webkit-box-shadow:0 0 0 1000px #f0f2f5 inset !important;
+    box-shadow:0 0 0 1000px #f0f2f5 inset !important;
+    caret-color:#1a1a1a !important;
   }
   ::selection{background:var(--palette-5);color:var(--text-strong);}
 
