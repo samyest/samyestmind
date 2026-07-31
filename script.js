@@ -1715,13 +1715,16 @@ function renderDashboard(){
       ${colCounts.map(c=>`<div class="status-item" onclick="openStatusDetail('col:${c.key}', '${esc(c.name).replace(/'/g,"\\'")}')"><div class="lbl">${esc(c.name)}</div><div class="val" data-count="${c.count}">0</div></div>`).join('')}
       <div class="status-item overdue" onclick="openStatusDetail('overdue', 'Atrasadas')"><div class="lbl">Atrasadas</div><div class="val" data-count="${overdue}">0</div></div>
     </div>
-    <div class="date-filter">
-      <span class="date-filter-label">Prazo:</span>
-      <button class="date-pill ${state.dateFilter==='all'?'active':''}" onclick="setDateFilter('all')">Todas</button>
-      <button class="date-pill ${state.dateFilter==='today'?'active':''}" onclick="setDateFilter('today')">Hoje</button>
-      <button class="date-pill ${state.dateFilter==='next3'?'active':''}" onclick="setDateFilter('next3')">Próximos dias</button>
-      <button class="date-pill ${state.dateFilter==='week'?'active':''}" onclick="setDateFilter('week')">Semana</button>
-      <button class="date-pill ${state.dateFilter==='month'?'active':''}" onclick="setDateFilter('month')">Mês</button>
+    <div class="date-filter-row">
+      <div class="date-filter">
+        <span class="date-filter-label">Prazo:</span>
+        <button class="date-pill ${state.dateFilter==='all'?'active':''}" onclick="setDateFilter('all')">Todas</button>
+        <button class="date-pill ${state.dateFilter==='today'?'active':''}" onclick="setDateFilter('today')">Hoje</button>
+        <button class="date-pill ${state.dateFilter==='next3'?'active':''}" onclick="setDateFilter('next3')">Próximos dias</button>
+        <button class="date-pill ${state.dateFilter==='week'?'active':''}" onclick="setDateFilter('week')">Semana</button>
+        <button class="date-pill ${state.dateFilter==='month'?'active':''}" onclick="setDateFilter('month')">Mês</button>
+      </div>
+      ${renderTodayAlert()}
     </div>
     <div class="dash-grid">
       <div style="display:flex;flex-direction:column;gap:22px;">
@@ -1752,7 +1755,6 @@ function renderDashboard(){
         ` : ''}
       </div>
       <div class="side-col">
-        ${renderTodayAlert()}
         <div class="glass panel">${renderMiniCal()}</div>
       </div>
     </div>
