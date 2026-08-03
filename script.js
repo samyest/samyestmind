@@ -461,7 +461,7 @@ let state = {
   calSelectedDate: null,
   miniCalDate: new Date(),
   dateFilter: 'all',
-  filter: {client:'', status:'', search:''}
+  filter: {client:'', status:'', search:'', project:'', assignee:'', tableDate:'all'}
 };
 
 function matchesDateFilter(t, filter){
@@ -1748,9 +1748,17 @@ function updateNav(){
 
   const list = document.getElementById('clients-list');
   if(list){
-    const set = new Set(DEFAULT_CLIENTS);
-    state.tasks.forEach(t=>{if(t.client) set.add(t.client);});
-    list.innerHTML = [...set].map(c=>`<option value="${esc(c)}">`).join('');
+    const sortedTasks = [...state.tasks].sort((a,b)=>b.created - a.created);
+    const seen = new Set();
+    const ordered = [];
+    sortedTasks.forEach(t=>{
+      if(t.client && !seen.has(t.client)){
+        seen.add(t.client);
+        ordered.push(t.client);
+      }
+    });
+    DEFAULT_CLIENTS.forEach(c=>{if(!seen.has(c)){seen.add(c);ordered.push(c);}});
+    list.innerHTML = ordered.map(c=>`<option value="${esc(c)}">`).join('');
   }
   renderSidebarProjects();
 }
@@ -2210,15 +2218,44 @@ function calNav(delta){state.calDate.setMonth(state.calDate.getMonth()+delta);re
 function calToday(){state.calDate = new Date();render();}
 
 function renderTable(){
-  const clientes = [...new Set(personalTasks().map(t=>t.client).filter(Boolean))].sort();
-  let filtered = personalTasks();
+  const projectFilter = state.filter.project || '';
+  const selectedProject = projectFilter ? state.projects.find(p=>p.id===projectFilter) : null;
+
+  let baseTasks;
+  if(selectedProject){
+    baseTasks = state.tasks.filter(t=>t.project_id===selectedProject.id);
+  } else {
+    baseTasks = personalTasks();
+  }
+
+  const clientes = [...new Set(baseTasks.map(t=>t.client).filter(Boolean))].sort();
+
+  let filtered = baseTasks;
   if(state.filter.status) filtered = filtered.filter(t=>t.status===state.filter.status);
   if(state.filter.client) filtered = filtered.filter(t=>t.client===state.filter.client);
+  if(selectedProject && state.filter.assignee){
+    if(state.filter.assignee === 'unassigned'){
+      filtered = filtered.filter(t=>!t.assigned_to);
+    } else {
+      filtered = filtered.filter(t=>t.assigned_to===state.filter.assignee);
+    }
+  }
+  if(state.filter.tableDate && state.filter.tableDate !== 'all'){
+    filtered = filtered.filter(t=>matchesDateFilter(t, state.filter.tableDate));
+  }
   if(state.filter.search){
     const s = state.filter.search.toLowerCase();
     filtered = filtered.filter(t=>(t.title||'').toLowerCase().includes(s) || (t.client||'').toLowerCase().includes(s) || (t.notes||'').toLowerCase().includes(s));
   }
-  filtered.sort((a,b)=>{if(!a.date) return 1;if(!b.date) return -1;return a.date.localeCompare(b.date);});
+  filtered = sortByDateThenPriority(filtered);
+
+  const myProjects = state.projects;
+  const assigneeOptions = selectedProject ? [
+    {id:'', label:'Todas as pessoas'},
+    {id:'unassigned', label:'Sem atribuição'},
+    {id: selectedProject.owner_id, label: (selectedProject.ownerProfile && selectedProject.ownerProfile.name) || selectedProject.owner_email || 'Dono'},
+    ...selectedProject.members.filter(m=>m.status==='accepted' && m.user_id).map(m=>({id:m.user_id, label:(m.profile && m.profile.name) || m.invited_email || 'Membro'}))
+  ] : [];
 
   return `
     <div class="view-header">
@@ -2228,24 +2265,40 @@ function renderTable(){
     <div class="glass table-view">
       <div class="table-filters">
         <input type="text" class="input search" id="f-search" placeholder="Buscar por título, cliente ou notas..." value="${esc(state.filter.search)}">
+        <select class="select" id="f-project" style="width:auto;">
+          <option value="">Pessoal (minhas tarefas)</option>
+          ${myProjects.map(p=>`<option value="${p.id}" ${projectFilter===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}
+        </select>
+        ${selectedProject ? `
+        <select class="select" id="f-assignee" style="width:auto;">
+          ${assigneeOptions.map(o=>`<option value="${o.id}" ${state.filter.assignee===o.id?'selected':''}>${esc(o.label)}</option>`).join('')}
+        </select>` : ''}
         <select class="select" id="f-status" style="width:auto;">
           <option value="">Todos status</option>
-          ${getColumns().map(c=>`<option value="${c.key}" ${state.filter.status===c.key?'selected':''}>${esc(c.name)}</option>`).join('')}
+          ${(selectedProject ? getProjectColumns(selectedProject) : getColumns()).map(c=>`<option value="${c.key}" ${state.filter.status===c.key?'selected':''}>${esc(c.name)}</option>`).join('')}
         </select>
         <select class="select" id="f-client" style="width:auto;">
           <option value="">Todos clientes</option>
           ${clientes.map(c=>`<option value="${esc(c)}" ${state.filter.client===c?'selected':''}>${esc(c)}</option>`).join('')}
         </select>
+        <select class="select" id="f-table-date" style="width:auto;">
+          <option value="all" ${(!state.filter.tableDate || state.filter.tableDate==='all')?'selected':''}>Qualquer prazo</option>
+          <option value="today" ${state.filter.tableDate==='today'?'selected':''}>Hoje</option>
+          <option value="next3" ${state.filter.tableDate==='next3'?'selected':''}>Próximos dias</option>
+          <option value="week" ${state.filter.tableDate==='week'?'selected':''}>Semana</option>
+          <option value="month" ${state.filter.tableDate==='month'?'selected':''}>Mês</option>
+        </select>
       </div>
       ${filtered.length===0
         ? `<div class="empty" style="margin:28px;"><strong>Nenhuma tarefa encontrada</strong>Ajuste os filtros ou crie uma nova.</div>`
         : `<div class="table-scroll"><table class="task-table">
-            <thead><tr><th>Tarefa</th><th>Cliente</th><th>Status</th><th>Prazo</th></tr></thead>
+            <thead><tr><th>Tarefa</th><th>Cliente</th>${selectedProject ? '<th>Atribuída a</th>' : ''}<th>Status</th><th>Prazo</th></tr></thead>
             <tbody>
               ${filtered.map(t=>`
                 <tr onclick="openModal('${t.id}')">
                   <td>${esc(t.title)}</td>
                   <td>${esc(t.client || '—')}</td>
+                  ${selectedProject ? `<td>${esc(getAssigneeLabel(t) || 'Todo mundo')}</td>` : ''}
                   <td><span class="badge"><span class="badge-dot" style="background:${taskColumnColor(t)}"></span>${esc(taskColumnName(t))}</span></td>
                   <td>${t.date ? fmtDateFull(t.date) : '—'}</td>
                 </tr>`).join('')}
@@ -2266,6 +2319,12 @@ function attachEvents(){
   if(fst) fst.onchange = (e)=>{state.filter.status = e.target.value;render();};
   const fc = document.getElementById('f-client');
   if(fc) fc.onchange = (e)=>{state.filter.client = e.target.value;render();};
+  const fp = document.getElementById('f-project');
+  if(fp) fp.onchange = (e)=>{state.filter.project = e.target.value;state.filter.status='';state.filter.client='';state.filter.assignee='';render();};
+  const fa = document.getElementById('f-assignee');
+  if(fa) fa.onchange = (e)=>{state.filter.assignee = e.target.value;render();};
+  const ftd = document.getElementById('f-table-date');
+  if(ftd) ftd.onchange = (e)=>{state.filter.tableDate = e.target.value;render();};
 
   document.querySelectorAll('.cal-cell[data-date]').forEach(cell=>{
     cell.addEventListener('click', (e)=>{
