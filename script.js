@@ -461,7 +461,7 @@ let state = {
   calSelectedDate: null,
   miniCalDate: new Date(),
   dateFilter: 'all',
-  filter: {client:'', status:'', search:'', project:'', assignee:'', tableDate:'all'}
+  filter: {client:'', status:'', search:'', project:'', assignee:'', tableDate:'all', kanbanClient:'', kanbanDate:'all', kanbanAssignee:''}
 };
 
 function matchesDateFilter(t, filter){
@@ -1367,6 +1367,22 @@ function renderProjectPage(){
   const projectTasks = state.tasks.filter(t=>t.project_id===p.id);
   const cols = getProjectColumns(p);
   const activeCount = projectTasks.filter(t=>taskColumnType(t)!=='done').length;
+  const clientOptions = [...new Set(projectTasks.map(t=>t.client).filter(Boolean))].sort();
+  const assigneeOptions = [
+    {id:'', label:'Todas as pessoas'},
+    {id:'unassigned', label:'Sem atribuição'},
+    {id: p.owner_id, label: (p.ownerProfile && p.ownerProfile.name) || p.owner_email || 'Dono'},
+    ...p.members.filter(m=>m.status==='accepted' && m.user_id).map(m=>({id:m.user_id, label:(m.profile && m.profile.name) || m.invited_email || 'Membro'}))
+  ];
+  const filteredProjectTasks = projectTasks.filter(t=>{
+    if(state.filter.kanbanClient && t.client !== state.filter.kanbanClient) return false;
+    if(state.filter.kanbanAssignee){
+      if(state.filter.kanbanAssignee === 'unassigned'){ if(t.assigned_to) return false; }
+      else if(t.assigned_to !== state.filter.kanbanAssignee) return false;
+    }
+    if(state.filter.kanbanDate && state.filter.kanbanDate !== 'all' && !matchesDateFilter(t, state.filter.kanbanDate)) return false;
+    return true;
+  });
 
   return `
     <div class="view-header">
@@ -1412,9 +1428,25 @@ function renderProjectPage(){
           <div class="panel-hint">${activeCount} ativa${activeCount!==1?'s':''} · ${projectTasks.length} no total</div>
         </div>
       </div>
+      <div class="kanban-filter-row">
+        <select class="select" id="kf-assignee" style="width:auto;">
+          ${assigneeOptions.map(o=>`<option value="${o.id}" ${state.filter.kanbanAssignee===o.id?'selected':''}>${esc(o.label)}</option>`).join('')}
+        </select>
+        <select class="select" id="kf-client" style="width:auto;">
+          <option value="">Todos clientes</option>
+          ${clientOptions.map(c=>`<option value="${esc(c)}" ${state.filter.kanbanClient===c?'selected':''}>${esc(c)}</option>`).join('')}
+        </select>
+        <select class="select" id="kf-date" style="width:auto;">
+          <option value="all" ${(!state.filter.kanbanDate||state.filter.kanbanDate==='all')?'selected':''}>Qualquer prazo</option>
+          <option value="today" ${state.filter.kanbanDate==='today'?'selected':''}>Hoje</option>
+          <option value="next3" ${state.filter.kanbanDate==='next3'?'selected':''}>Próximos dias</option>
+          <option value="week" ${state.filter.kanbanDate==='week'?'selected':''}>Semana</option>
+          <option value="month" ${state.filter.kanbanDate==='month'?'selected':''}>Mês</option>
+        </select>
+      </div>
       <div class="kanban" style="margin-top:4px;">
         ${cols.map(col=>{
-          const list = sortByDateThenPriority(projectTasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t)));
+          const list = sortByDateThenPriority(filteredProjectTasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t)));
           return `
             <div class="glass kb-col" data-status="${col.key}" ondragover="dragOver(event)" ondrop="drop(event,'${col.key}')" ondragleave="dragLeave(event)">
               <div class="kb-col-head">
@@ -1748,7 +1780,8 @@ function updateNav(){
 
   const list = document.getElementById('clients-list');
   if(list){
-    const sortedTasks = [...state.tasks].sort((a,b)=>b.created - a.created);
+    const myOwnTasks = state.tasks.filter(t=>!t.project_id && t.owner_id === session.user.id);
+    const sortedTasks = [...myOwnTasks].sort((a,b)=>b.created - a.created);
     const seen = new Set();
     const ordered = [];
     sortedTasks.forEach(t=>{
@@ -1757,7 +1790,6 @@ function updateNav(){
         ordered.push(t.client);
       }
     });
-    DEFAULT_CLIENTS.forEach(c=>{if(!seen.has(c)){seen.add(c);ordered.push(c);}});
     list.innerHTML = ordered.map(c=>`<option value="${esc(c)}">`).join('');
   }
   renderSidebarProjects();
@@ -2021,6 +2053,12 @@ function miniCalNav(delta){state.miniCalDate.setMonth(state.miniCalDate.getMonth
 
 function renderKanban(){
   const cols = getColumns();
+  const clientOptions = [...new Set(personalTasks().map(t=>t.client).filter(Boolean))].sort();
+  const filteredTasks = personalTasks().filter(t=>{
+    if(state.filter.kanbanClient && t.client !== state.filter.kanbanClient) return false;
+    if(state.filter.kanbanDate && state.filter.kanbanDate !== 'all' && !matchesDateFilter(t, state.filter.kanbanDate)) return false;
+    return true;
+  });
   return `
     <div class="view-header">
       <div><div class="eyebrow">Fluxo de trabalho</div><h1>Kanban</h1></div>
@@ -2029,9 +2067,22 @@ function renderKanban(){
         <button class="btn-primary" onclick="openModal()">+ Nova tarefa</button>
       </div>
     </div>
+    <div class="kanban-filter-row">
+      <select class="select" id="kf-client" style="width:auto;">
+        <option value="">Todos clientes</option>
+        ${clientOptions.map(c=>`<option value="${esc(c)}" ${state.filter.kanbanClient===c?'selected':''}>${esc(c)}</option>`).join('')}
+      </select>
+      <select class="select" id="kf-date" style="width:auto;">
+        <option value="all" ${(!state.filter.kanbanDate||state.filter.kanbanDate==='all')?'selected':''}>Qualquer prazo</option>
+        <option value="today" ${state.filter.kanbanDate==='today'?'selected':''}>Hoje</option>
+        <option value="next3" ${state.filter.kanbanDate==='next3'?'selected':''}>Próximos dias</option>
+        <option value="week" ${state.filter.kanbanDate==='week'?'selected':''}>Semana</option>
+        <option value="month" ${state.filter.kanbanDate==='month'?'selected':''}>Mês</option>
+      </select>
+    </div>
     <div class="kanban">
       ${cols.map(col=>{
-        const list = sortByDateThenPriority(personalTasks().filter(t=>t.status===col.key && !isHiddenFromKanban(t)));
+        const list = sortByDateThenPriority(filteredTasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t)));
         return `
           <div class="glass kb-col" data-status="${col.key}" ondragover="dragOver(event)" ondrop="drop(event,'${col.key}')" ondragleave="dragLeave(event)">
             <div class="kb-col-head">
@@ -2325,6 +2376,13 @@ function attachEvents(){
   if(fa) fa.onchange = (e)=>{state.filter.assignee = e.target.value;render();};
   const ftd = document.getElementById('f-table-date');
   if(ftd) ftd.onchange = (e)=>{state.filter.tableDate = e.target.value;render();};
+
+  const kfc = document.getElementById('kf-client');
+  if(kfc) kfc.onchange = (e)=>{state.filter.kanbanClient = e.target.value;render();};
+  const kfd = document.getElementById('kf-date');
+  if(kfd) kfd.onchange = (e)=>{state.filter.kanbanDate = e.target.value;render();};
+  const kfa = document.getElementById('kf-assignee');
+  if(kfa) kfa.onchange = (e)=>{state.filter.kanbanAssignee = e.target.value;render();};
 
   document.querySelectorAll('.cal-cell[data-date]').forEach(cell=>{
     cell.addEventListener('click', (e)=>{
