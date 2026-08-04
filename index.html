@@ -294,10 +294,10 @@
         <input type="text" class="input" id="m-title" placeholder="Ex: Enviar orçamento para o cliente">
       </div>
       <div class="field-row">
-        <div class="field">
+        <div class="field" style="position:relative;">
           <label>Cliente / Projeto</label>
-          <input type="text" class="input" id="m-client" placeholder="Nome do cliente" list="clients-list">
-          <datalist id="clients-list"></datalist>
+          <input type="text" class="input" id="m-client" placeholder="Nome do cliente" autocomplete="off" oninput="filterClientSuggestions()" onfocus="filterClientSuggestions()" onblur="setTimeout(hideClientSuggestions, 150)">
+          <div id="client-suggestions" class="client-suggestions"></div>
         </div>
         <div class="field">
           <label>Status</label>

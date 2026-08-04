@@ -452,6 +452,7 @@ let state = {
   columns: null,
   myAvatarUrl: null,
   myName: null,
+  recentClients: [],
   projects: [],
   pendingInvites: [],
   view: 'dashboard',
@@ -1778,20 +1779,17 @@ function updateNav(){
   const today = personalTasks().filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='today').length;
   document.getElementById('today-hint').textContent = overdue > 0 ? `${overdue} atrasada${overdue>1?'s':''}` : today > 0 ? `${today} vence hoje` : 'tudo em dia';
 
-  const list = document.getElementById('clients-list');
-  if(list){
-    const myOwnTasks = state.tasks.filter(t=>!t.project_id && t.owner_id === session.user.id);
-    const sortedTasks = [...myOwnTasks].sort((a,b)=>b.created - a.created);
-    const seen = new Set();
-    const ordered = [];
-    sortedTasks.forEach(t=>{
-      if(t.client && !seen.has(t.client)){
-        seen.add(t.client);
-        ordered.push(t.client);
-      }
-    });
-    list.innerHTML = ordered.map(c=>`<option value="${esc(c)}">`).join('');
-  }
+  const myOwnTasks = state.tasks.filter(t=>!t.project_id && t.owner_id === session.user.id);
+  const sortedTasks = [...myOwnTasks].sort((a,b)=>b.created - a.created);
+  const seen = new Set();
+  const ordered = [];
+  sortedTasks.forEach(t=>{
+    if(t.client && !seen.has(t.client)){
+      seen.add(t.client);
+      ordered.push(t.client);
+    }
+  });
+  state.recentClients = ordered;
   renderSidebarProjects();
 }
 
@@ -2446,6 +2444,37 @@ function openModal(id, prefillDate, prefillProjectId){
   };
   modal.classList.add('open');
   setTimeout(()=>document.getElementById('m-title').focus(), 50);
+}
+
+function filterClientSuggestions(){
+  const input = document.getElementById('m-client');
+  const wrap = document.getElementById('client-suggestions');
+  if(!input || !wrap) return;
+  const q = input.value.trim().toLowerCase();
+  const matches = (state.recentClients || []).filter(c=>!q || c.toLowerCase().includes(q)).slice(0, 8);
+  if(matches.length === 0){
+    wrap.classList.remove('open');
+    wrap.innerHTML = '';
+    return;
+  }
+  wrap.innerHTML = matches.map(c=>{
+    const idx = c.toLowerCase().indexOf(q);
+    const label = (q && idx >= 0)
+      ? `${esc(c.slice(0,idx))}<strong>${esc(c.slice(idx,idx+q.length))}</strong>${esc(c.slice(idx+q.length))}`
+      : esc(c);
+    return `<div class="client-suggestion-item" onmousedown="selectClientSuggestion('${c.replace(/'/g,"\\'")}')">${label}</div>`;
+  }).join('');
+  wrap.classList.add('open');
+}
+
+function selectClientSuggestion(value){
+  document.getElementById('m-client').value = value;
+  hideClientSuggestions();
+}
+
+function hideClientSuggestions(){
+  const wrap = document.getElementById('client-suggestions');
+  if(wrap){wrap.classList.remove('open');wrap.innerHTML = '';}
 }
 
 function populateProjectSelect(){
