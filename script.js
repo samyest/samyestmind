@@ -2579,35 +2579,6 @@ async function quickAdd(){
   if(newTask){state.tasks.push(newTask);render();}
 }
 
-async function formatNotes(){
-  const textarea = document.getElementById('m-notes');
-  const btn = document.getElementById('btn-format');
-  const raw = textarea.value.trim();
-  if(!raw){textarea.focus();return;}
-
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Formatando';
-
-  try{
-    const response = await fetch('/api/format', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({text: raw})
-    });
-    const data = await response.json();
-    if(!response.ok){
-      alert(data.error || 'Erro ao formatar');
-    } else if(data.text){
-      textarea.value = data.text;
-    }
-  }catch(e){
-    alert('Erro de conexão. Tenta de novo.');
-  }
-
-  btn.disabled = false;
-  btn.innerHTML = '✨ Formatar';
-}
-
 document.getElementById('modal').addEventListener('click', (e)=>{if(e.target.id === 'modal') closeModal();});
 document.getElementById('settings-modal').addEventListener('click', (e)=>{if(e.target.id === 'settings-modal') closeSettings();});
 document.getElementById('column-modal').addEventListener('click', (e)=>{if(e.target.id === 'column-modal') closeColumnModal();});
