@@ -1784,9 +1784,13 @@ function updateNav(){
   const seen = new Set();
   const ordered = [];
   sortedTasks.forEach(t=>{
-    if(t.client && !seen.has(t.client)){
-      seen.add(t.client);
-      ordered.push(t.client);
+    if(t.client){
+      const trimmed = t.client.trim();
+      const key = trimmed.toLowerCase();
+      if(key && !seen.has(key)){
+        seen.add(key);
+        ordered.push(trimmed);
+      }
     }
   });
   state.recentClients = ordered;
