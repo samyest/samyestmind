@@ -2201,8 +2201,8 @@ function applyColumnPreview(){
     if(el === ptrDragColEl) return;
     const key = el.dataset.status;
     const originalRect = ptrOriginalRects.get(key);
-    const slotKey = ptrPreviewOrder[ptrOriginalOrder.indexOf(key)];
-    const slotRect = ptrOriginalRects.get(slotKey);
+    const newIdx = ptrPreviewOrder.indexOf(key);
+    const slotRect = ptrOriginalRects.get(ptrOriginalOrder[newIdx]);
     const dx = slotRect.left - originalRect.left;
     el.style.transform = dx ? `translateX(${dx}px)` : '';
   });
