@@ -2154,9 +2154,8 @@ function renderKanban(){
 
 let ptrDragKey = null;
 let ptrDragColEl = null;
-let ptrGhostEl = null;
 let ptrContainer = null;
-let ptrOffsetX = 0, ptrOffsetY = 0;
+let ptrStartX = 0, ptrStartY = 0;
 let ptrOriginalOrder = null;
 let ptrPreviewOrder = null;
 let ptrOriginalRects = null;
@@ -2179,7 +2178,6 @@ function colHandlePointerDown(e, key){
   const colEl = e.currentTarget.closest('.kb-col');
   const container = colEl.closest('.kanban');
   const cols = [...container.querySelectorAll(':scope > .kb-col')];
-  const rect = colEl.getBoundingClientRect();
 
   ptrDragKey = key;
   ptrDragColEl = colEl;
@@ -2187,19 +2185,11 @@ function colHandlePointerDown(e, key){
   ptrOriginalOrder = cols.map(el=>el.dataset.status);
   ptrPreviewOrder = [...ptrOriginalOrder];
   ptrOriginalRects = new Map(cols.map(el=>[el.dataset.status, el.getBoundingClientRect()]));
-  ptrOffsetX = e.clientX - rect.left;
-  ptrOffsetY = e.clientY - rect.top;
+  ptrStartX = e.clientX;
+  ptrStartY = e.clientY;
 
-  const ghost = colEl.cloneNode(true);
-  ghost.classList.add('kb-col-ghost');
-  ghost.style.width = rect.width + 'px';
-  ghost.style.height = rect.height + 'px';
-  ghost.style.left = rect.left + 'px';
-  ghost.style.top = rect.top + 'px';
-  document.body.appendChild(ghost);
-  ptrGhostEl = ghost;
-
-  colEl.classList.add('kb-col-placeholder');
+  colEl.classList.add('kb-col-lifted');
+  container.classList.add('reordering');
 
   document.addEventListener('pointermove', colHandlePointerMove);
   document.addEventListener('pointerup', colHandlePointerUp, {once:true});
@@ -2208,6 +2198,7 @@ function colHandlePointerDown(e, key){
 
 function applyColumnPreview(){
   ptrContainer.querySelectorAll(':scope > .kb-col').forEach(el=>{
+    if(el === ptrDragColEl) return;
     const key = el.dataset.status;
     const originalRect = ptrOriginalRects.get(key);
     const slotKey = ptrPreviewOrder[ptrOriginalOrder.indexOf(key)];
@@ -2218,9 +2209,10 @@ function applyColumnPreview(){
 }
 
 function colHandlePointerMove(e){
-  if(!ptrGhostEl) return;
-  ptrGhostEl.style.left = (e.clientX - ptrOffsetX) + 'px';
-  ptrGhostEl.style.top = (e.clientY - ptrOffsetY) + 'px';
+  if(!ptrDragColEl) return;
+  const dx = e.clientX - ptrStartX;
+  const dy = e.clientY - ptrStartY;
+  ptrDragColEl.style.transform = `translate(${dx}px, ${dy}px) scale(1.03)`;
 
   const cols = [...ptrContainer.querySelectorAll(':scope > .kb-col')];
   for(const el of cols){
@@ -2243,17 +2235,38 @@ function colHandlePointerMove(e){
 
 function colHandlePointerUp(){
   document.removeEventListener('pointermove', colHandlePointerMove);
-  if(ptrGhostEl){ ptrGhostEl.remove(); ptrGhostEl = null; }
-  if(ptrDragColEl) ptrDragColEl.classList.remove('kb-col-placeholder');
-  if(ptrContainer){
-    ptrContainer.querySelectorAll(':scope > .kb-col').forEach(el=>{ el.style.transform = ''; });
-  }
+  const colEl = ptrDragColEl;
+  const container = ptrContainer;
   const changed = ptrPreviewOrder && ptrOriginalOrder && ptrPreviewOrder.join() !== ptrOriginalOrder.join();
-  if(changed){
-    const finalOrder = ptrPreviewOrder;
-    commitColumnOrder(finalOrder).then(()=>render());
+  const finalOrder = ptrPreviewOrder;
+
+  if(colEl && changed){
+    const myOriginal = ptrOriginalRects.get(ptrDragKey);
+    const slotIdxInOriginal = ptrOriginalOrder[finalOrder.indexOf(ptrDragKey)];
+    const slotRect = ptrOriginalRects.get(slotIdxInOriginal);
+    const dx = slotRect.left - myOriginal.left;
+    colEl.style.transition = 'transform .18s ease';
+    colEl.style.transform = `translate(${dx}px, 0) scale(1)`;
   }
-  ptrDragKey = null; ptrDragColEl = null; ptrContainer = null;
+
+  ptrDragKey = null;
+
+  setTimeout(()=>{
+    if(colEl){
+      colEl.classList.remove('kb-col-lifted');
+      colEl.style.transition = '';
+      colEl.style.transform = '';
+    }
+    if(container){
+      container.classList.remove('reordering');
+      container.querySelectorAll(':scope > .kb-col').forEach(el=>{ el.style.transform = ''; });
+    }
+    if(changed){
+      commitColumnOrder(finalOrder).then(()=>render());
+    }
+  }, changed ? 180 : 0);
+
+  ptrDragColEl = null; ptrContainer = null;
   ptrOriginalOrder = null; ptrPreviewOrder = null; ptrOriginalRects = null;
 }
 

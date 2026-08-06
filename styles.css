@@ -881,22 +881,16 @@
   }
   .kb-col{padding:20px;min-height:440px;transition:border-color .15s, box-shadow .15s ease, transform .18s ease;}
   .kb-col.drag-over{border-color:var(--accent);background:var(--glass-hover);}
-  .kb-col-placeholder{
-    background:transparent;
-    border:2px dashed var(--line-strong);
-    box-shadow:none;
-  }
-  .kb-col-placeholder > *{visibility:hidden;}
-  .kb-col-ghost{
-    position:fixed;
-    margin:0;
-    pointer-events:none;
+  .kb-col-lifted{
+    transition:border-color .15s, box-shadow .15s ease;
+    animation:none;
+    position:relative;
     z-index:1000;
-    box-shadow:0 24px 50px rgba(43,54,68,0.32);
     border-color:var(--accent);
-    transform:scale(1.03) rotate(1deg);
-    overflow:auto;
+    box-shadow:0 24px 50px rgba(43,54,68,0.32);
+    cursor:grabbing;
   }
+  .kanban.reordering .kb-col{animation:none;}
   .kb-col-head{
     display:flex;
     align-items:center;
