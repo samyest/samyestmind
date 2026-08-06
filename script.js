@@ -152,7 +152,8 @@ function renderSettingsColumnsList(){
   const wrap = document.getElementById('settings-columns-list');
   if(!wrap) return;
   wrap.innerHTML = getColumns().map(c=>`
-    <div class="settings-col-item">
+    <div class="settings-col-item" draggable="true" data-key="${c.key}" ondragstart="colDragStart(event,'${c.key}')" ondragover="colDragOver(event)" ondragleave="colDragLeave(event)" ondrop="colDrop(event,'${c.key}')" ondragend="colDragEnd(event)">
+      <div class="settings-col-handle" title="Arrastar para reordenar">⠿</div>
       <div class="settings-col-dot" style="background:${c.color}"></div>
       <div class="settings-col-name">${esc(c.name)}</div>
       <button class="settings-col-edit" onclick="openColumnModal('${c.key}')" title="Editar">
@@ -160,6 +161,39 @@ function renderSettingsColumnsList(){
       </button>
     </div>
   `).join('');
+}
+
+let dragColKey = null;
+function colDragStart(e, key){
+  dragColKey = key;
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(()=>e.target.classList.add('dragging'), 0);
+}
+function colDragEnd(e){
+  e.target.classList.remove('dragging');
+  dragColKey = null;
+}
+function colDragOver(e){
+  e.preventDefault();
+  e.currentTarget.classList.add('drag-over');
+}
+function colDragLeave(e){
+  e.currentTarget.classList.remove('drag-over');
+}
+async function colDrop(e, targetKey){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if(!dragColKey || dragColKey === targetKey) return;
+  if(!state.columns) state.columns = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+  const cols = state.columns;
+  const fromIdx = cols.findIndex(c=>c.key===dragColKey);
+  const toIdx = cols.findIndex(c=>c.key===targetKey);
+  if(fromIdx === -1 || toIdx === -1) return;
+  const [moved] = cols.splice(fromIdx, 1);
+  cols.splice(toIdx, 0, moved);
+  renderSettingsColumnsList();
+  const ok = await persistColumns();
+  if(ok) render();
 }
 
 function closeSettings(){

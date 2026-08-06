@@ -1815,8 +1815,21 @@
     gap:10px;
     padding:9px 4px;
     border-bottom:1px solid var(--line);
+    border-top:2px solid transparent;
+    transition:background .15s ease, border-color .15s ease;
   }
   .settings-col-item:last-child{border-bottom:none;}
+  .settings-col-item.dragging{opacity:0.4;}
+  .settings-col-item.drag-over{border-top-color:var(--accent);background:var(--glass-hover);}
+  .settings-col-handle{
+    cursor:grab;
+    color:var(--text-soft);
+    font-size:14px;
+    line-height:1;
+    flex-shrink:0;
+    user-select:none;
+  }
+  .settings-col-item.dragging .settings-col-handle{cursor:grabbing;}
   .settings-col-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
   .settings-col-name{
     flex:1;
