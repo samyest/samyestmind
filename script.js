@@ -184,16 +184,10 @@ async function colDrop(e, targetKey){
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
   if(!dragColKey || dragColKey === targetKey) return;
-  if(!state.columns) state.columns = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
-  const cols = state.columns;
-  const fromIdx = cols.findIndex(c=>c.key===dragColKey);
-  const toIdx = cols.findIndex(c=>c.key===targetKey);
-  if(fromIdx === -1 || toIdx === -1) return;
-  const [moved] = cols.splice(fromIdx, 1);
-  cols.splice(toIdx, 0, moved);
+  const fromKey = dragColKey;
+  dragColKey = null;
+  await reorderColumns(fromKey, targetKey);
   renderSettingsColumnsList();
-  const ok = await persistColumns();
-  if(ok) render();
 }
 
 function closeSettings(){
@@ -2125,6 +2119,9 @@ function renderKanban(){
               <div class="kb-col-title"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}${col.type==='done' ? '<span class="kb-col-hint" title="Concluídos somem toda semana no domingo — o histórico fica registrado no Calendário">↻</span>' : ''}</div>
               <div style="display:flex;align-items:center;gap:6px;">
                 <div class="kb-col-count">${list.length}</div>
+                <div class="kb-col-drag-handle" draggable="true" ondragstart="colHeadDragStart(event,'${col.key}')" ondragend="colHeadDragEnd(event)" title="Arrastar para reordenar coluna">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8L22 12L18 16"/><path d="M6 8L2 12L6 16"/><path d="M2 12H22"/></svg>
+                </div>
                 <button class="kb-col-edit" onclick="openColumnModal('${col.key}')" title="Editar coluna">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                 </button>
@@ -2155,6 +2152,32 @@ function renderKanban(){
     </div>`;
 }
 
+let draggingColumnKey = null;
+function colHeadDragStart(e, key){
+  draggingColumnKey = key;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', '');
+  const col = e.target.closest('.kb-col');
+  setTimeout(()=>{ if(col) col.classList.add('dragging'); }, 0);
+}
+function colHeadDragEnd(e){
+  const col = e.target.closest('.kb-col');
+  if(col) col.classList.remove('dragging');
+  draggingColumnKey = null;
+}
+async function reorderColumns(fromKey, toKey){
+  if(fromKey === toKey) return;
+  if(!state.columns) state.columns = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+  const cols = state.columns;
+  const fromIdx = cols.findIndex(c=>c.key===fromKey);
+  const toIdx = cols.findIndex(c=>c.key===toKey);
+  if(fromIdx === -1 || toIdx === -1) return;
+  const [moved] = cols.splice(fromIdx, 1);
+  cols.splice(toIdx, 0, moved);
+  render();
+  await persistColumns();
+}
+
 function dragStart(e, id){
   e.dataTransfer.setData('text/plain', id);
   e.dataTransfer.effectAllowed = 'move';
@@ -2168,6 +2191,12 @@ function dragLeave(e){e.currentTarget.classList.remove('drag-over');}
 async function drop(e, status){
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
+  if(draggingColumnKey){
+    const fromKey = draggingColumnKey;
+    draggingColumnKey = null;
+    await reorderColumns(fromKey, status);
+    return;
+  }
   const id = e.dataTransfer.getData('text/plain');
   const task = state.tasks.find(t=>t.id===id);
   if(task && task.status !== status){
