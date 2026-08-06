@@ -2209,9 +2209,26 @@ function dragOver(e){
   if(draggingColumnKey){
     const target = e.currentTarget;
     if(draggedColEl && target !== draggedColEl && target.classList.contains('kb-col')){
+      const container = target.parentNode;
+      const siblings = [...container.querySelectorAll(':scope > .kb-col')];
+      const firstRects = new Map(siblings.map(el=>[el, el.getBoundingClientRect()]));
       const rect = target.getBoundingClientRect();
       const after = e.clientX > rect.left + rect.width/2;
-      target.parentNode.insertBefore(draggedColEl, after ? target.nextSibling : target);
+      container.insertBefore(draggedColEl, after ? target.nextSibling : target);
+      siblings.forEach(el=>{
+        if(el === draggedColEl) return;
+        const first = firstRects.get(el);
+        const last = el.getBoundingClientRect();
+        const dx = first.left - last.left;
+        if(Math.abs(dx) > 0.5){
+          el.style.transition = 'none';
+          el.style.transform = `translateX(${dx}px)`;
+          requestAnimationFrame(()=>{
+            el.style.transition = 'transform .18s ease';
+            el.style.transform = '';
+          });
+        }
+      });
     }
     return;
   }
