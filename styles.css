@@ -137,6 +137,11 @@
   .task-row:nth-of-type(5), .kb-card:nth-of-type(5){animation-delay:.18s;}
   .task-row:nth-of-type(n+6), .kb-card:nth-of-type(n+6){animation-delay:.2s;}
 
+  .no-entrance .view-header, .no-entrance .status-row, .no-entrance .date-filter,
+  .no-entrance .panel, .no-entrance .kb-col, .no-entrance .cal-view,
+  .no-entrance .table-view, .no-entrance .task-row, .no-entrance .kb-card,
+  .no-entrance .day-task, .no-entrance .client-item{animation:none;}
+
   .priority-badge.urgent{animation:urgentPulse 2.2s ease-in-out infinite;}
 
   .toast{

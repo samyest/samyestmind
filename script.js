@@ -1825,6 +1825,7 @@ function updateNav(){
   renderSidebarProjects();
 }
 
+let skipEntranceOnce = false;
 function render(){
   updateNav();
   const m = document.getElementById('main');
@@ -1833,6 +1834,8 @@ function render(){
   else if(state.view === 'calendar') m.innerHTML = renderCalendar();
   else if(state.view === 'table') m.innerHTML = renderTable();
   else if(state.view === 'project') m.innerHTML = renderProjectPage();
+  m.classList.toggle('no-entrance', skipEntranceOnce);
+  skipEntranceOnce = false;
   m.scrollLeft = 0;
   attachEvents();
 }
@@ -2254,17 +2257,21 @@ function colHandlePointerUp(){
   ptrDragKey = null;
 
   setTimeout(()=>{
-    if(colEl){
-      colEl.classList.remove('kb-col-lifted');
-      colEl.style.transition = '';
-      colEl.style.transform = '';
-    }
-    if(container){
-      container.classList.remove('reordering');
-      container.querySelectorAll(':scope > .kb-col').forEach(el=>{ el.style.transform = ''; });
-    }
     if(changed){
-      commitColumnOrder(finalOrder).then(()=>render());
+      applyColumnOrder(finalOrder);
+      skipEntranceOnce = true;
+      render();
+      persistColumns();
+    }else{
+      if(colEl){
+        colEl.classList.remove('kb-col-lifted');
+        colEl.style.transition = '';
+        colEl.style.transform = '';
+      }
+      if(container){
+        container.classList.remove('reordering');
+        container.querySelectorAll(':scope > .kb-col').forEach(el=>{ el.style.transform = ''; });
+      }
     }
   }, changed ? 180 : 0);
 
@@ -2272,14 +2279,13 @@ function colHandlePointerUp(){
   ptrOriginalOrder = null; ptrPreviewOrder = null; ptrOriginalRects = null;
 }
 
-async function commitColumnOrder(orderedKeys){
+function applyColumnOrder(orderedKeys){
   if(!state.columns) state.columns = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
   const byKey = {};
   state.columns.forEach(c=>{byKey[c.key]=c;});
   const reordered = orderedKeys.map(k=>byKey[k]).filter(Boolean);
   state.columns.forEach(c=>{ if(!reordered.includes(c)) reordered.push(c); });
   state.columns = reordered;
-  await persistColumns();
 }
 
 function dragStart(e, id){
