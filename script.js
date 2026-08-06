@@ -2153,17 +2153,35 @@ function renderKanban(){
 }
 
 let draggingColumnKey = null;
+let draggedColEl = null;
 function colHeadDragStart(e, key){
   draggingColumnKey = key;
+  draggedColEl = e.currentTarget.closest('.kb-col');
   e.dataTransfer.effectAllowed = 'move';
   e.dataTransfer.setData('text/plain', '');
-  const col = e.target.closest('.kb-col');
-  setTimeout(()=>{ if(col) col.classList.add('dragging'); }, 0);
+  setTimeout(()=>{ if(draggedColEl) draggedColEl.classList.add('dragging'); }, 0);
 }
 function colHeadDragEnd(e){
-  const col = e.target.closest('.kb-col');
-  if(col) col.classList.remove('dragging');
-  draggingColumnKey = null;
+  const el = draggedColEl;
+  if(el) el.classList.remove('dragging');
+  draggedColEl = null;
+  if(draggingColumnKey){
+    draggingColumnKey = null;
+    commitColumnOrder(el).then(()=>render());
+  }
+}
+async function commitColumnOrder(colEl){
+  if(!colEl) return;
+  const container = colEl.closest('.kanban');
+  if(!container) return;
+  const orderedKeys = [...container.querySelectorAll('.kb-col')].map(el=>el.dataset.status);
+  if(!state.columns) state.columns = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+  const byKey = {};
+  state.columns.forEach(c=>{byKey[c.key]=c;});
+  const reordered = orderedKeys.map(k=>byKey[k]).filter(Boolean);
+  state.columns.forEach(c=>{ if(!reordered.includes(c)) reordered.push(c); });
+  state.columns = reordered;
+  await persistColumns();
 }
 async function reorderColumns(fromKey, toKey){
   if(fromKey === toKey) return;
@@ -2186,17 +2204,27 @@ function dragStart(e, id){
 function dragEnd(e){
   e.target.classList.remove('dragging');
 }
-function dragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-over');}
-function dragLeave(e){e.currentTarget.classList.remove('drag-over');}
+function dragOver(e){
+  e.preventDefault();
+  if(draggingColumnKey){
+    const target = e.currentTarget;
+    if(draggedColEl && target !== draggedColEl && target.classList.contains('kb-col')){
+      const rect = target.getBoundingClientRect();
+      const after = e.clientX > rect.left + rect.width/2;
+      target.parentNode.insertBefore(draggedColEl, after ? target.nextSibling : target);
+    }
+    return;
+  }
+  e.currentTarget.classList.add('drag-over');
+}
+function dragLeave(e){
+  if(draggingColumnKey) return;
+  e.currentTarget.classList.remove('drag-over');
+}
 async function drop(e, status){
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
-  if(draggingColumnKey){
-    const fromKey = draggingColumnKey;
-    draggingColumnKey = null;
-    await reorderColumns(fromKey, status);
-    return;
-  }
+  if(draggingColumnKey) return;
   const id = e.dataTransfer.getData('text/plain');
   const task = state.tasks.find(t=>t.id===id);
   if(task && task.status !== status){
