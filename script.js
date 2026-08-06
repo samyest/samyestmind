@@ -2214,22 +2214,24 @@ function colHandlePointerMove(e){
   const dy = e.clientY - ptrStartY;
   ptrDragColEl.style.transform = `translate(${dx}px, ${dy}px) scale(1.03)`;
 
-  const cols = [...ptrContainer.querySelectorAll(':scope > .kb-col')];
-  for(const el of cols){
-    if(el === ptrDragColEl) continue;
-    const r = ptrOriginalRects.get(el.dataset.status);
-    if(e.clientX >= r.left && e.clientX <= r.right){
-      const targetKey = el.dataset.status;
-      if(targetKey === ptrDragKey) break;
-      const after = e.clientX > r.left + r.width/2;
-      const fromIdx = ptrPreviewOrder.indexOf(ptrDragKey);
-      ptrPreviewOrder.splice(fromIdx, 1);
-      let toIdx = ptrPreviewOrder.indexOf(targetKey);
-      if(after) toIdx += 1;
-      ptrPreviewOrder.splice(toIdx, 0, ptrDragKey);
-      applyColumnPreview();
-      break;
-    }
+  const myRect = ptrOriginalRects.get(ptrDragKey);
+  const cx = myRect.left + myRect.width/2 + dx;
+
+  const slotCenters = ptrOriginalOrder.map(k=>{
+    const r = ptrOriginalRects.get(k);
+    return r.left + r.width/2;
+  });
+  let idx = 0, best = Infinity;
+  slotCenters.forEach((c,i)=>{
+    const d = Math.abs(c - cx);
+    if(d < best){best = d; idx = i;}
+  });
+
+  const newOrder = ptrOriginalOrder.filter(k=>k!==ptrDragKey);
+  newOrder.splice(idx, 0, ptrDragKey);
+  if(newOrder.join() !== ptrPreviewOrder.join()){
+    ptrPreviewOrder = newOrder;
+    applyColumnPreview();
   }
 }
 
