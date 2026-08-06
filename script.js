@@ -2119,7 +2119,7 @@ function renderKanban(){
               <div class="kb-col-title"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}${col.type==='done' ? '<span class="kb-col-hint" title="Concluídos somem toda semana no domingo — o histórico fica registrado no Calendário">↻</span>' : ''}</div>
               <div style="display:flex;align-items:center;gap:6px;">
                 <div class="kb-col-count">${list.length}</div>
-                <div class="kb-col-drag-handle" draggable="true" ondragstart="colHeadDragStart(event,'${col.key}')" ondragend="colHeadDragEnd(event)" title="Arrastar para reordenar coluna">
+                <div class="kb-col-drag-handle" onpointerdown="colHandlePointerDown(event,'${col.key}')" title="Arrastar para reordenar coluna">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8L22 12L18 16"/><path d="M6 8L2 12L6 16"/><path d="M2 12H22"/></svg>
                 </div>
                 <button class="kb-col-edit" onclick="openColumnModal('${col.key}')" title="Editar coluna">
@@ -2152,10 +2152,14 @@ function renderKanban(){
     </div>`;
 }
 
-let draggingColumnKey = null;
-let dragOriginalOrder = null;
-let dragPreviewOrder = null;
-let dragOriginalRects = null;
+let ptrDragKey = null;
+let ptrDragColEl = null;
+let ptrGhostEl = null;
+let ptrContainer = null;
+let ptrOffsetX = 0, ptrOffsetY = 0;
+let ptrOriginalOrder = null;
+let ptrPreviewOrder = null;
+let ptrOriginalRects = null;
 
 async function reorderColumns(fromKey, toKey){
   if(fromKey === toKey) return;
@@ -2170,47 +2174,89 @@ async function reorderColumns(fromKey, toKey){
   await persistColumns();
 }
 
-function colHeadDragStart(e, key){
-  draggingColumnKey = key;
+function colHandlePointerDown(e, key){
+  e.preventDefault();
   const colEl = e.currentTarget.closest('.kb-col');
   const container = colEl.closest('.kanban');
   const cols = [...container.querySelectorAll(':scope > .kb-col')];
-  dragOriginalOrder = cols.map(el=>el.dataset.status);
-  dragPreviewOrder = [...dragOriginalOrder];
-  dragOriginalRects = new Map(cols.map(el=>[el.dataset.status, el.getBoundingClientRect()]));
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', '');
-  setTimeout(()=>{ colEl.classList.add('dragging'); }, 0);
+  const rect = colEl.getBoundingClientRect();
+
+  ptrDragKey = key;
+  ptrDragColEl = colEl;
+  ptrContainer = container;
+  ptrOriginalOrder = cols.map(el=>el.dataset.status);
+  ptrPreviewOrder = [...ptrOriginalOrder];
+  ptrOriginalRects = new Map(cols.map(el=>[el.dataset.status, el.getBoundingClientRect()]));
+  ptrOffsetX = e.clientX - rect.left;
+  ptrOffsetY = e.clientY - rect.top;
+
+  const ghost = colEl.cloneNode(true);
+  ghost.classList.add('kb-col-ghost');
+  ghost.style.width = rect.width + 'px';
+  ghost.style.height = rect.height + 'px';
+  ghost.style.left = rect.left + 'px';
+  ghost.style.top = rect.top + 'px';
+  document.body.appendChild(ghost);
+  ptrGhostEl = ghost;
+
+  colEl.classList.add('kb-col-placeholder');
+
+  document.addEventListener('pointermove', colHandlePointerMove);
+  document.addEventListener('pointerup', colHandlePointerUp, {once:true});
+  document.addEventListener('pointercancel', colHandlePointerUp, {once:true});
 }
 
-function applyColumnPreview(container){
-  container.querySelectorAll(':scope > .kb-col').forEach(el=>{
+function applyColumnPreview(){
+  ptrContainer.querySelectorAll(':scope > .kb-col').forEach(el=>{
     const key = el.dataset.status;
-    const originalRect = dragOriginalRects.get(key);
-    const slotKey = dragPreviewOrder[dragOriginalOrder.indexOf(key)];
-    const slotRect = dragOriginalRects.get(slotKey);
+    const originalRect = ptrOriginalRects.get(key);
+    const slotKey = ptrPreviewOrder[ptrOriginalOrder.indexOf(key)];
+    const slotRect = ptrOriginalRects.get(slotKey);
     const dx = slotRect.left - originalRect.left;
     el.style.transform = dx ? `translateX(${dx}px)` : '';
   });
 }
 
-function colHeadDragEnd(e){
-  const colEl = e.currentTarget.closest('.kb-col');
-  const container = colEl ? colEl.closest('.kanban') : null;
-  if(colEl) colEl.classList.remove('dragging');
-  if(container){
-    container.querySelectorAll(':scope > .kb-col').forEach(el=>{ el.style.transform = ''; });
-  }
-  const changed = dragPreviewOrder && dragOriginalOrder && dragPreviewOrder.join() !== dragOriginalOrder.join();
-  draggingColumnKey = null;
-  if(changed){
-    const finalOrder = dragPreviewOrder;
-    dragPreviewOrder = null; dragOriginalOrder = null; dragOriginalRects = null;
-    commitColumnOrder(finalOrder).then(()=>render());
-  }else{
-    dragPreviewOrder = null; dragOriginalOrder = null; dragOriginalRects = null;
+function colHandlePointerMove(e){
+  if(!ptrGhostEl) return;
+  ptrGhostEl.style.left = (e.clientX - ptrOffsetX) + 'px';
+  ptrGhostEl.style.top = (e.clientY - ptrOffsetY) + 'px';
+
+  const cols = [...ptrContainer.querySelectorAll(':scope > .kb-col')];
+  for(const el of cols){
+    if(el === ptrDragColEl) continue;
+    const r = ptrOriginalRects.get(el.dataset.status);
+    if(e.clientX >= r.left && e.clientX <= r.right){
+      const targetKey = el.dataset.status;
+      if(targetKey === ptrDragKey) break;
+      const after = e.clientX > r.left + r.width/2;
+      const fromIdx = ptrPreviewOrder.indexOf(ptrDragKey);
+      ptrPreviewOrder.splice(fromIdx, 1);
+      let toIdx = ptrPreviewOrder.indexOf(targetKey);
+      if(after) toIdx += 1;
+      ptrPreviewOrder.splice(toIdx, 0, ptrDragKey);
+      applyColumnPreview();
+      break;
+    }
   }
 }
+
+function colHandlePointerUp(){
+  document.removeEventListener('pointermove', colHandlePointerMove);
+  if(ptrGhostEl){ ptrGhostEl.remove(); ptrGhostEl = null; }
+  if(ptrDragColEl) ptrDragColEl.classList.remove('kb-col-placeholder');
+  if(ptrContainer){
+    ptrContainer.querySelectorAll(':scope > .kb-col').forEach(el=>{ el.style.transform = ''; });
+  }
+  const changed = ptrPreviewOrder && ptrOriginalOrder && ptrPreviewOrder.join() !== ptrOriginalOrder.join();
+  if(changed){
+    const finalOrder = ptrPreviewOrder;
+    commitColumnOrder(finalOrder).then(()=>render());
+  }
+  ptrDragKey = null; ptrDragColEl = null; ptrContainer = null;
+  ptrOriginalOrder = null; ptrPreviewOrder = null; ptrOriginalRects = null;
+}
+
 async function commitColumnOrder(orderedKeys){
   if(!state.columns) state.columns = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
   const byKey = {};
@@ -2231,31 +2277,14 @@ function dragEnd(e){
 }
 function dragOver(e){
   e.preventDefault();
-  if(draggingColumnKey){
-    const target = e.currentTarget;
-    if(!target.classList.contains('kb-col')) return;
-    const targetKey = target.dataset.status;
-    if(targetKey === draggingColumnKey) return;
-    const rect = dragOriginalRects.get(targetKey) || target.getBoundingClientRect();
-    const after = e.clientX > rect.left + rect.width/2;
-    const fromIdx = dragPreviewOrder.indexOf(draggingColumnKey);
-    dragPreviewOrder.splice(fromIdx, 1);
-    let toIdx = dragPreviewOrder.indexOf(targetKey);
-    if(after) toIdx += 1;
-    dragPreviewOrder.splice(toIdx, 0, draggingColumnKey);
-    applyColumnPreview(target.parentNode);
-    return;
-  }
   e.currentTarget.classList.add('drag-over');
 }
 function dragLeave(e){
-  if(draggingColumnKey) return;
   e.currentTarget.classList.remove('drag-over');
 }
 async function drop(e, status){
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
-  if(draggingColumnKey) return;
   const id = e.dataTransfer.getData('text/plain');
   const task = state.tasks.find(t=>t.id===id);
   if(task && task.status !== status){
@@ -2269,6 +2298,7 @@ async function drop(e, status){
     else if(task.completed_at !== prevCompletedAt) syncTaskToGoogle(task);
   }
 }
+
 
 function renderCalendar(){
   const d = state.calDate;
