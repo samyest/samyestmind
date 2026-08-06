@@ -879,7 +879,7 @@
     gap:16px;
     align-items:start;
   }
-  .kb-col{padding:20px;min-height:440px;transition:border-color .15s, box-shadow .15s ease;}
+  .kb-col{padding:20px;min-height:440px;transition:border-color .15s, box-shadow .15s ease, transform .18s ease;}
   .kb-col.drag-over{border-color:var(--accent);background:var(--glass-hover);}
   .kb-col.dragging{
     border-color:var(--accent);
