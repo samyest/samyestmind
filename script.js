@@ -335,7 +335,7 @@ function openStatusDetail(filterKey, label){
         <div class="task-row ${cls}" style="${rowStyle}" onclick="closeStatusModal();openModal('${t.id}')">
           <div class="task-check ${dot.cls}" style="${dot.style}"></div>
           <div class="task-title">${esc(t.title)}</div>
-          <div class="task-date ${dateStatus(t.date)}">${dateWithTime(t)}</div>
+          <div class="task-date ${taskDateStatus(t)}">${dateWithTime(t)}</div>
           <span class="task-row-break"></span>
           ${badge}
           <div class="task-client">${esc(t.client || '—')}</div>
@@ -1501,7 +1501,7 @@ function renderProjectPage(){
                       <div class="kb-card-title">${esc(t.title)}</div>
                       ${assigneeBadge}
                       <div class="kb-card-meta">
-                        <span class="${dateStatus(t.date)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>
+                        <span class="${taskDateStatus(t)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>
                         ${badge}
                       </div>
                     </div>`;
@@ -1758,6 +1758,10 @@ function dateStatus(iso){
   if(diff === 0) return 'today';
   return '';
 }
+function taskDateStatus(t){
+  if(taskColumnType(t) === 'done') return '';
+  return dateStatus(t.date);
+}
 let toastTimer = null;
 function showToast(msg){
   const old = document.querySelector('.toast');
@@ -1870,7 +1874,7 @@ function renderDashboard(){
       <div class="task-row ${cls}" onclick="openModal('${t.id}')">
         <div class="task-check ${dot.cls}" style="${dot.style}"></div>
         <div class="task-title">${esc(t.title)}</div>
-        <div class="task-date ${dateStatus(t.date)}">${dateWithTime(t)}</div>
+        <div class="task-date ${taskDateStatus(t)}">${dateWithTime(t)}</div>
         <span class="task-row-break"></span>
         ${badge}
         ${projBadge}
@@ -2034,7 +2038,7 @@ function openMiniCalDay(iso){
         <div class="task-row ${cls}" style="${rowStyle}" onclick="closeStatusModal();openModal('${t.id}')">
           <div class="task-check ${dot.cls}" style="${dot.style}"></div>
           <div class="task-title">${esc(t.title)}</div>
-          <div class="task-date ${dateStatus(t.date)}">${dateWithTime(t)}</div>
+          <div class="task-date ${taskDateStatus(t)}">${dateWithTime(t)}</div>
           <span class="task-row-break"></span>
           ${badge}
           <div class="task-client">${esc(t.client || '—')}</div>
@@ -2144,7 +2148,7 @@ function renderKanban(){
                     <div class="kb-card-title">${esc(t.title)}</div>
                     ${projBadge}
                     <div class="kb-card-meta">
-                      <span class="${dateStatus(t.date)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>
+                      <span class="${taskDateStatus(t)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>
                       ${badge}
                     </div>
                   </div>`;
