@@ -656,6 +656,7 @@ async function checkAuth(){
     startAlarmChecker();
     await loadGoogleSession();
     updateGoogleStatusUI();
+    safeRerender();
     if(isGoogleConnected()){
       startGoogleSyncLoop();
       runGoogleSync();
@@ -843,6 +844,7 @@ async function disconnectGoogleCalendar(){
   stopGoogleSyncLoop();
   showToast('Google Calendar desconectado');
   updateGoogleStatusUI();
+  safeRerender();
 }
 
 // Lê o ?google=... com que o callback devolve o usuário ao app.
@@ -864,6 +866,7 @@ async function handleGoogleRedirect(){
   if(status === 'ok'){
     await loadGoogleSession();
     updateGoogleStatusUI();
+    safeRerender();
     startGoogleSyncLoop();
     await runGoogleSync({full: true});
   }
@@ -1196,6 +1199,24 @@ function startGoogleSyncLoop(){
 
 function stopGoogleSyncLoop(){
   if(gcalPullTimer){ clearInterval(gcalPullTimer); gcalPullTimer = null; }
+}
+
+// Sincronização sob demanda a partir do calendário, sem esperar o ciclo de 2 min.
+async function syncCalendarNow(){
+  if(!isGoogleConnected()){
+    showToast('Conecte o Google Calendar primeiro');
+    return;
+  }
+  const btn = document.getElementById('cal-sync-btn');
+  if(btn){ btn.disabled = true; btn.classList.add('is-syncing'); }
+  const before = state.tasks.length;
+  await syncAllTasksToGoogle();
+  await pullFromGoogle();
+  const novas = state.tasks.length - before;
+  if(btn){ btn.disabled = false; btn.classList.remove('is-syncing'); }
+  showToast(novas > 0
+    ? `${novas} nova${novas!==1?'s':''} tarefa${novas!==1?'s':''} do Google`
+    : 'Tudo em dia com o Google');
 }
 
 async function forceFullGoogleSync(){
@@ -2826,11 +2847,28 @@ function renderCalendar(){
   const hasAnyTaskThisMonth = Object.keys(tasksByDate).some(iso => iso.startsWith(`${year}-${String(month+1).padStart(2,'0')}`));
   const emptyMonthHint = !hasAnyTaskThisMonth ? `<div class="empty cal-empty-mobile" style="margin-top:10px;"><strong>Nada agendado em ${meses[month].toLowerCase()}.</strong>Toque em um dia pra criar uma tarefa.</div>` : '';
 
+  const connected = isGoogleConnected();
+  const gcalBanner = connected ? '' : `
+    <div class="gcal-banner">
+      <svg class="gcal-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      <div class="gcal-banner-text">
+        <strong>Conecte seu Google Calendar</strong>
+        <span>Suas tarefas viram eventos na agenda, e os compromissos da agenda viram tarefas aqui.</span>
+      </div>
+      <button class="btn-primary" onclick="connectGoogleCalendar()">Conectar</button>
+    </div>`;
+
   return `
     <div class="view-header">
       <div><div class="eyebrow">Prazos e agenda</div><h1>Calendário</h1></div>
-      <button class="btn-primary" onclick="openModal()">+ Nova tarefa</button>
+      <div style="display:flex;gap:10px;align-items:center;">
+        ${connected ? `<button class="btn-secondary" id="cal-sync-btn" onclick="syncCalendarNow()" title="Buscar novidades no Google Calendar">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>Sincronizar
+        </button>` : ''}
+        <button class="btn-primary" onclick="openModal()">+ Nova tarefa</button>
+      </div>
     </div>
+    ${gcalBanner}
     <div class="glass cal-view">
       <div class="cal-view-head">
         <div class="cal-view-title">${meses[month]} ${year}</div>
