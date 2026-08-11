@@ -2416,17 +2416,29 @@ function updateNav(){
 }
 
 let skipEntranceOnce = false;
+let lastRenderedView = null;
+
 function render(){
   updateNav();
   const m = document.getElementById('main');
+
+  // A animação de entrada é para quando se troca de tela. Repetir ela a cada
+  // atualização em lugar (sync, realtime, filtro, seleção) é o que faz a tela
+  // piscar. Redesenhar a mesma tela também não deve perder a rolagem lateral.
+  const viewKey = state.view === 'project' ? `project:${state.currentProjectId}` : state.view;
+  const sameView = viewKey === lastRenderedView;
+  lastRenderedView = viewKey;
+  const keepScroll = sameView ? m.scrollLeft : 0;
+
   if(state.view === 'dashboard') m.innerHTML = renderDashboard();
   else if(state.view === 'kanban') m.innerHTML = renderKanban();
   else if(state.view === 'calendar') m.innerHTML = renderCalendar();
   else if(state.view === 'table') m.innerHTML = renderTable();
   else if(state.view === 'project') m.innerHTML = renderProjectPage();
-  m.classList.toggle('no-entrance', skipEntranceOnce);
+
+  m.classList.toggle('no-entrance', sameView || skipEntranceOnce);
   skipEntranceOnce = false;
-  m.scrollLeft = 0;
+  m.scrollLeft = keepScroll;
   attachEvents();
 }
 
