@@ -1046,6 +1046,20 @@ function titleFromEvent(evt){
   return (evt.summary || '(sem título)').replace(/^✓\s*/, '').trim();
 }
 
+// O Google mistura na agenda principal coisas que não são compromissos: os
+// aniversários dos contatos ("Happy birthday!"), blocos de foco, horário de
+// trabalho e ausências. Só 'default' é evento de verdade.
+const IMPORTABLE_EVENT_TYPES = ['default', 'fromGmail'];
+
+function isTaskWorthyEvent(evt){
+  const type = evt.eventType || 'default';
+  if(!IMPORTABLE_EVENT_TYPES.includes(type)) return false;
+  // Convite recusado não é tarefa.
+  const me = (evt.attendees || []).find(a=>a.self);
+  if(me && me.responseStatus === 'declined') return false;
+  return true;
+}
+
 async function pullFromGoogle(opts){
   const full = opts && opts.full;
   const calId = await getSyncCalendarId();
@@ -1053,29 +1067,49 @@ async function pullFromGoogle(opts){
   const base = '/calendars/' + encodeURIComponent(calId) + '/events';
   const syncToken = full ? null : gcalSyncToken;
 
-  let query;
+  const params = new URLSearchParams();
   if(syncToken){
-    query = `?syncToken=${encodeURIComponent(syncToken)}&showDeleted=true`;
+    params.set('syncToken', syncToken);
+    params.set('showDeleted', 'true');
   } else {
+    // A partir de hoje: compromissos passados não são tarefas pendentes, e a
+    // varredura do histórico é o que despejava meses de eventos de uma vez.
     const from = new Date();
-    from.setDate(from.getDate() - 90);
-    query = `?timeMin=${encodeURIComponent(from.toISOString())}&singleEvents=true&showDeleted=false&maxResults=250`;
+    from.setHours(0, 0, 0, 0);
+    params.set('timeMin', from.toISOString());
+    params.set('singleEvents', 'true');
+    params.set('showDeleted', 'false');
+    params.set('maxResults', '250');
   }
-
-  let data = await gapi(base + query);
-  // An expired sync token means Google can no longer give us a delta; start over.
-  if(data && data.__gone){
-    gcalSyncToken = null;
-    return pullFromGoogle({full: true});
-  }
-  if(!data) return;
 
   let changed = false;
-  for(const evt of (data.items || [])){
-    if(await applyGoogleEvent(evt)) changed = true;
-  }
-  if(data.nextSyncToken && data.nextSyncToken !== gcalSyncToken){
-    gcalSyncToken = data.nextSyncToken;
+  let pageToken = null;
+  let nextSync = null;
+  let guard = 0;
+
+  // O nextSyncToken só vem na última página. Sem paginar, ele nunca chega e toda
+  // sincronização vira uma varredura completa em vez de buscar só as mudanças.
+  do{
+    const q = new URLSearchParams(params);
+    if(pageToken) q.set('pageToken', pageToken);
+
+    const data = await gapi(`${base}?${q}`);
+    // Sync token expirado: o Google não consegue mais dar o delta, recomeça.
+    if(data && data.__gone){
+      gcalSyncToken = null;
+      return pullFromGoogle({full: true});
+    }
+    if(!data) return;
+
+    for(const evt of (data.items || [])){
+      if(await applyGoogleEvent(evt)) changed = true;
+    }
+    pageToken = data.nextPageToken || null;
+    nextSync = data.nextSyncToken || nextSync;
+  }while(pageToken && ++guard < 20);
+
+  if(nextSync && nextSync !== gcalSyncToken){
+    gcalSyncToken = nextSync;
     await persistGoogleState({sync_token: gcalSyncToken});
   }
   if(changed){
@@ -1128,10 +1162,7 @@ async function applyGoogleEvent(evt){
 
   // Event created directly in Google Calendar — mirror it as a new task.
   if(evt.description && evt.description.includes('Sincronizado do samyest.mind')) return false;
-  // Convite recusado não é tarefa. Agora que lemos da agenda principal, esses
-  // aparecem no meio dos compromissos reais.
-  const me = (evt.attendees || []).find(a=>a.self);
-  if(me && me.responseStatus === 'declined') return false;
+  if(!isTaskWorthyEvent(evt)) return false;
   const created = await createTaskRemote({
     title,
     client: '',
