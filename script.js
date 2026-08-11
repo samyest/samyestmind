@@ -1050,13 +1050,19 @@ function titleFromEvent(evt){
 }
 
 // O Google mistura na agenda principal coisas que não são compromissos: os
-// aniversários dos contatos ("Happy birthday!"), blocos de foco, horário de
-// trabalho e ausências. Só 'default' é evento de verdade.
+// aniversários (dos contatos e o próprio), blocos de foco, horário de trabalho
+// e ausências. Só 'default' é evento de verdade.
 const IMPORTABLE_EVENT_TYPES = ['default', 'fromGmail'];
+
+// Rede de segurança para aniversários que chegam sem eventType marcado, como os
+// vindos de contatos antigos. Casa só com a saudação inteira — "Aniversário do
+// contrato" continua virando tarefa, que é o certo.
+const BIRTHDAY_TITLE = /^(happy birthday|feliz anivers[áa]rio|anivers[áa]rio)[\s!🎂🎉]*$/i;
 
 function isTaskWorthyEvent(evt){
   const type = evt.eventType || 'default';
   if(!IMPORTABLE_EVENT_TYPES.includes(type)) return false;
+  if(BIRTHDAY_TITLE.test((evt.summary || '').trim())) return false;
   // Convite recusado não é tarefa.
   const me = (evt.attendees || []).find(a=>a.self);
   if(me && me.responseStatus === 'declined') return false;
