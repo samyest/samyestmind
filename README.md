@@ -4,12 +4,15 @@ Site para realizar organizações de tasks de rotina.
 
 ## Integração com Google Calendar
 
-Sincroniza nos dois sentidos com um calendário dedicado **samyest.mind** na conta
-Google do usuário: tarefas com prazo viram eventos, e eventos criados nesse
-calendário viram tarefas. Concluídas ganham "✓" no título.
+Sincroniza nos dois sentidos com a **agenda principal** do usuário: tarefas com
+prazo viram eventos, e eventos da agenda viram tarefas. Cor e horário acompanham
+nos dois lados; concluídas ganham "✓" no título.
 
-O calendário é dedicado de propósito — se usasse o principal, toda reunião e
-aniversário viraria tarefa na volta.
+Usa a agenda principal (e não um calendário dedicado) para que qualquer evento
+criado no Google vire tarefa sem exigir escolher um calendário na hora. O custo
+é que compromissos comuns também viram tarefa — convites recusados são o único
+filtro. Feriados e aniversários ficam de fora por serem calendários separados no
+Google.
 
 ### 1. Banco
 
@@ -62,6 +65,8 @@ página e dura até ser revogada.
 
 - O sync Google → app roda a cada 2 minutos **com o app aberto**. Sincronizar com o
   app fechado exigiria um cron job chamando a API.
+- Compromissos recorrentes viram **uma tarefa por ocorrência** (a busca expande a
+  recorrência). Uma daily de 90 dias cria 90 tarefas.
 - Em projetos compartilhados, cada membro sincroniza no próprio calendário. O id do
   evento de tarefas de terceiros fica por dispositivo (localStorage), senão os
   membros sobrescreveriam o mapeamento uns dos outros.

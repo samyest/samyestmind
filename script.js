@@ -27,14 +27,13 @@ function taskColor(t){
   return eventColorHex(t.color_id) || taskColumnColor(t);
 }
 
-const GCAL_NAME = 'samyest.mind';
+const GCAL_ID = 'primary';
 const GCAL_PULL_INTERVAL = 2 * 60 * 1000;
 let googleConnected = false;
 let googleAccessToken = null;
 let googleTokenExpiry = 0;
 let gcalCalendarId = null;
 let gcalSyncToken = null;
-let gcalVerified = false;
 let gcalPullTimer = null;
 let gcalSyncing = false;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -888,34 +887,17 @@ function updateGoogleStatusUI(){
   }
 }
 
-// Tasks live in a dedicated "samyest.mind" calendar rather than the primary one,
-// so pulling from Google can't mistake ordinary meetings for tasks.
+// Sincroniza com a agenda principal: é a que abre por padrão ao criar um evento
+// no Google, então qualquer compromisso criado por lá vira tarefa sem exigir que
+// o usuário escolha um calendário específico.
 async function getSyncCalendarId(){
-  if(gcalCalendarId && gcalVerified) return gcalCalendarId;
-  if(gcalCalendarId){
-    const check = await gapi('/calendars/' + encodeURIComponent(gcalCalendarId));
-    if(check && !check.__missing){
-      gcalVerified = true;
-      return gcalCalendarId;
-    }
-    // Calendário apagado do lado do Google — recria e reindexa do zero.
-    gcalCalendarId = null;
-    gcalSyncToken = null;
-  }
-
-  const list = await gapi('/users/me/calendarList');
-  if(!list) return null;
-  const found = (list.items || []).find(c=>c.summary === GCAL_NAME);
-  if(found){
-    gcalCalendarId = found.id;
-  } else {
-    const created = await gapi('/calendars', {method:'POST', body:{summary: GCAL_NAME, timeZone: gcalTimeZone()}});
-    if(!created || !created.id) return null;
-    gcalCalendarId = created.id;
-  }
-  gcalVerified = true;
-  await persistGoogleState({calendar_id: gcalCalendarId, sync_token: null});
-  return gcalCalendarId;
+  if(gcalCalendarId === GCAL_ID) return GCAL_ID;
+  // Migração da versão que usava um calendário dedicado: o sync token antigo
+  // pertence àquele calendário e não vale para a agenda principal.
+  gcalCalendarId = GCAL_ID;
+  gcalSyncToken = null;
+  await persistGoogleState({calendar_id: GCAL_ID, sync_token: null});
+  return GCAL_ID;
 }
 
 function gcalTimeZone(){
@@ -1146,6 +1128,10 @@ async function applyGoogleEvent(evt){
 
   // Event created directly in Google Calendar — mirror it as a new task.
   if(evt.description && evt.description.includes('Sincronizado do samyest.mind')) return false;
+  // Convite recusado não é tarefa. Agora que lemos da agenda principal, esses
+  // aparecem no meio dos compromissos reais.
+  const me = (evt.attendees || []).find(a=>a.self);
+  if(me && me.responseStatus === 'declined') return false;
   const created = await createTaskRemote({
     title,
     client: '',
