@@ -1478,7 +1478,7 @@ function renderProjectPage(){
       <div class="kanban-filter-row">
         <div class="search-box">
           <svg class="search-box-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" class="input" id="kf-search" placeholder="Pesquisar tarefas..." value="${esc(state.filter.kanbanSearch)}">
+          <input type="search" class="input" id="kf-search" name="kf-search" autocomplete="off" placeholder="Pesquisar tarefas..." value="${esc(state.filter.kanbanSearch)}">
         </div>
         <select class="select" id="kf-assignee" style="width:auto;">
           ${assigneeOptions.map(o=>`<option value="${o.id}" ${state.filter.kanbanAssignee===o.id?'selected':''}>${esc(o.label)}</option>`).join('')}
@@ -2130,7 +2130,7 @@ function renderKanban(){
     <div class="kanban-filter-row">
       <div class="search-box">
         <svg class="search-box-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" class="input" id="kf-search" placeholder="Pesquisar tarefas..." value="${esc(state.filter.kanbanSearch)}">
+        <input type="search" class="input" id="kf-search" name="kf-search" autocomplete="off" placeholder="Pesquisar tarefas..." value="${esc(state.filter.kanbanSearch)}">
       </div>
       <select class="select" id="kf-client" style="width:auto;">
         <option value="">Todos clientes</option>
@@ -2521,7 +2521,7 @@ function renderTable(){
     </div>
     <div class="glass table-view">
       <div class="table-filters">
-        <input type="text" class="input search" id="f-search" placeholder="Buscar por título, cliente ou notas..." value="${esc(state.filter.search)}">
+        <input type="search" class="input search" id="f-search" name="f-search" autocomplete="off" placeholder="Buscar por título, cliente ou notas..." value="${esc(state.filter.search)}">
         <select class="select" id="f-project" style="width:auto;">
           <option value="">Pessoal (minhas tarefas)</option>
           ${myProjects.map(p=>`<option value="${p.id}" ${projectFilter===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}
