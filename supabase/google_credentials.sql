@@ -1,10 +1,25 @@
--- Guarda a credencial do Google de cada usuário.
+-- ============================================================================
+--  samyest.mind — tabela de credenciais do Google Calendar
+-- ============================================================================
 --
--- IMPORTANTE: o RLS fica ligado e SEM NENHUMA POLICY de propósito. Isso faz com
--- que a chave pública (anon) do navegador não consiga ler nem escrever nada aqui
--- — só a service_role key, que vive apenas nas variáveis de ambiente da Vercel,
--- tem acesso. O refresh_token dá acesso contínuo ao calendário da pessoa, então
--- ele nunca pode chegar ao navegador.
+--  ONDE RODAR
+--    1. Abra https://supabase.com/dashboard
+--    2. Selecione o projeto (nufcsghiitooamcgukbw)
+--    3. Menu lateral -> SQL Editor -> New query
+--    4. Cole este arquivo inteiro e clique em Run
+--
+--  Pode rodar mais de uma vez sem problema (usa IF NOT EXISTS).
+--
+--  POR QUE O RLS FICA SEM POLICY
+--    O refresh_token dá acesso contínuo ao Google Calendar da pessoa. Com RLS
+--    ligado e nenhuma policy criada, a chave pública que roda no navegador não
+--    consegue ler nem escrever nada aqui — só a service_role key, que existe
+--    apenas nas variáveis de ambiente da Vercel. Isso é intencional: se um dia
+--    alguém criar uma policy "permissiva" nesta tabela, os tokens vazam.
+-- ============================================================================
+
+
+-- 1. A tabela ------------------------------------------------------------------
 
 create table if not exists public.google_credentials (
   user_id       uuid primary key references auth.users(id) on delete cascade,
@@ -17,6 +32,32 @@ create table if not exists public.google_credentials (
   updated_at    timestamptz not null default now()
 );
 
+
+-- 2. Tranca o acesso -----------------------------------------------------------
+
 alter table public.google_credentials enable row level security;
 
--- Sem policies: nenhum acesso via anon/authenticated. Apenas service_role.
+-- (nenhuma policy de propósito — ver explicação no topo)
+
+
+-- 3. Verificação ---------------------------------------------------------------
+--    Deve retornar UMA linha, com rls_ligado = true e policies = 0.
+--    Se policies for maior que 0, algo está errado: os tokens ficam expostos.
+
+select
+  c.relname                                        as tabela,
+  c.relrowsecurity                                 as rls_ligado,
+  (select count(*) from pg_policies p
+    where p.schemaname = 'public'
+      and p.tablename  = 'google_credentials')     as policies,
+  case
+    when c.relrowsecurity and (select count(*) from pg_policies p
+      where p.schemaname = 'public'
+        and p.tablename  = 'google_credentials') = 0
+    then 'OK — pronto para uso'
+    else 'ATENCAO — revise, os tokens podem estar expostos'
+  end                                              as status
+from pg_class c
+join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public'
+  and c.relname = 'google_credentials';
