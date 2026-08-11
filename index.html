@@ -214,8 +214,9 @@
           <label>Google Calendar</label>
           <span id="google-cal-status" style="font-family:'JetBrains Mono',monospace;font-size:11px;"></span>
         </div>
-        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">Tarefas com prazo aparecem automaticamente no seu Google Calendar.</p>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">Sincroniza nos dois sentidos com um calendário <strong>samyest.mind</strong> na sua conta Google: tarefas com prazo viram eventos, e eventos criados nesse calendário viram tarefas.</p>
         <button class="btn-secondary" id="google-cal-btn" onclick="connectGoogleCalendar()" style="width:100%;">Conectar</button>
+        <button class="btn-secondary" id="google-cal-sync-btn" onclick="forceFullGoogleSync()" style="width:100%;margin-top:8px;display:none;">Sincronizar tudo agora</button>
       </div>
       <div class="field">
         <div class="field-label-row">

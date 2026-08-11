@@ -2,10 +2,15 @@ const SUPABASE_URL = 'https://nufcsghiitooamcgukbw.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_H6te1T153XXpx57yR6A9Sw_uVm0G6vH';
 const ALLOW_SIGNUP = false;
 const GOOGLE_CLIENT_ID = 'COLE_SEU_CLIENT_ID_AQUI';
-const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar';
+const GCAL_NAME = 'samyest.mind';
+const GCAL_PULL_INTERVAL = 2 * 60 * 1000;
 let googleTokenClient = null;
 let googleAccessToken = null;
 let googleTokenExpiry = 0;
+let gcalCalendarId = null;
+let gcalPullTimer = null;
+let gcalSyncing = false;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let session = null;
 let authMode = 'signin';
@@ -624,6 +629,12 @@ async function checkAuth(){
     await loadProjects();
     setupRealtime();
     startAlarmChecker();
+    restoreGoogleToken();
+    updateGoogleStatusUI();
+    if(isGoogleConnected()){
+      startGoogleSyncLoop();
+      runGoogleSync();
+    }
   } else {
     appEl.style.display = 'none';
     onbEl.classList.remove('show');
@@ -680,7 +691,70 @@ async function doAuth(){
 }
 
 function isGoogleConnected(){
-  return googleAccessToken && Date.now() < googleTokenExpiry;
+  return !!googleAccessToken && Date.now() < googleTokenExpiry;
+}
+
+function gcalKey(suffix){
+  return `gcal_${suffix}_${session && session.user ? session.user.id : 'anon'}`;
+}
+
+function saveGoogleToken(token, expiresInSec){
+  googleAccessToken = token;
+  googleTokenExpiry = Date.now() + (expiresInSec * 1000) - 60000;
+  try{
+    localStorage.setItem(gcalKey('token'), JSON.stringify({t: token, e: googleTokenExpiry}));
+  }catch(e){}
+}
+
+function restoreGoogleToken(){
+  try{
+    const raw = localStorage.getItem(gcalKey('token'));
+    if(!raw) return;
+    const {t, e} = JSON.parse(raw);
+    if(t && e && Date.now() < e){
+      googleAccessToken = t;
+      googleTokenExpiry = e;
+    }
+  }catch(e){}
+}
+
+function clearGoogleToken(){
+  googleAccessToken = null;
+  googleTokenExpiry = 0;
+  gcalCalendarId = null;
+  localEventMapCache = null;
+  try{
+    localStorage.removeItem(gcalKey('token'));
+    localStorage.removeItem(gcalKey('calendar'));
+    localStorage.removeItem(gcalKey('syncToken'));
+    localStorage.removeItem(gcalKey('localEvents'));
+  }catch(e){}
+}
+
+// Google returns 401 once the token is revoked or expires early; treat that as a
+// clean disconnect so the UI can prompt for a reconnect instead of failing silently.
+async function gapi(path, options){
+  if(!isGoogleConnected()) return null;
+  const opts = options || {};
+  const res = await fetch('https://www.googleapis.com/calendar/v3' + path, {
+    method: opts.method || 'GET',
+    headers: Object.assign(
+      {'Authorization': 'Bearer ' + googleAccessToken},
+      opts.body ? {'Content-Type': 'application/json'} : {}
+    ),
+    body: opts.body ? JSON.stringify(opts.body) : undefined
+  });
+  if(res.status === 401){
+    clearGoogleToken();
+    updateGoogleStatusUI();
+    showToast('Conexão com o Google expirou — reconecte');
+    return null;
+  }
+  if(res.status === 410) return {__gone: true};
+  if(res.status === 404) return {__missing: true};
+  if(!res.ok) return null;
+  if(res.status === 204) return {};
+  return res.json();
 }
 
 function initGoogleClient(){
@@ -688,22 +762,23 @@ function initGoogleClient(){
   googleTokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
     scope: GOOGLE_SCOPE,
-    callback: (resp)=>{
+    callback: async (resp)=>{
       if(resp.error){
         showToast('Erro ao conectar Google');
         return;
       }
-      googleAccessToken = resp.access_token;
-      googleTokenExpiry = Date.now() + (resp.expires_in * 1000) - 60000;
-      showToast('Google Calendar conectado');
+      saveGoogleToken(resp.access_token, resp.expires_in);
       updateGoogleStatusUI();
+      showToast('Google Calendar conectado');
+      await runGoogleSync({full: true});
+      startGoogleSyncLoop();
     }
   });
 }
 
 function connectGoogleCalendar(){
   if(GOOGLE_CLIENT_ID.includes('COLE_SEU')){
-    alert('Configuração pendente: adicione o GOOGLE_CLIENT_ID no código.');
+    alert('Configuração pendente: adicione o GOOGLE_CLIENT_ID no código (script.js, linha 4).');
     return;
   }
   initGoogleClient();
@@ -716,10 +791,10 @@ function connectGoogleCalendar(){
 
 function disconnectGoogleCalendar(){
   if(googleAccessToken){
-    google.accounts.oauth2.revoke(googleAccessToken, ()=>{});
+    try{ google.accounts.oauth2.revoke(googleAccessToken, ()=>{}); }catch(e){}
   }
-  googleAccessToken = null;
-  googleTokenExpiry = 0;
+  clearGoogleToken();
+  stopGoogleSyncLoop();
   showToast('Google Calendar desconectado');
   updateGoogleStatusUI();
 }
@@ -727,59 +802,315 @@ function disconnectGoogleCalendar(){
 function updateGoogleStatusUI(){
   const el = document.getElementById('google-cal-status');
   if(!el) return;
+  const btn = document.getElementById('google-cal-btn');
+  const syncBtn = document.getElementById('google-cal-sync-btn');
   if(isGoogleConnected()){
     el.innerHTML = `<span style="color:var(--done);">● Conectado</span>`;
-    document.getElementById('google-cal-btn').textContent = 'Desconectar';
-    document.getElementById('google-cal-btn').onclick = disconnectGoogleCalendar;
+    btn.textContent = 'Desconectar';
+    btn.onclick = disconnectGoogleCalendar;
+    if(syncBtn) syncBtn.style.display = '';
   } else {
     el.innerHTML = `<span style="color:var(--text-muted);">○ Não conectado</span>`;
-    document.getElementById('google-cal-btn').textContent = 'Conectar';
-    document.getElementById('google-cal-btn').onclick = connectGoogleCalendar;
+    btn.textContent = 'Conectar';
+    btn.onclick = connectGoogleCalendar;
+    if(syncBtn) syncBtn.style.display = 'none';
   }
 }
 
-async function syncTaskToGoogle(task){
-  if(!isGoogleConnected()) return;
+// Tasks live in a dedicated "samyest.mind" calendar rather than the primary one,
+// so pulling from Google can't mistake ordinary meetings for tasks.
+async function getSyncCalendarId(){
+  if(gcalCalendarId) return gcalCalendarId;
   try{
-    if(!task.date){
-      if(task.google_event_id) await deleteGoogleEvent(task);
-      return;
-    }
-    const body = {
-      summary: task.title,
-      description: [task.client ? `Cliente: ${task.client}` : '', task.notes || ''].filter(Boolean).join('\n'),
-      start: {date: task.date},
-      end: {date: task.date}
-    };
-    let url = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
-    let method = 'POST';
-    if(task.google_event_id){
-      url += '/' + task.google_event_id;
-      method = 'PATCH';
-    }
-    const res = await fetch(url, {
-      method,
-      headers: {'Authorization': 'Bearer ' + googleAccessToken, 'Content-Type': 'application/json'},
-      body: JSON.stringify(body)
-    });
-    if(res.ok){
-      const evt = await res.json();
-      if(evt.id && evt.id !== task.google_event_id){
-        task.google_event_id = evt.id;
-        await sb.from('tasks').update({google_event_id: evt.id}).eq('id', task.id);
+    const cached = localStorage.getItem(gcalKey('calendar'));
+    if(cached){
+      const check = await gapi('/calendars/' + encodeURIComponent(cached));
+      if(check && !check.__missing){
+        gcalCalendarId = cached;
+        return gcalCalendarId;
       }
+      localStorage.removeItem(gcalKey('calendar'));
     }
   }catch(e){}
+
+  const list = await gapi('/users/me/calendarList');
+  if(!list) return null;
+  const found = (list.items || []).find(c=>c.summary === GCAL_NAME);
+  if(found){
+    gcalCalendarId = found.id;
+  } else {
+    const created = await gapi('/calendars', {method:'POST', body:{summary: GCAL_NAME, timeZone: gcalTimeZone()}});
+    if(!created || !created.id) return null;
+    gcalCalendarId = created.id;
+  }
+  try{ localStorage.setItem(gcalKey('calendar'), gcalCalendarId); }catch(e){}
+  return gcalCalendarId;
+}
+
+function gcalTimeZone(){
+  try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo'; }
+  catch(e){ return 'America/Sao_Paulo'; }
+}
+
+// Event ids for tasks the user owns live on the row itself. For tasks owned by a
+// teammate in a shared project each member syncs into their own calendar, so the
+// mapping has to stay local or members would overwrite each other's event ids.
+function ownsTask(task){
+  return session && session.user && task.owner_id === session.user.id;
+}
+
+let localEventMapCache = null;
+function localEventMap(){
+  if(localEventMapCache) return localEventMapCache;
+  try{ localEventMapCache = JSON.parse(localStorage.getItem(gcalKey('localEvents')) || '{}'); }
+  catch(e){ localEventMapCache = {}; }
+  return localEventMapCache;
+}
+
+function getEventId(task){
+  if(ownsTask(task)) return task.google_event_id || null;
+  return localEventMap()[task.id] || null;
+}
+
+async function setEventId(task, eventId){
+  if(ownsTask(task)){
+    task.google_event_id = eventId;
+    await sb.from('tasks').update({google_event_id: eventId}).eq('id', task.id);
+    return;
+  }
+  const map = localEventMap();
+  if(eventId) map[task.id] = eventId; else delete map[task.id];
+  localEventMapCache = map;
+  try{ localStorage.setItem(gcalKey('localEvents'), JSON.stringify(map)); }catch(e){}
+}
+
+function shouldSyncTask(task){
+  if(!session || !session.user) return false;
+  return task.owner_id === session.user.id || task.assigned_to === session.user.id;
+}
+
+function buildEventBody(task){
+  const done = taskColumnType(task) === 'done';
+  const body = {
+    summary: (done ? '✓ ' : '') + task.title,
+    description: [
+      task.client ? `Cliente: ${task.client}` : '',
+      task.notes || '',
+      '—',
+      'Sincronizado do samyest.mind'
+    ].filter(Boolean).join('\n')
+  };
+  if(task.time){
+    const start = new Date(`${task.date}T${task.time}:00`);
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    const tz = gcalTimeZone();
+    body.start = {dateTime: gcalLocalIso(start), timeZone: tz};
+    body.end = {dateTime: gcalLocalIso(end), timeZone: tz};
+  } else {
+    const next = new Date(`${task.date}T00:00:00`);
+    next.setDate(next.getDate() + 1);
+    body.start = {date: task.date};
+    body.end = {date: gcalDateIso(next)};
+  }
+  return body;
+}
+
+function gcalLocalIso(d){
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:00`;
+}
+
+function gcalDateIso(d){
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+
+async function syncTaskToGoogle(task){
+  if(!isGoogleConnected() || !shouldSyncTask(task)) return;
+  const calId = await getSyncCalendarId();
+  if(!calId) return;
+  const existingId = getEventId(task);
+
+  if(!task.date){
+    if(existingId) await deleteGoogleEvent(task);
+    return;
+  }
+
+  const body = buildEventBody(task);
+  const base = '/calendars/' + encodeURIComponent(calId) + '/events';
+  let evt = null;
+  if(existingId){
+    evt = await gapi(`${base}/${existingId}`, {method:'PATCH', body});
+    // The event was deleted straight from Google — recreate it rather than losing the task.
+    if(evt && evt.__missing){
+      await setEventId(task, null);
+      evt = await gapi(base, {method:'POST', body});
+    }
+  } else {
+    evt = await gapi(base, {method:'POST', body});
+  }
+  if(evt && evt.id && evt.id !== getEventId(task)){
+    await setEventId(task, evt.id);
+  }
 }
 
 async function deleteGoogleEvent(task){
-  if(!isGoogleConnected() || !task.google_event_id) return;
-  try{
-    await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${task.google_event_id}`, {
-      method: 'DELETE',
-      headers: {'Authorization': 'Bearer ' + googleAccessToken}
+  if(!isGoogleConnected()) return;
+  const eventId = getEventId(task);
+  if(!eventId) return;
+  const calId = await getSyncCalendarId();
+  if(!calId) return;
+  await gapi(`/calendars/${encodeURIComponent(calId)}/events/${eventId}`, {method:'DELETE'});
+  await setEventId(task, null);
+}
+
+async function syncAllTasksToGoogle(){
+  if(!isGoogleConnected()) return 0;
+  const pending = state.tasks.filter(t=>t.date && shouldSyncTask(t));
+  let n = 0;
+  for(const t of pending){
+    await syncTaskToGoogle(t);
+    n++;
+  }
+  return n;
+}
+
+// --- Google -> app ---
+
+function parseEventDate(evt){
+  if(evt.start && evt.start.date) return {date: evt.start.date, time: ''};
+  if(evt.start && evt.start.dateTime){
+    const d = new Date(evt.start.dateTime);
+    const p = n => String(n).padStart(2, '0');
+    return {date: gcalDateIso(d), time: `${p(d.getHours())}:${p(d.getMinutes())}`};
+  }
+  return null;
+}
+
+function titleFromEvent(evt){
+  return (evt.summary || '(sem título)').replace(/^✓\s*/, '').trim();
+}
+
+async function pullFromGoogle(opts){
+  const full = opts && opts.full;
+  const calId = await getSyncCalendarId();
+  if(!calId) return;
+  const base = '/calendars/' + encodeURIComponent(calId) + '/events';
+  let syncToken = null;
+  try{ syncToken = full ? null : localStorage.getItem(gcalKey('syncToken')); }catch(e){}
+
+  let query;
+  if(syncToken){
+    query = `?syncToken=${encodeURIComponent(syncToken)}&showDeleted=true`;
+  } else {
+    const from = new Date();
+    from.setDate(from.getDate() - 90);
+    query = `?timeMin=${encodeURIComponent(from.toISOString())}&singleEvents=true&showDeleted=false&maxResults=250`;
+  }
+
+  let data = await gapi(base + query);
+  // An expired sync token means Google can no longer give us a delta; start over.
+  if(data && data.__gone){
+    try{ localStorage.removeItem(gcalKey('syncToken')); }catch(e){}
+    return pullFromGoogle({full: true});
+  }
+  if(!data) return;
+
+  let changed = false;
+  for(const evt of (data.items || [])){
+    if(await applyGoogleEvent(evt)) changed = true;
+  }
+  if(data.nextSyncToken){
+    try{ localStorage.setItem(gcalKey('syncToken'), data.nextSyncToken); }catch(e){}
+  }
+  if(changed){
+    await loadTasks();
+    safeRerender();
+  }
+}
+
+async function applyGoogleEvent(evt){
+  const task = state.tasks.find(t=>getEventId(t) === evt.id);
+
+  if(evt.status === 'cancelled'){
+    if(!task) return false;
+    // Removing an event from your own calendar must not delete a teammate's task —
+    // just stop tracking it.
+    if(!ownsTask(task)){
+      await setEventId(task, null);
+      return false;
+    }
+    await setEventId(task, null);
+    await deleteTaskRemote(task.id);
+    state.tasks = state.tasks.filter(t=>t.id !== task.id);
+    return true;
+  }
+
+  const when = parseEventDate(evt);
+  if(!when) return false;
+  const title = titleFromEvent(evt);
+
+  if(task){
+    if(!shouldSyncTask(task)) return false;
+    if(task.title === title && task.date === when.date && (task.time || '') === when.time) return false;
+    const ok = await updateTaskRemote(task.id, {
+      title,
+      client: task.client,
+      status: task.status,
+      priority: task.priority,
+      date: when.date,
+      time: when.time,
+      notes: task.notes
     });
+    if(!ok) return false;
+    Object.assign(task, {title, date: when.date, time: when.time});
+    return true;
+  }
+
+  // Event created directly in Google Calendar — mirror it as a new task.
+  if(evt.description && evt.description.includes('Sincronizado do samyest.mind')) return false;
+  const created = await createTaskRemote({
+    title,
+    client: '',
+    status: getColumns()[0].key,
+    priority: 'normal',
+    date: when.date,
+    time: when.time,
+    notes: ''
+  });
+  if(!created) return false;
+  state.tasks.push(created);
+  await setEventId(created, evt.id);
+  return true;
+}
+
+async function runGoogleSync(opts){
+  if(!isGoogleConnected() || gcalSyncing) return;
+  gcalSyncing = true;
+  try{
+    if(opts && opts.full) await syncAllTasksToGoogle();
+    await pullFromGoogle(opts);
   }catch(e){}
+  gcalSyncing = false;
+}
+
+function startGoogleSyncLoop(){
+  if(gcalPullTimer || !isGoogleConnected()) return;
+  gcalPullTimer = setInterval(()=>{ runGoogleSync(); }, GCAL_PULL_INTERVAL);
+}
+
+function stopGoogleSyncLoop(){
+  if(gcalPullTimer){ clearInterval(gcalPullTimer); gcalPullTimer = null; }
+}
+
+async function forceFullGoogleSync(){
+  if(!isGoogleConnected()) return;
+  const btn = document.getElementById('google-cal-sync-btn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Sincronizando...'; }
+  const n = await syncAllTasksToGoogle();
+  await pullFromGoogle({full: true});
+  if(btn){ btn.disabled = false; btn.textContent = 'Sincronizar tudo agora'; }
+  showToast(`${n} tarefa${n!==1?'s':''} enviada${n!==1?'s':''} ao Google`);
 }
 
 let realtimeChannel = null;
@@ -965,6 +1296,7 @@ function teardownRealtime(){
 async function logout(){
   teardownRealtime();
   stopAlarmChecker();
+  stopGoogleSyncLoop();
   await sb.auth.signOut();
   location.reload();
 }
@@ -2761,9 +3093,9 @@ async function deleteTask(){
   if(!state.editingId) return;
   if(!confirm('Excluir esta tarefa?')) return;
   const t = state.tasks.find(x=>x.id===state.editingId);
+  if(t) await deleteGoogleEvent(t);
   const ok = await deleteTaskRemote(state.editingId);
   if(ok){
-    if(t) deleteGoogleEvent(t);
     state.tasks = state.tasks.filter(x=>x.id !== state.editingId);
     closeModal();render();
     showToast('Tarefa excluída');
