@@ -1,6 +1,6 @@
 const SUPABASE_URL = 'https://nufcsghiitooamcgukbw.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_H6te1T153XXpx57yR6A9Sw_uVm0G6vH';
-const ALLOW_SIGNUP = false;
+const ALLOW_SIGNUP = true;
 // As 11 cores fixas de evento do Google Calendar. Guardamos o id ("1".."11") em
 // vez do hex para a cor sobreviver à ida e volta sem se degradar a cada sync.
 const EVENT_COLORS = [

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Política de Privacidade — samyest.mind</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  :root{
+    --bg:#E9EDF1; --card:rgba(255,255,255,0.62); --line:rgba(122,142,162,0.18);
+    --text:#3D4A57; --strong:#1F2933; --muted:#6B7A89; --accent:#5B7A94;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#12171C; --card:rgba(255,255,255,0.05); --line:rgba(255,255,255,0.10);
+      --text:#C3CDD7; --strong:#F0F4F8; --muted:#8B99A7; --accent:#8FB0CC;
+    }
+  }
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:'Inter',system-ui,sans-serif; font-size:15px; line-height:1.7;
+    padding:48px 20px 80px;
+  }
+  .wrap{max-width:760px;margin:0 auto;}
+  .brand{display:flex;align-items:center;gap:11px;margin-bottom:38px;text-decoration:none;}
+  .dot{
+    width:32px;height:32px;border-radius:9px;display:grid;place-items:center;
+    background:linear-gradient(135deg,#7D9AB3,#9AAFC2);color:#fff;
+    font-family:'Space Grotesk';font-weight:500;font-size:15px;
+  }
+  .brand-name{font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:15.5px;color:var(--strong);}
+  .brand-name span{color:#7D9AB3;}
+  h1{font-family:'Space Grotesk',sans-serif;font-size:33px;font-weight:500;color:var(--strong);letter-spacing:-0.02em;margin-bottom:8px;}
+  .updated{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:34px;}
+  h2{font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:500;color:var(--strong);margin:34px 0 12px;}
+  h3{font-size:15px;font-weight:600;color:var(--strong);margin:20px 0 6px;}
+  p{margin-bottom:13px;}
+  ul{margin:0 0 13px 20px;}
+  li{margin-bottom:7px;}
+  a{color:var(--accent);}
+  strong{color:var(--strong);font-weight:600;}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:20px 22px;margin:20px 0;
+  }
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px;}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;}
+  th{font-family:'JetBrains Mono',monospace;font-size:10.5px;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);font-weight:400;}
+  .foot{margin-top:44px;padding-top:22px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <a class="brand" href="/">
+    <div class="dot">s</div>
+    <div class="brand-name">samyest<span>.</span>mind</div>
+  </a>
+
+  <h1>Política de Privacidade</h1>
+  <div class="updated">Atualizada em 11 de agosto de 2026</div>
+
+  <p>O <strong>samyest.mind</strong> é uma ferramenta de organização de tarefas. Esta
+  página explica quais dados o aplicativo guarda, por quê, com quem eles são
+  compartilhados e como você pode removê-los.</p>
+
+  <h2>1. Quem é responsável</h2>
+  <p>O responsável pelo tratamento dos dados é o operador deste aplicativo, que pode
+  ser contatado pelo email
+  <a href="mailto:samirahmadpour@gmail.com">samirahmadpour@gmail.com</a>.</p>
+
+  <h2>2. Dados que coletamos</h2>
+
+  <h3>Conta</h3>
+  <ul>
+    <li><strong>Email e senha</strong> — para autenticar você. A senha é armazenada
+    apenas como hash pelo provedor de autenticação; o aplicativo nunca tem acesso
+    à senha em texto.</li>
+    <li><strong>Nome e foto de perfil</strong> — exibidos na sua conta e para
+    membros de projetos compartilhados com você.</li>
+    <li><strong>Preferências</strong> — tema de cores, alarme sonoro e as colunas
+    do seu Kanban.</li>
+  </ul>
+
+  <h3>Conteúdo que você cria</h3>
+  <ul>
+    <li><strong>Tarefas</strong> — título, cliente, status, prioridade, data,
+    horário, cor, anotações e data de conclusão.</li>
+    <li><strong>Projetos compartilhados</strong> — nome, anotações e os emails das
+    pessoas convidadas, para enviar o convite e controlar o acesso.</li>
+    <li><strong>Comentários</strong> em tarefas.</li>
+  </ul>
+
+  <h3>Google Calendar (opcional)</h3>
+  <p>Só se você conectar. A conexão pode ser desfeita a qualquer momento.</p>
+  <ul>
+    <li><strong>Chave de acesso ao calendário</strong> — guardada no servidor para
+    manter a sincronização funcionando sem pedir sua autorização toda hora. Ela
+    <strong>nunca é enviada ao navegador</strong> e fica em uma tabela sem acesso
+    público, alcançável apenas pelo servidor do aplicativo.</li>
+    <li><strong>Eventos da sua agenda principal</strong> — título, data, horário e
+    cor, para criar as tarefas correspondentes. O aplicativo também cria e edita
+    eventos nessa agenda a partir das suas tarefas.</li>
+  </ul>
+  <p>A permissão solicitada é <strong>apenas de eventos</strong>
+  (<code>calendar.events</code>). O aplicativo não cria, apaga nem lê a lista dos
+  seus outros calendários.</p>
+
+  <div class="card">
+    <strong>O que o aplicativo não faz:</strong> não vende seus dados, não os usa
+    para publicidade, não faz perfilamento e não compartilha suas tarefas ou seu
+    calendário com ninguém além dos serviços listados abaixo, necessários para o
+    funcionamento.
+  </div>
+
+  <h2>3. Com quem os dados são compartilhados</h2>
+  <table>
+    <tr><th>Serviço</th><th>Para quê</th></tr>
+    <tr><td><a href="https://supabase.com/privacy" target="_blank" rel="noopener">Supabase</a></td>
+        <td>Banco de dados e autenticação — onde sua conta, tarefas e projetos ficam armazenados</td></tr>
+    <tr><td><a href="https://vercel.com/legal/privacy-policy" target="_blank" rel="noopener">Vercel</a></td>
+        <td>Hospedagem do site e das funções de servidor</td></tr>
+    <tr><td><a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google</a></td>
+        <td>Somente se você conectar o Google Calendar, para ler e gravar os eventos</td></tr>
+  </table>
+  <p>Em projetos compartilhados, as tarefas e anotações daquele projeto ficam
+  visíveis para os membros que você convidar.</p>
+
+  <h2>4. Uso de dados do Google</h2>
+  <p>O uso e a transferência de informações recebidas das APIs do Google seguem a
+  <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Política
+  de Dados do Usuário dos Serviços de API do Google</a>, incluindo os requisitos de
+  Uso Limitado. Os dados do seu calendário são usados exclusivamente para exibir e
+  sincronizar suas tarefas dentro do aplicativo.</p>
+
+  <h2>5. Por quanto tempo guardamos</h2>
+  <p>Seus dados ficam armazenados enquanto sua conta existir. Ao excluir a conta,
+  tarefas, projetos, comentários e a credencial do Google são apagados.</p>
+
+  <h2>6. Seus direitos</h2>
+  <p>Pela LGPD (Lei nº 13.709/2018), você pode solicitar acesso, correção,
+  portabilidade ou exclusão dos seus dados, além de revogar consentimentos. Basta
+  escrever para o email da seção 1.</p>
+
+  <h3>Como revogar o acesso ao Google Calendar</h3>
+  <ul>
+    <li>Pelo aplicativo: <strong>Configurações → Google Calendar → Desconectar</strong>.
+    Isso revoga a permissão no Google e apaga a credencial guardada.</li>
+    <li>Ou diretamente pelo Google, em
+    <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a>.</li>
+  </ul>
+  <p>Desconectar não apaga os eventos já criados na sua agenda nem as tarefas já
+  importadas — eles continuam onde estão, apenas param de sincronizar.</p>
+
+  <h3>Como excluir sua conta</h3>
+  <p>Envie um pedido para o email da seção 1 e a conta e todos os dados associados
+  serão removidos.</p>
+
+  <h2>7. Segurança</h2>
+  <p>O acesso aos dados é restrito por regras no banco que limitam cada pessoa às
+  próprias informações e às dos projetos de que participa. A chave de acesso ao
+  Google fica em uma tabela sem nenhuma permissão pública, acessível somente pelo
+  servidor. Todo o tráfego usa HTTPS.</p>
+  <p>Nenhum sistema é totalmente imune a incidentes. Em caso de violação que traga
+  risco relevante, os titulares afetados serão comunicados.</p>
+
+  <h2>8. Mudanças</h2>
+  <p>Alterações nesta política serão publicadas nesta mesma página, com a data de
+  atualização no topo.</p>
+
+  <div class="foot">
+    <a href="/">← Voltar ao samyest.mind</a>
+  </div>
+
+</div>
+</body>
+</html>
