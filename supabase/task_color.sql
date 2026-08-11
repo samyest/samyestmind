@@ -16,11 +16,23 @@
 --    NULL = sem cor própria (a tarefa herda a cor da coluna do Kanban).
 -- ============================================================================
 
+-- 1. A coluna ------------------------------------------------------------------
+
 alter table public.tasks
   add column if not exists color_id text;
 
 
--- Verificação: deve retornar uma linha com a coluna color_id.
+-- 2. Atualiza o cache de esquema -----------------------------------------------
+--    O PostgREST (camada de API do Supabase) guarda um cache do esquema e nem
+--    sempre percebe a coluna nova na hora. Sem isto, salvar a tarefa falha com
+--    "Could not find the 'color_id' column of 'tasks' in the schema cache".
+
+notify pgrst, 'reload schema';
+
+
+-- 3. Verificação ---------------------------------------------------------------
+--    Deve retornar UMA linha: color_id | text | YES
+--    Se voltar vazio, o ALTER TABLE acima não chegou a rodar.
 
 select column_name, data_type, is_nullable
 from information_schema.columns
