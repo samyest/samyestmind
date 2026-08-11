@@ -120,10 +120,12 @@
     <div class="auth-title">Como devemos te chamar?</div>
     <div class="auth-sub">Esse nome vai aparecer nas saudações e no seu perfil.</div>
     <div class="auth-error" id="onboarding-error"></div>
-    <div class="auth-field">
-      <input type="text" class="input" id="onboarding-name" placeholder="Seu nome" onkeypress="if(event.key==='Enter')saveOnboarding()">
-    </div>
-    <button class="auth-btn" id="onboarding-btn" onclick="saveOnboarding()">Continuar</button>
+    <form onsubmit="event.preventDefault();saveOnboarding();">
+      <div class="auth-field">
+        <input type="text" class="input" id="onboarding-name" placeholder="Seu nome">
+      </div>
+      <button class="auth-btn" id="onboarding-btn" type="submit">Continuar</button>
+    </form>
   </div>
 </div>
 
@@ -136,16 +138,18 @@
     <div class="auth-title" id="auth-title">Entrar</div>
     <div class="auth-sub" id="auth-sub">Acesse sua conta pra continuar de onde parou</div>
     <div class="auth-error" id="auth-error"></div>
-    <div class="auth-field">
-      <input type="email" class="input" id="auth-email" placeholder="Email">
-    </div>
-    <div class="auth-field">
-      <input type="password" class="input" id="auth-password" placeholder="Senha" onkeypress="if(event.key==='Enter')doAuth()">
-    </div>
-    <button class="auth-btn" id="auth-btn" onclick="doAuth()">Entrar</button>
+    <form onsubmit="event.preventDefault();doAuth();">
+      <div class="auth-field">
+        <input type="email" class="input" id="auth-email" placeholder="Email" autocomplete="username">
+      </div>
+      <div class="auth-field">
+        <input type="password" class="input" id="auth-password" placeholder="Senha" autocomplete="current-password">
+      </div>
+      <button class="auth-btn" id="auth-btn" type="submit">Entrar</button>
+    </form>
     <div class="auth-switch">
       <span id="auth-switch-text">Não tem conta?</span>
-      <button onclick="toggleAuthMode()" id="auth-switch-btn">Cadastrar</button>
+      <button type="button" onclick="toggleAuthMode()" id="auth-switch-btn">Cadastrar</button>
     </div>
   </div>
 </div>
