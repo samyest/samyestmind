@@ -256,11 +256,13 @@
 
   .app{
     display:grid;
-    grid-template-columns:220px 1fr;
+    grid-template-columns:var(--sidebar-w, 220px) 1fr;
     height:100vh;
     position:relative;
     z-index:1;
+    transition:grid-template-columns .22s ease;
   }
+  .app.sidebar-collapsed{grid-template-columns:0px 1fr;}
 
   aside{
     background:var(--glass);
@@ -270,7 +272,30 @@
     display:flex;
     flex-direction:column;
     padding:32px 20px;
+    overflow:hidden;
+    transition:opacity .18s ease, padding .22s ease;
   }
+  .app.sidebar-collapsed aside{padding-left:0;padding-right:0;opacity:0;pointer-events:none;}
+
+  .sidebar-toggle{
+    position:absolute;
+    top:50%;
+    left:var(--sidebar-w, 220px);
+    transform:translate(-50%,-50%);
+    width:20px;height:40px;
+    display:grid;place-items:center;
+    background:var(--glass-strong);
+    border:1px solid var(--glass-border-soft);
+    border-radius:0 8px 8px 0;
+    color:var(--text-muted);
+    cursor:pointer;
+    z-index:5;
+    transition:left .22s ease, background .15s ease, color .15s ease;
+  }
+  .sidebar-toggle:hover{color:var(--accent);background:var(--glass-hover);}
+  .sidebar-toggle svg{width:11px;height:11px;transition:transform .22s ease;}
+  .app.sidebar-collapsed .sidebar-toggle{left:0;}
+  .app.sidebar-collapsed .sidebar-toggle svg{transform:rotate(180deg);}
 
   .brand{
     display:flex;
@@ -680,6 +705,7 @@
   }
   .task-date.overdue{color:var(--danger);}
   .task-date.today{color:var(--accent);font-weight:500;}
+  .task-date.done{color:#8FA88C;font-weight:500;}
 
   .priority-badge{
     display:inline-flex;
@@ -1171,6 +1197,9 @@
     margin-bottom:18px;
   }
   .kanban-filter-row .select{width:auto;min-width:140px;}
+  .search-box{position:relative;flex:1;min-width:180px;}
+  .search-box-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-soft);pointer-events:none;}
+  .search-box .input{width:100%;padding-left:34px;}
   .task-table{width:100%;border-collapse:collapse;}
   .task-table th{
     text-align:left;
@@ -2122,7 +2151,7 @@
   .mobile-nav-fab:active{transform:translateY(-10px) scale(0.92);}
 
   @media (max-width:1440px){
-    .app{grid-template-columns:200px 1fr;}
+    .app{--sidebar-w:200px;}
     main{padding:32px 28px 50px;}
     .dash-grid{gap:16px;}
     .kanban{gap:14px;}
@@ -2140,6 +2169,7 @@
     *{-webkit-tap-highlight-color:transparent;}
     .app{grid-template-columns:1fr;}
     aside{display:none;}
+    .sidebar-toggle{display:none;}
     .mobile-topbar{display:flex;}
     .mobile-nav{display:flex;}
     main{padding:20px 16px calc(88px + env(safe-area-inset-bottom));}

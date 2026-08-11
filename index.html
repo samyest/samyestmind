@@ -77,6 +77,9 @@
       <button class="side-user-logout" onclick="logout()" title="Sair">SAIR</button>
     </div>
   </aside>
+  <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Esconder/mostrar barra lateral">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="15 18 9 12 15 6"/></svg>
+  </button>
 
   <nav class="mobile-nav">
     <button class="mobile-nav-item" data-view="dashboard">
@@ -184,6 +187,16 @@
           </label>
         </div>
         <p style="font-size:12px;color:var(--text-muted);line-height:1.5;">Toca um som quando uma tarefa com horário chega na hora marcada (só funciona com o app aberto).</p>
+      </div>
+      <div class="field">
+        <div class="field-label-row">
+          <label>📅 Ocultar data nos concluídos</label>
+          <label class="sound-toggle">
+            <input type="checkbox" id="s-hide-date-done">
+            <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
+          </label>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);line-height:1.5;">Esconde o prazo nos cartões que já estão na coluna de concluídos no Kanban.</p>
       </div>
       <div class="field">
         <div class="field-label-row">

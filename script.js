@@ -126,9 +126,15 @@ function applyTheme(name){
   document.documentElement.style.colorScheme = t.dark ? 'dark' : 'light';
 }
 
+function toggleSidebar(){
+  const collapsed = document.getElementById('app').classList.toggle('sidebar-collapsed');
+  localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
+}
+
 function openSettings(){
   document.getElementById('s-name').value = getUserName();
   document.getElementById('s-sound').checked = state.soundEnabled !== false;
+  document.getElementById('s-hide-date-done').checked = !!state.hideDateOnDone;
   renderMyAvatar('settings-avatar-preview', getUserName());
   const grid = document.getElementById('theme-grid');
   grid.innerHTML = Object.entries(THEMES).map(([key, t])=>`
@@ -207,6 +213,9 @@ async function saveSettings(){
   const name = document.getElementById('s-name').value.trim();
   if(!name){alert('Preencha seu nome');return;}
   const soundEnabled = document.getElementById('s-sound').checked;
+  const hideDateOnDone = document.getElementById('s-hide-date-done').checked;
+  localStorage.setItem('hideDateOnDone', hideDateOnDone ? '1' : '0');
+  state.hideDateOnDone = hideDateOnDone;
   const {error} = await sb.from('profiles').upsert({
     id: session.user.id,
     name,
@@ -490,8 +499,15 @@ let state = {
   calSelectedDate: null,
   miniCalDate: new Date(),
   dateFilter: 'all',
-  filter: {client:'', status:'', search:'', project:'', assignee:'', tableDate:'all', kanbanClient:'', kanbanDate:'all', kanbanAssignee:''}
+  filter: {client:'', status:'', search:'', project:'', assignee:'', tableDate:'all', kanbanClient:'', kanbanDate:'all', kanbanAssignee:'', kanbanSearch:''},
+  hideDateOnDone: localStorage.getItem('hideDateOnDone') === '1'
 };
+
+function matchesKanbanSearch(t, search){
+  if(!search) return true;
+  const s = search.toLowerCase();
+  return (t.title||'').toLowerCase().includes(s) || (t.client||'').toLowerCase().includes(s) || (t.notes||'').toLowerCase().includes(s);
+}
 
 function matchesDateFilter(t, filter){
   if(filter === 'all') return true;
@@ -593,6 +609,7 @@ async function checkAuth(){
     }
     onbEl.classList.remove('show');
     appEl.style.display = 'grid';
+    appEl.classList.toggle('sidebar-collapsed', localStorage.getItem('sidebarCollapsed') === '1');
     const email = session.user.email;
     state.myName = myProfile.name;
     state.myAvatarUrl = myProfile.avatar_url || null;
@@ -1410,6 +1427,7 @@ function renderProjectPage(){
       else if(t.assigned_to !== state.filter.kanbanAssignee) return false;
     }
     if(state.filter.kanbanDate && state.filter.kanbanDate !== 'all' && !matchesDateFilter(t, state.filter.kanbanDate)) return false;
+    if(!matchesKanbanSearch(t, state.filter.kanbanSearch)) return false;
     return true;
   });
 
@@ -1458,6 +1476,10 @@ function renderProjectPage(){
         </div>
       </div>
       <div class="kanban-filter-row">
+        <div class="search-box">
+          <svg class="search-box-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" class="input" id="kf-search" placeholder="Pesquisar tarefas..." value="${esc(state.filter.kanbanSearch)}">
+        </div>
         <select class="select" id="kf-assignee" style="width:auto;">
           ${assigneeOptions.map(o=>`<option value="${o.id}" ${state.filter.kanbanAssignee===o.id?'selected':''}>${esc(o.label)}</option>`).join('')}
         </select>
@@ -1501,7 +1523,7 @@ function renderProjectPage(){
                       <div class="kb-card-title">${esc(t.title)}</div>
                       ${assigneeBadge}
                       <div class="kb-card-meta">
-                        <span class="${taskDateStatus(t)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>
+                        ${(col.type === 'done' && state.hideDateOnDone) ? '' : `<span class="${taskDateStatus(t)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>`}
                         ${badge}
                       </div>
                     </div>`;
@@ -1759,7 +1781,7 @@ function dateStatus(iso){
   return '';
 }
 function taskDateStatus(t){
-  if(taskColumnType(t) === 'done') return '';
+  if(taskColumnType(t) === 'done') return t.date ? 'done' : '';
   return dateStatus(t.date);
 }
 let toastTimer = null;
@@ -2094,6 +2116,7 @@ function renderKanban(){
   const filteredTasks = personalTasks().filter(t=>{
     if(state.filter.kanbanClient && t.client !== state.filter.kanbanClient) return false;
     if(state.filter.kanbanDate && state.filter.kanbanDate !== 'all' && !matchesDateFilter(t, state.filter.kanbanDate)) return false;
+    if(!matchesKanbanSearch(t, state.filter.kanbanSearch)) return false;
     return true;
   });
   return `
@@ -2105,6 +2128,10 @@ function renderKanban(){
       </div>
     </div>
     <div class="kanban-filter-row">
+      <div class="search-box">
+        <svg class="search-box-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" class="input" id="kf-search" placeholder="Pesquisar tarefas..." value="${esc(state.filter.kanbanSearch)}">
+      </div>
       <select class="select" id="kf-client" style="width:auto;">
         <option value="">Todos clientes</option>
         ${clientOptions.map(c=>`<option value="${esc(c)}" ${state.filter.kanbanClient===c?'selected':''}>${esc(c)}</option>`).join('')}
@@ -2148,7 +2175,7 @@ function renderKanban(){
                     <div class="kb-card-title">${esc(t.title)}</div>
                     ${projBadge}
                     <div class="kb-card-meta">
-                      <span class="${taskDateStatus(t)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>
+                      ${(col.type === 'done' && state.hideDateOnDone) ? '' : `<span class="${taskDateStatus(t)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>`}
                       ${badge}
                     </div>
                   </div>`;
@@ -2562,6 +2589,8 @@ function attachEvents(){
   if(kfd) kfd.onchange = (e)=>{state.filter.kanbanDate = e.target.value;render();};
   const kfa = document.getElementById('kf-assignee');
   if(kfa) kfa.onchange = (e)=>{state.filter.kanbanAssignee = e.target.value;render();};
+  const kfs = document.getElementById('kf-search');
+  if(kfs) kfs.oninput = (e)=>{state.filter.kanbanSearch = e.target.value;render();const el=document.getElementById('kf-search');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}};
 
   document.querySelectorAll('.cal-cell[data-date]').forEach(cell=>{
     cell.addEventListener('click', (e)=>{
