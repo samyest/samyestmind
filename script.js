@@ -2571,26 +2571,26 @@ function attachEvents(){
   });
   document.querySelectorAll('.nav-item, .mobile-nav-item').forEach(el=>{el.onclick = ()=>{flushNotesIfPending();state.view = el.dataset.view;render();window.scrollTo(0,0);};});
   const fs = document.getElementById('f-search');
-  if(fs) fs.oninput = (e)=>{state.filter.search = e.target.value;render();document.getElementById('f-search').focus();};
+  if(fs) fs.oninput = (e)=>{state.filter.search = e.target.value;skipEntranceOnce=true;render();document.getElementById('f-search').focus();};
   const fst = document.getElementById('f-status');
-  if(fst) fst.onchange = (e)=>{state.filter.status = e.target.value;render();};
+  if(fst) fst.onchange = (e)=>{state.filter.status = e.target.value;skipEntranceOnce=true;render();};
   const fc = document.getElementById('f-client');
-  if(fc) fc.onchange = (e)=>{state.filter.client = e.target.value;render();};
+  if(fc) fc.onchange = (e)=>{state.filter.client = e.target.value;skipEntranceOnce=true;render();};
   const fp = document.getElementById('f-project');
-  if(fp) fp.onchange = (e)=>{state.filter.project = e.target.value;state.filter.status='';state.filter.client='';state.filter.assignee='';render();};
+  if(fp) fp.onchange = (e)=>{state.filter.project = e.target.value;state.filter.status='';state.filter.client='';state.filter.assignee='';skipEntranceOnce=true;render();};
   const fa = document.getElementById('f-assignee');
-  if(fa) fa.onchange = (e)=>{state.filter.assignee = e.target.value;render();};
+  if(fa) fa.onchange = (e)=>{state.filter.assignee = e.target.value;skipEntranceOnce=true;render();};
   const ftd = document.getElementById('f-table-date');
-  if(ftd) ftd.onchange = (e)=>{state.filter.tableDate = e.target.value;render();};
+  if(ftd) ftd.onchange = (e)=>{state.filter.tableDate = e.target.value;skipEntranceOnce=true;render();};
 
   const kfc = document.getElementById('kf-client');
-  if(kfc) kfc.onchange = (e)=>{state.filter.kanbanClient = e.target.value;render();};
+  if(kfc) kfc.onchange = (e)=>{state.filter.kanbanClient = e.target.value;skipEntranceOnce=true;render();};
   const kfd = document.getElementById('kf-date');
-  if(kfd) kfd.onchange = (e)=>{state.filter.kanbanDate = e.target.value;render();};
+  if(kfd) kfd.onchange = (e)=>{state.filter.kanbanDate = e.target.value;skipEntranceOnce=true;render();};
   const kfa = document.getElementById('kf-assignee');
-  if(kfa) kfa.onchange = (e)=>{state.filter.kanbanAssignee = e.target.value;render();};
+  if(kfa) kfa.onchange = (e)=>{state.filter.kanbanAssignee = e.target.value;skipEntranceOnce=true;render();};
   const kfs = document.getElementById('kf-search');
-  if(kfs) kfs.oninput = (e)=>{state.filter.kanbanSearch = e.target.value;render();const el=document.getElementById('kf-search');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}};
+  if(kfs) kfs.oninput = (e)=>{state.filter.kanbanSearch = e.target.value;skipEntranceOnce=true;render();const el=document.getElementById('kf-search');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}};
 
   document.querySelectorAll('.cal-cell[data-date]').forEach(cell=>{
     cell.addEventListener('click', (e)=>{
