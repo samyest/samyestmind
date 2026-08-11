@@ -1,14 +1,14 @@
 const SUPABASE_URL = 'https://nufcsghiitooamcgukbw.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_H6te1T153XXpx57yR6A9Sw_uVm0G6vH';
 const ALLOW_SIGNUP = false;
-const GOOGLE_CLIENT_ID = 'COLE_SEU_CLIENT_ID_AQUI';
-const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar';
 const GCAL_NAME = 'samyest.mind';
 const GCAL_PULL_INTERVAL = 2 * 60 * 1000;
-let googleTokenClient = null;
+let googleConnected = false;
 let googleAccessToken = null;
 let googleTokenExpiry = 0;
 let gcalCalendarId = null;
+let gcalSyncToken = null;
+let gcalVerified = false;
 let gcalPullTimer = null;
 let gcalSyncing = false;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -629,12 +629,13 @@ async function checkAuth(){
     await loadProjects();
     setupRealtime();
     startAlarmChecker();
-    restoreGoogleToken();
+    await loadGoogleSession();
     updateGoogleStatusUI();
     if(isGoogleConnected()){
       startGoogleSyncLoop();
       runGoogleSync();
     }
+    await handleGoogleRedirect();
   } else {
     appEl.style.display = 'none';
     onbEl.classList.remove('show');
@@ -690,65 +691,97 @@ async function doAuth(){
   await checkAuth();
 }
 
+// A conexão vive no backend (api/google/*): o refresh token fica no servidor e
+// só o access token curto chega aqui, renovado sob demanda. Por isso o usuário
+// conecta uma vez e continua conectado.
 function isGoogleConnected(){
-  return !!googleAccessToken && Date.now() < googleTokenExpiry;
+  return googleConnected;
 }
 
 function gcalKey(suffix){
   return `gcal_${suffix}_${session && session.user ? session.user.id : 'anon'}`;
 }
 
-function saveGoogleToken(token, expiresInSec){
-  googleAccessToken = token;
-  googleTokenExpiry = Date.now() + (expiresInSec * 1000) - 60000;
-  try{
-    localStorage.setItem(gcalKey('token'), JSON.stringify({t: token, e: googleTokenExpiry}));
-  }catch(e){}
+function apiHeaders(){
+  return {
+    'Authorization': 'Bearer ' + (session ? session.access_token : ''),
+    'Content-Type': 'application/json'
+  };
 }
 
-function restoreGoogleToken(){
+async function loadGoogleSession(){
+  if(!session) return false;
   try{
-    const raw = localStorage.getItem(gcalKey('token'));
-    if(!raw) return;
-    const {t, e} = JSON.parse(raw);
-    if(t && e && Date.now() < e){
-      googleAccessToken = t;
-      googleTokenExpiry = e;
+    const res = await fetch('/api/google/token', {headers: apiHeaders()});
+    if(!res.ok) return false;
+    const data = await res.json();
+    if(!data.connected){
+      googleConnected = false;
+      googleAccessToken = null;
+      googleTokenExpiry = 0;
+      return false;
     }
+    googleConnected = true;
+    googleAccessToken = data.access_token;
+    googleTokenExpiry = Date.now() + 50 * 60 * 1000;
+    gcalCalendarId = data.calendar_id || null;
+    gcalSyncToken = data.sync_token || null;
+    return true;
+  }catch(e){ return false; }
+}
+
+async function ensureGoogleToken(){
+  if(googleAccessToken && Date.now() < googleTokenExpiry) return googleAccessToken;
+  const ok = await loadGoogleSession();
+  return ok ? googleAccessToken : null;
+}
+
+// Guarda no servidor o que precisa sobreviver entre dispositivos.
+async function persistGoogleState(patch){
+  try{
+    await fetch('/api/google/token', {
+      method: 'PATCH',
+      headers: apiHeaders(),
+      body: JSON.stringify(patch)
+    });
   }catch(e){}
 }
 
 function clearGoogleToken(){
+  googleConnected = false;
   googleAccessToken = null;
   googleTokenExpiry = 0;
   gcalCalendarId = null;
+  gcalSyncToken = null;
   localEventMapCache = null;
-  try{
-    localStorage.removeItem(gcalKey('token'));
-    localStorage.removeItem(gcalKey('calendar'));
-    localStorage.removeItem(gcalKey('syncToken'));
-    localStorage.removeItem(gcalKey('localEvents'));
-  }catch(e){}
+  try{ localStorage.removeItem(gcalKey('localEvents')); }catch(e){}
 }
 
 // Google returns 401 once the token is revoked or expires early; treat that as a
 // clean disconnect so the UI can prompt for a reconnect instead of failing silently.
-async function gapi(path, options){
-  if(!isGoogleConnected()) return null;
+async function gapi(path, options, retried){
+  const token = await ensureGoogleToken();
+  if(!token) return null;
   const opts = options || {};
   const res = await fetch('https://www.googleapis.com/calendar/v3' + path, {
     method: opts.method || 'GET',
     headers: Object.assign(
-      {'Authorization': 'Bearer ' + googleAccessToken},
+      {'Authorization': 'Bearer ' + token},
       opts.body ? {'Content-Type': 'application/json'} : {}
     ),
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
   if(res.status === 401){
-    clearGoogleToken();
-    updateGoogleStatusUI();
-    showToast('Conexão com o Google expirou — reconecte');
-    return null;
+    // Token vencido antes do previsto: pede um novo ao backend e tenta uma vez só.
+    googleAccessToken = null;
+    googleTokenExpiry = 0;
+    if(retried || !(await ensureGoogleToken())){
+      clearGoogleToken();
+      updateGoogleStatusUI();
+      showToast('Conexão com o Google expirou — reconecte');
+      return null;
+    }
+    return gapi(path, options, true);
   }
   if(res.status === 410) return {__gone: true};
   if(res.status === 404) return {__missing: true};
@@ -757,46 +790,58 @@ async function gapi(path, options){
   return res.json();
 }
 
-function initGoogleClient(){
-  if(googleTokenClient || typeof google === 'undefined' || GOOGLE_CLIENT_ID.includes('COLE_SEU')) return;
-  googleTokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: GOOGLE_CLIENT_ID,
-    scope: GOOGLE_SCOPE,
-    callback: async (resp)=>{
-      if(resp.error){
-        showToast('Erro ao conectar Google');
-        return;
-      }
-      saveGoogleToken(resp.access_token, resp.expires_in);
-      updateGoogleStatusUI();
-      showToast('Google Calendar conectado');
-      await runGoogleSync({full: true});
-      startGoogleSyncLoop();
+// Leva o usuário à tela de contas do Google. O backend monta a URL porque é ele
+// que assina o state com a identidade — o navegador só navega.
+async function connectGoogleCalendar(){
+  const btn = document.getElementById('google-cal-btn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Abrindo Google...'; }
+  try{
+    const res = await fetch('/api/google/start', {headers: apiHeaders()});
+    const data = await res.json();
+    if(!res.ok || !data.url){
+      alert('Não foi possível iniciar a conexão: ' + (data.error || 'erro desconhecido'));
+      if(btn){ btn.disabled = false; btn.textContent = 'Conectar'; }
+      return;
     }
-  });
+    window.location.href = data.url;
+  }catch(e){
+    alert('Não foi possível falar com o servidor: ' + e.message);
+    if(btn){ btn.disabled = false; btn.textContent = 'Conectar'; }
+  }
 }
 
-function connectGoogleCalendar(){
-  if(GOOGLE_CLIENT_ID.includes('COLE_SEU')){
-    alert('Configuração pendente: adicione o GOOGLE_CLIENT_ID no código (script.js, linha 4).');
-    return;
-  }
-  initGoogleClient();
-  if(!googleTokenClient){
-    alert('Google ainda carregando, tenta de novo em 1 segundo.');
-    return;
-  }
-  googleTokenClient.requestAccessToken({prompt: isGoogleConnected() ? '' : 'consent'});
-}
-
-function disconnectGoogleCalendar(){
-  if(googleAccessToken){
-    try{ google.accounts.oauth2.revoke(googleAccessToken, ()=>{}); }catch(e){}
-  }
+async function disconnectGoogleCalendar(){
+  try{
+    await fetch('/api/google/disconnect', {method: 'POST', headers: apiHeaders()});
+  }catch(e){}
   clearGoogleToken();
   stopGoogleSyncLoop();
   showToast('Google Calendar desconectado');
   updateGoogleStatusUI();
+}
+
+// Lê o ?google=... com que o callback devolve o usuário ao app.
+async function handleGoogleRedirect(){
+  const params = new URLSearchParams(location.search);
+  const status = params.get('google');
+  if(!status) return;
+  history.replaceState({}, '', location.pathname);
+
+  const msgs = {
+    ok: 'Google Calendar conectado',
+    negado: 'Você recusou o acesso ao Google Calendar',
+    expirado: 'O pedido expirou — tente conectar de novo',
+    sem_refresh: 'O Google não devolveu acesso permanente. Remova o app em myaccount.google.com/permissions e conecte de novo.',
+    erro: 'Erro ao conectar com o Google'
+  };
+  showToast(msgs[status] || msgs.erro);
+
+  if(status === 'ok'){
+    await loadGoogleSession();
+    updateGoogleStatusUI();
+    startGoogleSyncLoop();
+    await runGoogleSync({full: true});
+  }
 }
 
 function updateGoogleStatusUI(){
@@ -820,18 +865,17 @@ function updateGoogleStatusUI(){
 // Tasks live in a dedicated "samyest.mind" calendar rather than the primary one,
 // so pulling from Google can't mistake ordinary meetings for tasks.
 async function getSyncCalendarId(){
-  if(gcalCalendarId) return gcalCalendarId;
-  try{
-    const cached = localStorage.getItem(gcalKey('calendar'));
-    if(cached){
-      const check = await gapi('/calendars/' + encodeURIComponent(cached));
-      if(check && !check.__missing){
-        gcalCalendarId = cached;
-        return gcalCalendarId;
-      }
-      localStorage.removeItem(gcalKey('calendar'));
+  if(gcalCalendarId && gcalVerified) return gcalCalendarId;
+  if(gcalCalendarId){
+    const check = await gapi('/calendars/' + encodeURIComponent(gcalCalendarId));
+    if(check && !check.__missing){
+      gcalVerified = true;
+      return gcalCalendarId;
     }
-  }catch(e){}
+    // Calendário apagado do lado do Google — recria e reindexa do zero.
+    gcalCalendarId = null;
+    gcalSyncToken = null;
+  }
 
   const list = await gapi('/users/me/calendarList');
   if(!list) return null;
@@ -843,7 +887,8 @@ async function getSyncCalendarId(){
     if(!created || !created.id) return null;
     gcalCalendarId = created.id;
   }
-  try{ localStorage.setItem(gcalKey('calendar'), gcalCalendarId); }catch(e){}
+  gcalVerified = true;
+  await persistGoogleState({calendar_id: gcalCalendarId, sync_token: null});
   return gcalCalendarId;
 }
 
@@ -996,8 +1041,7 @@ async function pullFromGoogle(opts){
   const calId = await getSyncCalendarId();
   if(!calId) return;
   const base = '/calendars/' + encodeURIComponent(calId) + '/events';
-  let syncToken = null;
-  try{ syncToken = full ? null : localStorage.getItem(gcalKey('syncToken')); }catch(e){}
+  const syncToken = full ? null : gcalSyncToken;
 
   let query;
   if(syncToken){
@@ -1011,7 +1055,7 @@ async function pullFromGoogle(opts){
   let data = await gapi(base + query);
   // An expired sync token means Google can no longer give us a delta; start over.
   if(data && data.__gone){
-    try{ localStorage.removeItem(gcalKey('syncToken')); }catch(e){}
+    gcalSyncToken = null;
     return pullFromGoogle({full: true});
   }
   if(!data) return;
@@ -1020,8 +1064,9 @@ async function pullFromGoogle(opts){
   for(const evt of (data.items || [])){
     if(await applyGoogleEvent(evt)) changed = true;
   }
-  if(data.nextSyncToken){
-    try{ localStorage.setItem(gcalKey('syncToken'), data.nextSyncToken); }catch(e){}
+  if(data.nextSyncToken && data.nextSyncToken !== gcalSyncToken){
+    gcalSyncToken = data.nextSyncToken;
+    await persistGoogleState({sync_token: gcalSyncToken});
   }
   if(changed){
     await loadTasks();
