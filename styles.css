@@ -1009,7 +1009,37 @@
   .kb-card-meta .overdue{color:var(--danger);}
   .kb-card-meta .today{color:var(--accent);font-weight:500;}
 
-  .cal-view{padding:26px;}
+  .cal-view{padding:26px;position:relative;}
+
+  /* Cobre o calendário durante o sync: sem isso o re-render pisca a grade toda. */
+  .cal-sync-overlay{
+    position:absolute;
+    inset:0;
+    z-index:3;
+    display:grid;
+    place-items:center;
+    border-radius:inherit;
+    background:var(--glass-strong);
+    backdrop-filter:blur(1.5px) saturate(60%);
+    -webkit-backdrop-filter:blur(1.5px) saturate(60%);
+    animation:fadeIn .18s ease both;
+  }
+  .cal-sync-box{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:12px;
+    color:var(--text-muted);
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+  }
+  .cal-sync-box svg{
+    width:34px;height:34px;
+    color:var(--accent);
+    animation:spin360 .8s linear infinite;
+  }
   .cal-view-head{
     display:flex;
     justify-content:space-between;

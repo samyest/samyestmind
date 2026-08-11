@@ -1116,7 +1116,10 @@ async function pullFromGoogle(opts){
     await persistGoogleState({sync_token: gcalSyncToken});
   }
   if(changed){
+    // Sem isto a grade toda refaz a animação de entrada e o calendário pisca.
+    skipEntranceOnce = true;
     await loadTasks();
+    skipEntranceOnce = true;
     safeRerender();
   }
 }
@@ -1201,19 +1204,31 @@ function stopGoogleSyncLoop(){
   if(gcalPullTimer){ clearInterval(gcalPullTimer); gcalPullTimer = null; }
 }
 
+let calSyncing = false;
+
 // Sincronização sob demanda a partir do calendário, sem esperar o ciclo de 2 min.
 async function syncCalendarNow(){
   if(!isGoogleConnected()){
     showToast('Conecte o Google Calendar primeiro');
     return;
   }
-  const btn = document.getElementById('cal-sync-btn');
-  if(btn){ btn.disabled = true; btn.classList.add('is-syncing'); }
+  if(calSyncing) return;
+
   const before = state.tasks.length;
-  await syncAllTasksToGoogle();
-  await pullFromGoogle();
+  calSyncing = true;
+  skipEntranceOnce = true;
+  render();
+
+  try{
+    await syncAllTasksToGoogle();
+    await pullFromGoogle();
+  }catch(e){}
+
+  calSyncing = false;
+  skipEntranceOnce = true;
+  render();
+
   const novas = state.tasks.length - before;
-  if(btn){ btn.disabled = false; btn.classList.remove('is-syncing'); }
   showToast(novas > 0
     ? `${novas} nova${novas!==1?'s':''} tarefa${novas!==1?'s':''} do Google`
     : 'Tudo em dia com o Google');
@@ -2883,6 +2898,13 @@ function renderCalendar(){
         ${cells}
       </div>
       ${emptyMonthHint}
+      ${calSyncing ? `
+      <div class="cal-sync-overlay">
+        <div class="cal-sync-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          <span>Sincronizando</span>
+        </div>
+      </div>` : ''}
     </div>
     ${dayPanel}`;
 }
