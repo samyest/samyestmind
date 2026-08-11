@@ -858,13 +858,29 @@ async function doAuth(){
 // Supabase cuida do fluxo e só identifica a pessoa.
 async function signInWithGoogle(){
   const btn = document.getElementById('google-signin-btn');
+  const reset = ()=>{
+    if(!btn) return;
+    btn.disabled = false;
+    btn.textContent = 'Continuar com Google';
+  };
   if(btn){ btn.disabled = true; btn.textContent = 'Abrindo Google...'; }
+
+  // Em caso de sucesso o navegador sai desta página. Se continuarmos aqui, o
+  // redirecionamento falhou — normalmente porque o provider Google não está
+  // ativado no Supabase. Sem isto o botão fica travado sem explicação.
+  const travou = setTimeout(()=>{
+    reset();
+    showAuthMessage('O login com Google não está configurado. Ative o provider Google no Supabase.');
+  }, 4000);
+
   const {error} = await sb.auth.signInWithOAuth({
     provider: 'google',
     options: {redirectTo: location.origin}
   });
+
   if(error){
-    if(btn){ btn.disabled = false; btn.textContent = 'Continuar com Google'; }
+    clearTimeout(travou);
+    reset();
     showAuthMessage('Não foi possível entrar com o Google: ' + error.message);
   }
 }
