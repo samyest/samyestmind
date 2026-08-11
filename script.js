@@ -532,8 +532,38 @@ let state = {
   filter: {client:'', status:'', search:'', project:'', assignee:'', tableDate:'all', kanbanClient:'', kanbanDate:'all', kanbanAssignee:'', kanbanSearch:''},
   hideDateOnDone: localStorage.getItem('hideDateOnDone') === '1',
   selecting: false,
-  selected: new Set()
+  selected: new Set(),
+  ignoredEvents: new Set()
 };
+
+// Eventos que o usuário já descartou uma vez. Sem isto, a sincronização completa
+// relista tudo e recria as tarefas que ele apagou de propósito.
+async function loadIgnoredEvents(){
+  const {data, error} = await sb.from('google_ignored_events').select('event_id');
+  if(error) return;
+  state.ignoredEvents = new Set((data || []).map(r=>r.event_id));
+}
+
+async function ignoreGoogleEvent(eventId){
+  if(!eventId || state.ignoredEvents.has(eventId)) return;
+  state.ignoredEvents.add(eventId);
+  await sb.from('google_ignored_events')
+    .upsert({user_id: session.user.id, event_id: eventId}, {onConflict: 'user_id,event_id'});
+}
+
+// Apagar uma tarefa criada no app remove o evento espelho no Google. Apagar uma
+// que veio do Google não pode remover o compromisso real da agenda — só marca
+// para não voltar.
+async function forgetTaskInGoogle(task){
+  const eventId = getEventId(task);
+  if(!eventId) return;
+  await ignoreGoogleEvent(eventId);
+  if(task.from_google){
+    await setEventId(task, null);
+    return;
+  }
+  await deleteGoogleEvent(task);
+}
 
 function toggleSelectMode(){
   state.selecting = !state.selecting;
@@ -610,7 +640,7 @@ async function bulkDelete(){
 
   let n = 0;
   for(const t of list){
-    await deleteGoogleEvent(t);
+    await forgetTaskInGoogle(t);
     if(await deleteTaskRemote(t.id)){
       state.tasks = state.tasks.filter(x=>x.id !== t.id);
       n++;
@@ -742,6 +772,7 @@ async function checkAuth(){
     renderMyAvatar('user-avatar', state.myName);
     await loadTasks();
     await loadProjects();
+    await loadIgnoredEvents();
     setupRealtime();
     startAlarmChecker();
     await loadGoogleSession();
@@ -1223,6 +1254,9 @@ async function pullFromGoogle(opts){
 async function applyGoogleEvent(evt){
   const task = state.tasks.find(t=>getEventId(t) === evt.id);
 
+  // Já descartado uma vez: não ressuscita.
+  if(!task && state.ignoredEvents.has(evt.id)) return false;
+
   if(evt.status === 'cancelled'){
     if(!task) return false;
     // Removing an event from your own calendar must not delete a teammate's task —
@@ -1273,6 +1307,7 @@ async function applyGoogleEvent(evt){
     date: when.date,
     time: when.time,
     color_id: colorId,
+    from_google: true,
     notes: ''
   });
   if(!created) return false;
@@ -1608,6 +1643,7 @@ async function loadTasks(){
     notes: t.notes || '',
     google_event_id: t.google_event_id || null,
     color_id: t.color_id || null,
+    from_google: !!t.from_google,
     completed_at: t.completed_at || null,
     project_id: t.project_id || null,
     assigned_to: t.assigned_to || null,
@@ -1628,6 +1664,7 @@ async function createTaskRemote(data){
     time: data.time || null,
     notes: data.notes || null,
     color_id: data.color_id || null,
+    from_google: !!data.from_google,
     completed_at: data.completed_at || null,
     project_id: data.project_id || null,
     assigned_to: data.assigned_to || null
@@ -1644,6 +1681,7 @@ async function createTaskRemote(data){
     notes: task.notes || '',
     google_event_id: null,
     color_id: task.color_id || null,
+    from_google: !!task.from_google,
     completed_at: task.completed_at || null,
     project_id: task.project_id || null,
     assigned_to: task.assigned_to || null,
@@ -3400,7 +3438,7 @@ async function deleteTask(){
   if(!state.editingId) return;
   if(!confirm('Excluir esta tarefa?')) return;
   const t = state.tasks.find(x=>x.id===state.editingId);
-  if(t) await deleteGoogleEvent(t);
+  if(t) await forgetTaskInGoogle(t);
   const ok = await deleteTaskRemote(state.editingId);
   if(ok){
     state.tasks = state.tasks.filter(x=>x.id !== state.editingId);
