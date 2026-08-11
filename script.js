@@ -530,8 +530,98 @@ let state = {
   miniCalDate: new Date(),
   dateFilter: 'all',
   filter: {client:'', status:'', search:'', project:'', assignee:'', tableDate:'all', kanbanClient:'', kanbanDate:'all', kanbanAssignee:'', kanbanSearch:''},
-  hideDateOnDone: localStorage.getItem('hideDateOnDone') === '1'
+  hideDateOnDone: localStorage.getItem('hideDateOnDone') === '1',
+  selecting: false,
+  selected: new Set()
 };
+
+function toggleSelectMode(){
+  state.selecting = !state.selecting;
+  state.selected.clear();
+  skipEntranceOnce = true;
+  render();
+}
+
+function toggleTaskSelection(id){
+  if(state.selected.has(id)) state.selected.delete(id);
+  else state.selected.add(id);
+  skipEntranceOnce = true;
+  render();
+}
+
+// Cartões abrem a tarefa normalmente, mas viram alvo de seleção no modo em massa.
+function cardClick(e, id){
+  if(!state.selecting){ openModal(id); return; }
+  e.preventDefault();
+  e.stopPropagation();
+  toggleTaskSelection(id);
+}
+
+function selectedTasks(){
+  return state.tasks.filter(t=>state.selected.has(t.id));
+}
+
+function renderBulkBar(){
+  if(!state.selecting) return '';
+  const n = state.selected.size;
+  return `
+    <div class="bulk-bar">
+      <div class="bulk-bar-count">${n === 0 ? 'Toque nas tarefas para selecionar' : `${n} selecionada${n!==1?'s':''}`}</div>
+      <div class="bulk-bar-actions">
+        <select class="select" id="bulk-move" ${n===0?'disabled':''} onchange="bulkMove(this.value);this.value='';">
+          <option value="">Mover para...</option>
+          ${getColumns().map(c=>`<option value="${c.key}">${esc(c.name)}</option>`).join('')}
+        </select>
+        <button class="btn-danger" ${n===0?'disabled':''} onclick="bulkDelete()">Excluir</button>
+      </div>
+    </div>`;
+}
+
+// Só deixa agir sobre o que o usuário pode mesmo alterar.
+function canEditTask(t){
+  if(!session || !session.user) return false;
+  if(t.owner_id === session.user.id) return true;
+  return !!(t.project_id && canEditProject(t.project_id));
+}
+
+async function bulkMove(status){
+  if(!status) return;
+  const list = selectedTasks().filter(canEditTask);
+  if(list.length === 0){ showToast('Nada que você possa mover'); return; }
+
+  for(const t of list){
+    const prevStatus = t.status;
+    t.completed_at = resolveCompletedAt(status, prevStatus, t.completed_at);
+    t.status = status;
+    const ok = await updateTaskRemote(t.id, t);
+    if(ok) await syncTaskToGoogle(t);
+  }
+  state.selected.clear();
+  state.selecting = false;
+  skipEntranceOnce = true;
+  render();
+  showToast(`${list.length} tarefa${list.length!==1?'s':''} movida${list.length!==1?'s':''}`);
+}
+
+async function bulkDelete(){
+  const list = selectedTasks().filter(canEditTask);
+  if(list.length === 0){ showToast('Nada que você possa excluir'); return; }
+  if(!confirm(`Excluir ${list.length} tarefa${list.length!==1?'s':''}? Isso também remove os eventos do Google Calendar e não tem desfazer.`)) return;
+
+  let n = 0;
+  for(const t of list){
+    await deleteGoogleEvent(t);
+    if(await deleteTaskRemote(t.id)){
+      state.tasks = state.tasks.filter(x=>x.id !== t.id);
+      n++;
+    }
+  }
+  state.selected.clear();
+  state.selecting = false;
+  skipEntranceOnce = true;
+  render();
+  showToast(`${n} tarefa${n!==1?'s':''} excluída${n!==1?'s':''}`);
+}
 
 function matchesKanbanSearch(t, search){
   if(!search) return true;
@@ -1991,7 +2081,8 @@ function renderProjectPage(){
                     const assignee = getAssigneeLabel(t);
                     const assigneeBadge = assignee ? `<span class="project-badge" style="margin-bottom:6px;">👤 ${esc(assignee)}</span>` : '';
                     return `
-                    <div class="kb-card ${doneCls}" style="--col-color:${taskColor(t)}" draggable="true" ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)" onclick="openModal('${t.id}')">
+                    <div class="kb-card ${doneCls} ${state.selected.has(t.id)?'is-selected':''}" style="--col-color:${taskColor(t)}" draggable="${!state.selecting}" ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)" onclick="cardClick(event,'${t.id}')">
+                    ${state.selecting ? `<span class="kb-card-check">${state.selected.has(t.id)?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><polyline points="20 6 9 17 4 12"/></svg>':''}</span>` : ''}
                       <div class="kb-card-client">${esc(t.client || '—')}</div>
                       <div class="kb-card-title">${esc(t.title)}</div>
                       ${assigneeBadge}
@@ -2596,10 +2687,14 @@ function renderKanban(){
     <div class="view-header">
       <div><div class="eyebrow">Fluxo de trabalho</div><h1>Kanban</h1></div>
       <div class="kanban-header-actions" style="display:flex;gap:10px;">
+        <button class="btn-secondary ${state.selecting?'is-active':''}" onclick="toggleSelectMode()" title="Selecionar várias tarefas">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>${state.selecting?'Cancelar':'Selecionar'}
+        </button>
         <button class="btn-secondary" onclick="openColumnModal()">+ Nova coluna</button>
         <button class="btn-primary" onclick="openModal()">+ Nova tarefa</button>
       </div>
     </div>
+    ${renderBulkBar()}
     <div class="kanban-filter-row">
       <div class="search-box">
         <svg class="search-box-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -2643,7 +2738,8 @@ function renderKanban(){
                   const pName = t.project_id ? projectName(t.project_id) : null;
                   const projBadge = pName ? `<span class="project-badge" style="margin-bottom:6px;">👥 ${esc(pName)}</span>` : '';
                   return `
-                  <div class="kb-card ${doneCls}" style="--col-color:${taskColor(t)}" draggable="true" ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)" onclick="openModal('${t.id}')">
+                  <div class="kb-card ${doneCls} ${state.selected.has(t.id)?'is-selected':''}" style="--col-color:${taskColor(t)}" draggable="${!state.selecting}" ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)" onclick="cardClick(event,'${t.id}')">
+                    ${state.selecting ? `<span class="kb-card-check">${state.selected.has(t.id)?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><polyline points="20 6 9 17 4 12"/></svg>':''}</span>` : ''}
                     <div class="kb-card-client">${esc(t.client || '—')}</div>
                     <div class="kb-card-title">${esc(t.title)}</div>
                     ${projBadge}
@@ -3066,7 +3162,15 @@ function attachEvents(){
   document.querySelectorAll('.status-item .val[data-count]').forEach(el=>{
     animateCount(el, parseInt(el.dataset.count, 10) || 0);
   });
-  document.querySelectorAll('.nav-item, .mobile-nav-item').forEach(el=>{el.onclick = ()=>{flushNotesIfPending();state.view = el.dataset.view;render();window.scrollTo(0,0);};});
+  document.querySelectorAll('.nav-item, .mobile-nav-item').forEach(el=>{el.onclick = ()=>{
+    flushNotesIfPending();
+    // Sem isto o modo de seleção continua ligado numa tela que não o mostra.
+    state.selecting = false;
+    state.selected.clear();
+    state.view = el.dataset.view;
+    render();
+    window.scrollTo(0,0);
+  };});
   const fs = document.getElementById('f-search');
   if(fs) fs.oninput = (e)=>{state.filter.search = e.target.value;skipEntranceOnce=true;render();document.getElementById('f-search').focus();};
   const fst = document.getElementById('f-status');
