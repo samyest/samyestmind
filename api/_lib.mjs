@@ -2,7 +2,10 @@ import crypto from 'node:crypto';
 
 // Arquivos em /api começando com "_" não viram endpoints — só código compartilhado.
 
-export const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar';
+// Só eventos: o app não cria nem apaga calendários desde que passou a usar a
+// agenda principal. Pedir o escopo amplo daria acesso a mais do que se usa e
+// pesa contra na revisão do Google.
+export const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 
 export function env(name){
   const v = process.env[name];
