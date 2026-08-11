@@ -1,6 +1,32 @@
 const SUPABASE_URL = 'https://nufcsghiitooamcgukbw.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_H6te1T153XXpx57yR6A9Sw_uVm0G6vH';
 const ALLOW_SIGNUP = false;
+// As 11 cores fixas de evento do Google Calendar. Guardamos o id ("1".."11") em
+// vez do hex para a cor sobreviver à ida e volta sem se degradar a cada sync.
+const EVENT_COLORS = [
+  {id:'1',  name:'Lavanda',   hex:'#7986CB'},
+  {id:'2',  name:'Sálvia',    hex:'#33B679'},
+  {id:'3',  name:'Uva',       hex:'#8E24AA'},
+  {id:'4',  name:'Flamingo',  hex:'#E67C73'},
+  {id:'5',  name:'Banana',    hex:'#F6BF26'},
+  {id:'6',  name:'Tangerina', hex:'#F4511E'},
+  {id:'7',  name:'Pavão',     hex:'#039BE5'},
+  {id:'8',  name:'Grafite',   hex:'#616161'},
+  {id:'9',  name:'Mirtilo',   hex:'#3F51B5'},
+  {id:'10', name:'Manjericão',hex:'#0B8043'},
+  {id:'11', name:'Tomate',    hex:'#D50000'}
+];
+
+function eventColorHex(colorId){
+  const c = EVENT_COLORS.find(x=>x.id === String(colorId));
+  return c ? c.hex : null;
+}
+
+// Cor efetiva do cartão: a da tarefa, se escolhida; senão a da coluna.
+function taskColor(t){
+  return eventColorHex(t.color_id) || taskColumnColor(t);
+}
+
 const GCAL_NAME = 'samyest.mind';
 const GCAL_PULL_INTERVAL = 2 * 60 * 1000;
 let googleConnected = false;
@@ -292,7 +318,7 @@ function taskColumnType(t){ return getColumnForTask(t).type; }
 function taskDotStyle(t){
   const col = getColumnForTask(t);
   const cls = col.type === 'waiting' ? 'dot-hollow' : (col.type === 'done' ? 'dot-done' : '');
-  return {cls, style: `--col-color:${col.color}`};
+  return {cls, style: `--col-color:${taskColor(t)}`};
 }
 
 async function persistColumns(){
@@ -945,6 +971,8 @@ function buildEventBody(task){
       'Sincronizado do samyest.mind'
     ].filter(Boolean).join('\n')
   };
+  // null limpa o campo num PATCH, devolvendo o evento à cor padrão do calendário.
+  body.colorId = task.color_id ? String(task.color_id) : null;
   if(task.time){
     const start = new Date(`${task.date}T${task.time}:00`);
     const end = new Date(start.getTime() + 60 * 60 * 1000);
@@ -1095,9 +1123,12 @@ async function applyGoogleEvent(evt){
   if(!when) return false;
   const title = titleFromEvent(evt);
 
+  const colorId = evt.colorId ? String(evt.colorId) : null;
+
   if(task){
     if(!shouldSyncTask(task)) return false;
-    if(task.title === title && task.date === when.date && (task.time || '') === when.time) return false;
+    if(task.title === title && task.date === when.date && (task.time || '') === when.time
+       && (task.color_id || null) === colorId) return false;
     const ok = await updateTaskRemote(task.id, {
       title,
       client: task.client,
@@ -1105,10 +1136,11 @@ async function applyGoogleEvent(evt){
       priority: task.priority,
       date: when.date,
       time: when.time,
+      color_id: colorId,
       notes: task.notes
     });
     if(!ok) return false;
-    Object.assign(task, {title, date: when.date, time: when.time});
+    Object.assign(task, {title, date: when.date, time: when.time, color_id: colorId});
     return true;
   }
 
@@ -1121,6 +1153,7 @@ async function applyGoogleEvent(evt){
     priority: 'normal',
     date: when.date,
     time: when.time,
+    color_id: colorId,
     notes: ''
   });
   if(!created) return false;
@@ -1425,6 +1458,7 @@ async function loadTasks(){
     time: t.time || '',
     notes: t.notes || '',
     google_event_id: t.google_event_id || null,
+    color_id: t.color_id || null,
     completed_at: t.completed_at || null,
     project_id: t.project_id || null,
     assigned_to: t.assigned_to || null,
@@ -1444,6 +1478,7 @@ async function createTaskRemote(data){
     date: data.date || null,
     time: data.time || null,
     notes: data.notes || null,
+    color_id: data.color_id || null,
     completed_at: data.completed_at || null,
     project_id: data.project_id || null,
     assigned_to: data.assigned_to || null
@@ -1459,6 +1494,7 @@ async function createTaskRemote(data){
     time: task.time || '',
     notes: task.notes || '',
     google_event_id: null,
+    color_id: task.color_id || null,
     completed_at: task.completed_at || null,
     project_id: task.project_id || null,
     assigned_to: task.assigned_to || null,
@@ -1477,6 +1513,7 @@ async function updateTaskRemote(id, data){
     notes: data.notes || null
   };
   if('time' in data) payload.time = data.time || null;
+  if('color_id' in data) payload.color_id = data.color_id || null;
   if('completed_at' in data) payload.completed_at = data.completed_at || null;
   if('project_id' in data) payload.project_id = data.project_id || null;
   if('assigned_to' in data) payload.assigned_to = data.assigned_to || null;
@@ -1895,7 +1932,7 @@ function renderProjectPage(){
                     const assignee = getAssigneeLabel(t);
                     const assigneeBadge = assignee ? `<span class="project-badge" style="margin-bottom:6px;">👤 ${esc(assignee)}</span>` : '';
                     return `
-                    <div class="kb-card ${doneCls}" style="--col-color:${col.color}" draggable="true" ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)" onclick="openModal('${t.id}')">
+                    <div class="kb-card ${doneCls}" style="--col-color:${taskColor(t)}" draggable="true" ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)" onclick="openModal('${t.id}')">
                       <div class="kb-card-client">${esc(t.client || '—')}</div>
                       <div class="kb-card-title">${esc(t.title)}</div>
                       ${assigneeBadge}
@@ -2547,7 +2584,7 @@ function renderKanban(){
                   const pName = t.project_id ? projectName(t.project_id) : null;
                   const projBadge = pName ? `<span class="project-badge" style="margin-bottom:6px;">👥 ${esc(pName)}</span>` : '';
                   return `
-                  <div class="kb-card ${doneCls}" style="--col-color:${col.color}" draggable="true" ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)" onclick="openModal('${t.id}')">
+                  <div class="kb-card ${doneCls}" style="--col-color:${taskColor(t)}" draggable="true" ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)" onclick="openModal('${t.id}')">
                     <div class="kb-card-client">${esc(t.client || '—')}</div>
                     <div class="kb-card-title">${esc(t.title)}</div>
                     ${projBadge}
@@ -2981,6 +3018,27 @@ function attachEvents(){
   });
 }
 
+let selectedTaskColor = null;
+
+function renderTaskColorSwatches(){
+  const wrap = document.getElementById('m-color-swatches');
+  if(!wrap) return;
+  const none = `
+    <button type="button" class="task-color-btn task-color-none ${!selectedTaskColor?'selected':''}"
+      onclick="selectTaskColor(null)" title="Sem cor própria (usa a cor da coluna)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/></svg>
+    </button>`;
+  wrap.innerHTML = none + EVENT_COLORS.map(c=>`
+    <button type="button" class="task-color-btn ${selectedTaskColor===c.id?'selected':''}"
+      style="background:${c.hex}" onclick="selectTaskColor('${c.id}')" title="${c.name}"></button>
+  `).join('');
+}
+
+function selectTaskColor(id){
+  selectedTaskColor = id;
+  renderTaskColorSwatches();
+}
+
 function openModal(id, prefillDate, prefillProjectId){
   state.editingId = id || null;
   const modal = document.getElementById('modal');
@@ -3000,11 +3058,13 @@ function openModal(id, prefillDate, prefillProjectId){
     document.getElementById('m-priority').value = t.priority || 'normal';
     document.getElementById('m-project').value = t.project_id || '';
     populateAssigneeSelect(t.project_id, t.assigned_to);
+    selectedTaskColor = t.color_id || null;
+    renderTaskColorSwatches();
     document.getElementById('m-notes').value = t.notes || '';
     const isMine = t.owner_id === session.user.id;
     const canEdit = isMine || (t.project_id && canEditProject(t.project_id));
     delBtn.style.display = canEdit ? '' : 'none';
-    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn').forEach(el=>{el.disabled = !canEdit;});
+    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn').forEach(el=>{el.disabled = !canEdit;});
     commentsField.style.display = '';
     currentCommentTaskId = id;
     document.getElementById('task-comments-list').innerHTML = `<div class="empty" style="padding:16px 12px;font-size:11.5px;">Carregando...</div>`;
@@ -3019,9 +3079,11 @@ function openModal(id, prefillDate, prefillProjectId){
     document.getElementById('m-priority').value = 'normal';
     document.getElementById('m-project').value = prefillProjectId || '';
     populateAssigneeSelect(prefillProjectId, null);
+    selectedTaskColor = null;
+    renderTaskColorSwatches();
     document.getElementById('m-notes').value = '';
     delBtn.style.display = 'none';
-    document.querySelectorAll('#modal input, #modal select, #modal textarea').forEach(el=>{el.disabled = false;});
+    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn').forEach(el=>{el.disabled = false;});
     commentsField.style.display = 'none';
     currentCommentTaskId = null;
   }
@@ -3112,6 +3174,7 @@ async function saveTask(){
     time: document.getElementById('m-time').value,
     priority: document.getElementById('m-priority').value,
     notes: document.getElementById('m-notes').value.trim(),
+    color_id: selectedTaskColor,
     project_id: document.getElementById('m-project').value || null,
     assigned_to: document.getElementById('m-assignee').value || null,
     completed_at: resolveCompletedAt(newStatus, existingTask ? existingTask.status : null, existingTask ? existingTask.completed_at : null)
