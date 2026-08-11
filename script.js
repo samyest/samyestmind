@@ -754,7 +754,12 @@ async function checkAuth(){
     if(!myProfile || !myProfile.name){
       appEl.style.display = 'none';
       onbEl.classList.add('show');
-      setTimeout(()=>document.getElementById('onboarding-name').focus(), 60);
+      // Quem entrou pelo Google já tem nome na conta — evita redigitar.
+      const meta = session.user.user_metadata || {};
+      const sugerido = meta.full_name || meta.name || '';
+      const nameEl = document.getElementById('onboarding-name');
+      if(sugerido && !nameEl.value) nameEl.value = sugerido;
+      setTimeout(()=>nameEl.focus(), 60);
       return;
     }
     onbEl.classList.remove('show');
@@ -816,26 +821,52 @@ function toggleAuthMode(){
   document.getElementById('auth-error').classList.remove('show');
 }
 
+function showAuthMessage(text, isSuccess){
+  const el = document.getElementById('auth-error');
+  el.textContent = text;
+  el.classList.toggle('is-success', !!isSuccess);
+  el.classList.add('show');
+}
+
 async function doAuth(){
   const email = document.getElementById('auth-email').value.trim();
   const password = document.getElementById('auth-password').value;
   const errorEl = document.getElementById('auth-error');
   const btn = document.getElementById('auth-btn');
   errorEl.classList.remove('show');
-  if(!email || !password){errorEl.textContent = 'Preencha email e senha.';errorEl.classList.add('show');return;}
+  if(!email || !password){showAuthMessage('Preencha email e senha.');return;}
   btn.disabled = true;
   btn.textContent = 'Aguarde...';
   const fn = authMode === 'signin' ? 'signInWithPassword' : 'signUp';
-  const {data, error} = await sb.auth[fn]({email, password});
+  const {data, error} = await sb.auth[fn](
+    authMode === 'signup'
+      ? {email, password, options:{emailRedirectTo: location.origin}}
+      : {email, password}
+  );
   btn.disabled = false;
   btn.textContent = authMode === 'signin' ? 'Entrar' : 'Criar conta';
-  if(error){errorEl.textContent = error.message;errorEl.classList.add('show');return;}
+  if(error){showAuthMessage(error.message);return;}
+  // Sem sessão após o cadastro significa que o Supabase exige confirmar o email.
   if(authMode === 'signup' && !data.session){
-    errorEl.textContent = 'Conta criada! Confira seu email pra confirmar.';
-    errorEl.classList.add('show');
+    showAuthMessage(`Conta criada. Enviamos um link de confirmação para ${email} — confirme para entrar.`, true);
     return;
   }
   await checkAuth();
+}
+
+// Login pela conta Google. É independente da conexão com o Calendar: aqui o
+// Supabase cuida do fluxo e só identifica a pessoa.
+async function signInWithGoogle(){
+  const btn = document.getElementById('google-signin-btn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Abrindo Google...'; }
+  const {error} = await sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: {redirectTo: location.origin}
+  });
+  if(error){
+    if(btn){ btn.disabled = false; btn.textContent = 'Continuar com Google'; }
+    showAuthMessage('Não foi possível entrar com o Google: ' + error.message);
+  }
 }
 
 // A conexão vive no backend (api/google/*): o refresh token fica no servidor e

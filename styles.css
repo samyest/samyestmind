@@ -1539,6 +1539,50 @@
     display:none;
   }
   .auth-error.show{display:block;}
+  /* Mesmo elemento serve para avisar sucesso, como o email de confirmação. */
+  .auth-error.is-success{
+    background:rgba(143,168,140,0.16);
+    color:var(--done);
+  }
+
+  .auth-divider{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin:18px 0;
+    color:var(--text-soft);
+    font-family:'JetBrains Mono',monospace;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:0.12em;
+  }
+  .auth-divider::before,
+  .auth-divider::after{
+    content:'';
+    flex:1;
+    height:1px;
+    background:var(--line-strong);
+  }
+  .btn-google{
+    width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    padding:11px 12px;
+    border-radius:10px;
+    background:#fff;
+    color:#1f1f1f;
+    border:1px solid rgba(0,0,0,0.14);
+    font-size:14px;
+    font-weight:500;
+    font-family:inherit;
+    cursor:pointer;
+    transition:all .15s ease;
+  }
+  .btn-google:hover:not(:disabled){background:#f4f6f8;transform:translateY(-1px);}
+  .btn-google:disabled{opacity:0.6;cursor:wait;}
+  .btn-google svg{width:17px;height:17px;flex-shrink:0;}
   .auth-btn{
     width:100%;
     padding:12px;
