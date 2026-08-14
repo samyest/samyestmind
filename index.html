@@ -356,24 +356,26 @@
           </select>
         </div>
       </div>
-      <div class="field">
-        <label>⏰ Horário (opcional — te avisa com som na hora)</label>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <input type="time" class="input" id="m-time" style="max-width:160px;">
-          <button type="button" class="time-clear-btn" onclick="document.getElementById('m-time').value='';" title="Remover horário">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
+      <div class="field-row">
+        <div class="field">
+          <label>⏰ Horário (opcional — te avisa com som na hora)</label>
+          <div class="field-control-row">
+            <input type="time" class="input" id="m-time" style="max-width:160px;">
+            <button type="button" class="time-clear-btn" onclick="document.getElementById('m-time').value='';" title="Remover horário">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
         </div>
-      </div>
-      <div class="field" id="m-gcal-field" style="display:none;">
-        <div class="field-label-row">
+        <div class="field" id="m-gcal-field" style="display:none;">
           <label>📅 Adicionar ao Google Calendar</label>
-          <label class="sound-toggle">
-            <input type="checkbox" id="m-gcal" checked onchange="updateGcalHint()">
-            <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
-          </label>
+          <div class="field-control-row">
+            <label class="sound-toggle">
+              <input type="checkbox" id="m-gcal" checked onchange="updateGcalHint()">
+              <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
+            </label>
+            <span id="m-gcal-hint" class="field-inline-hint">Cria o evento na sua agenda.</span>
+          </div>
         </div>
-        <p style="font-size:12px;color:var(--text-muted);line-height:1.5;" id="m-gcal-hint">Cria um evento na sua agenda com a data e o horário da tarefa.</p>
       </div>
       <div class="field">
         <label>🎨 Cor <span style="font-weight:400;color:var(--text-soft);">(sincroniza com o Google Calendar)</span></label>

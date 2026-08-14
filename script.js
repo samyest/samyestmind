@@ -3354,13 +3354,19 @@ function updateGcalHint(){
   const input = document.getElementById('m-gcal');
   if(!hint || !input) return;
   if(!input.checked){
-    hint.textContent = 'A tarefa fica só aqui no app. Se já existia um evento no Google, ele é apagado ao salvar.';
+    const t = state.editingId ? state.tasks.find(x=>x.id===state.editingId) : null;
+    const mirrored = t && wantsGoogle(t) && getEventId(t);
+    // Numa tarefa que veio do Google o compromisso real fica de pé; só o
+    // vínculo se desfaz. Dizer "sai da agenda" ali seria mentira.
+    hint.textContent = !mirrored ? 'Fica só aqui no app.'
+      : t.from_google ? 'Solta o vínculo ao salvar.'
+      : 'O evento sai da agenda ao salvar.';
     return;
   }
   const hasDate = !!document.getElementById('m-date').value;
   hint.textContent = hasDate
-    ? 'Cria um evento na sua agenda com a data e o horário da tarefa.'
-    : 'Escolha um prazo acima: sem data não dá para criar o evento na agenda.';
+    ? 'Cria o evento na sua agenda.'
+    : 'Defina um prazo acima.';
 }
 
 function openModal(id, prefillDate, prefillProjectId){

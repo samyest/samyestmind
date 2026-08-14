@@ -1351,6 +1351,22 @@
   }
   .field textarea:focus{border-color:var(--accent);background:var(--glass-hover);}
   .field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+
+  /* Campos lado a lado alinham os controles pela base: assim uma etiqueta que
+     quebra em duas linhas não desencontra o horário do interruptor ao lado. */
+  .field-row .field{display:flex;flex-direction:column;}
+  .field-control-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    min-height:42px;
+    margin-top:auto;
+  }
+  .field-inline-hint{
+    font-size:11.5px;
+    color:var(--text-muted);
+    line-height:1.4;
+  }
   .modal-foot{
     padding:16px 28px;
     border-top:1px solid var(--line);
