@@ -1108,8 +1108,15 @@ async function setEventId(task, eventId){
   try{ localStorage.setItem(gcalKey('localEvents'), JSON.stringify(map)); }catch(e){}
 }
 
+// Tarefas antigas (anteriores à coluna sync_google) chegam sem o campo: a
+// ausência vale como "sim", que era o comportamento até então.
+function wantsGoogle(task){
+  return task.sync_google !== false;
+}
+
 function shouldSyncTask(task){
   if(!session || !session.user) return false;
+  if(!wantsGoogle(task)) return false;
   return task.owner_id === session.user.id || task.assigned_to === session.user.id;
 }
 
@@ -1690,6 +1697,7 @@ async function loadTasks(){
     notes: t.notes || '',
     google_event_id: t.google_event_id || null,
     color_id: t.color_id || null,
+    sync_google: t.sync_google !== false,
     from_google: !!t.from_google,
     completed_at: t.completed_at || null,
     project_id: t.project_id || null,
@@ -1711,6 +1719,7 @@ async function createTaskRemote(data){
     time: data.time || null,
     notes: data.notes || null,
     color_id: data.color_id || null,
+    sync_google: data.sync_google !== false,
     from_google: !!data.from_google,
     completed_at: data.completed_at || null,
     project_id: data.project_id || null,
@@ -1728,6 +1737,7 @@ async function createTaskRemote(data){
     notes: task.notes || '',
     google_event_id: null,
     color_id: task.color_id || null,
+    sync_google: task.sync_google !== false,
     from_google: !!task.from_google,
     completed_at: task.completed_at || null,
     project_id: task.project_id || null,
@@ -1748,6 +1758,7 @@ async function updateTaskRemote(id, data){
   };
   if('time' in data) payload.time = data.time || null;
   if('color_id' in data) payload.color_id = data.color_id || null;
+  if('sync_google' in data) payload.sync_google = data.sync_google !== false;
   if('completed_at' in data) payload.completed_at = data.completed_at || null;
   if('project_id' in data) payload.project_id = data.project_id || null;
   if('assigned_to' in data) payload.assigned_to = data.assigned_to || null;
@@ -3323,6 +3334,35 @@ function selectTaskColor(id){
   renderTaskColorSwatches();
 }
 
+// O interruptor do Google só aparece para quem tem o Calendar conectado — sem
+// conexão ele não decidiria nada.
+function setupGcalToggle(task){
+  const field = document.getElementById('m-gcal-field');
+  const input = document.getElementById('m-gcal');
+  if(!field || !input) return;
+  if(!isGoogleConnected()){
+    field.style.display = 'none';
+    return;
+  }
+  field.style.display = '';
+  input.checked = task ? wantsGoogle(task) : true;
+  updateGcalHint();
+}
+
+function updateGcalHint(){
+  const hint = document.getElementById('m-gcal-hint');
+  const input = document.getElementById('m-gcal');
+  if(!hint || !input) return;
+  if(!input.checked){
+    hint.textContent = 'A tarefa fica só aqui no app. Se já existia um evento no Google, ele é apagado ao salvar.';
+    return;
+  }
+  const hasDate = !!document.getElementById('m-date').value;
+  hint.textContent = hasDate
+    ? 'Cria um evento na sua agenda com a data e o horário da tarefa.'
+    : 'Escolha um prazo acima: sem data não dá para criar o evento na agenda.';
+}
+
 function openModal(id, prefillDate, prefillProjectId){
   state.editingId = id || null;
   const modal = document.getElementById('modal');
@@ -3344,6 +3384,7 @@ function openModal(id, prefillDate, prefillProjectId){
     populateAssigneeSelect(t.project_id, t.assigned_to);
     selectedTaskColor = t.color_id || null;
     renderTaskColorSwatches();
+    setupGcalToggle(t);
     document.getElementById('m-notes').value = t.notes || '';
     const isMine = t.owner_id === session.user.id;
     const canEdit = isMine || (t.project_id && canEditProject(t.project_id));
@@ -3365,6 +3406,7 @@ function openModal(id, prefillDate, prefillProjectId){
     populateAssigneeSelect(prefillProjectId, null);
     selectedTaskColor = null;
     renderTaskColorSwatches();
+    setupGcalToggle(null);
     document.getElementById('m-notes').value = '';
     delBtn.style.display = 'none';
     document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn').forEach(el=>{el.disabled = false;});
@@ -3450,6 +3492,13 @@ async function saveTask(){
   if(!title){document.getElementById('m-title').focus();return;}
   const newStatus = document.getElementById('m-status').value;
   const existingTask = state.editingId ? state.tasks.find(x=>x.id===state.editingId) : null;
+  const gcalInput = document.getElementById('m-gcal');
+  // Sem Calendar conectado o interruptor fica escondido: aí a tarefa guarda a
+  // escolha que já tinha (ou "sim", para quando a conexão vier depois).
+  const wantsGcal = isGoogleConnected()
+    ? gcalInput.checked
+    : (existingTask ? wantsGoogle(existingTask) : true);
+  const droppedFromGcal = !wantsGcal && existingTask && wantsGoogle(existingTask);
   const data = {
     title,
     client: document.getElementById('m-client').value.trim(),
@@ -3459,6 +3508,7 @@ async function saveTask(){
     priority: document.getElementById('m-priority').value,
     notes: document.getElementById('m-notes').value.trim(),
     color_id: selectedTaskColor,
+    sync_google: wantsGcal,
     project_id: document.getElementById('m-project').value || null,
     assigned_to: document.getElementById('m-assignee').value || null,
     completed_at: resolveCompletedAt(newStatus, existingTask ? existingTask.status : null, existingTask ? existingTask.completed_at : null)
@@ -3478,7 +3528,12 @@ async function saveTask(){
   }
   closeModal();render();
   showToast(isNew ? 'Tarefa criada' : 'Alterações salvas');
-  if(savedTask) syncTaskToGoogle(savedTask);
+  if(!savedTask) return;
+  // Desmarcar o interruptor tem que limpar o evento que ficou para trás —
+  // syncTaskToGoogle já ignora a tarefa daqui em diante. Vale a mesma regra de
+  // apagar a tarefa: se ela veio do Google, o compromisso real fica de pé.
+  if(droppedFromGcal) await forgetTaskInGoogle(savedTask);
+  else syncTaskToGoogle(savedTask);
 }
 
 async function deleteTask(){

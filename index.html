@@ -345,7 +345,7 @@
       <div class="field-row">
         <div class="field">
           <label>Prazo</label>
-          <input type="date" class="input" id="m-date">
+          <input type="date" class="input" id="m-date" onchange="updateGcalHint()">
         </div>
         <div class="field">
           <label>Prioridade</label>
@@ -364,6 +364,16 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
+      </div>
+      <div class="field" id="m-gcal-field" style="display:none;">
+        <div class="field-label-row">
+          <label>📅 Adicionar ao Google Calendar</label>
+          <label class="sound-toggle">
+            <input type="checkbox" id="m-gcal" checked onchange="updateGcalHint()">
+            <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
+          </label>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);line-height:1.5;" id="m-gcal-hint">Cria um evento na sua agenda com a data e o horário da tarefa.</p>
       </div>
       <div class="field">
         <label>🎨 Cor <span style="font-weight:400;color:var(--text-soft);">(sincroniza com o Google Calendar)</span></label>
