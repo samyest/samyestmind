@@ -1451,6 +1451,7 @@
   }
   .sound-toggle input:checked + .sound-toggle-track{background:var(--accent);}
   .sound-toggle input:checked + .sound-toggle-track .sound-toggle-thumb{transform:translateX(18px);}
+  .sound-toggle input:disabled + .sound-toggle-track{opacity:0.45;cursor:not-allowed;}
 
   .field-label-row{
     display:flex;

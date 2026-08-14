@@ -3334,18 +3334,17 @@ function selectTaskColor(id){
   renderTaskColorSwatches();
 }
 
-// O interruptor do Google só aparece para quem tem o Calendar conectado — sem
-// conexão ele não decidiria nada.
-function setupGcalToggle(task){
+// Sem Calendar conectado o interruptor aparece desligado e travado: escondê-lo
+// deixava a impressão de que a opção não existe. Precisa rodar DEPOIS do laço
+// que habilita os campos do modal, senão ele desfaz o travamento.
+function setupGcalToggle(task, canEdit){
   const field = document.getElementById('m-gcal-field');
   const input = document.getElementById('m-gcal');
   if(!field || !input) return;
-  if(!isGoogleConnected()){
-    field.style.display = 'none';
-    return;
-  }
   field.style.display = '';
-  input.checked = task ? wantsGoogle(task) : true;
+  const connected = isGoogleConnected();
+  input.checked = connected && (task ? wantsGoogle(task) : true);
+  input.disabled = !connected || !canEdit;
   updateGcalHint();
 }
 
@@ -3353,6 +3352,10 @@ function updateGcalHint(){
   const hint = document.getElementById('m-gcal-hint');
   const input = document.getElementById('m-gcal');
   if(!hint || !input) return;
+  if(!isGoogleConnected()){
+    hint.textContent = 'Conecte sua agenda nas Configurações.';
+    return;
+  }
   if(!input.checked){
     const t = state.editingId ? state.tasks.find(x=>x.id===state.editingId) : null;
     const mirrored = t && wantsGoogle(t) && getEventId(t);
@@ -3390,12 +3393,12 @@ function openModal(id, prefillDate, prefillProjectId){
     populateAssigneeSelect(t.project_id, t.assigned_to);
     selectedTaskColor = t.color_id || null;
     renderTaskColorSwatches();
-    setupGcalToggle(t);
     document.getElementById('m-notes').value = t.notes || '';
     const isMine = t.owner_id === session.user.id;
     const canEdit = isMine || (t.project_id && canEditProject(t.project_id));
     delBtn.style.display = canEdit ? '' : 'none';
     document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn').forEach(el=>{el.disabled = !canEdit;});
+    setupGcalToggle(t, canEdit);
     commentsField.style.display = '';
     currentCommentTaskId = id;
     document.getElementById('task-comments-list').innerHTML = `<div class="empty" style="padding:16px 12px;font-size:11.5px;">Carregando...</div>`;
@@ -3412,10 +3415,10 @@ function openModal(id, prefillDate, prefillProjectId){
     populateAssigneeSelect(prefillProjectId, null);
     selectedTaskColor = null;
     renderTaskColorSwatches();
-    setupGcalToggle(null);
     document.getElementById('m-notes').value = '';
     delBtn.style.display = 'none';
     document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn').forEach(el=>{el.disabled = false;});
+    setupGcalToggle(null, true);
     commentsField.style.display = 'none';
     currentCommentTaskId = null;
   }
