@@ -538,7 +538,6 @@ let state = {
   dateFilter: 'all',
   filter: {client:'', status:'', search:'', project:'', assignee:'', tableDate:'all', kanbanClient:'', kanbanDate:'all', kanbanAssignee:'', kanbanSearch:''},
   hideDateOnDone: localStorage.getItem('hideDateOnDone') === '1',
-  kanbanSeparateShared: localStorage.getItem('kanbanSeparateShared') !== '0',
   expandedCols: new Set(),
   selecting: false,
   selected: new Set(),
@@ -586,13 +585,6 @@ function toggleSelectMode(){
 function toggleColExpanded(key){
   if(state.expandedCols.has(key)) state.expandedCols.delete(key);
   else state.expandedCols.add(key);
-  skipEntranceOnce = true;
-  render();
-}
-
-function toggleSeparateShared(){
-  state.kanbanSeparateShared = !state.kanbanSeparateShared;
-  localStorage.setItem('kanbanSeparateShared', state.kanbanSeparateShared ? '1' : '0');
   skipEntranceOnce = true;
   render();
 }
@@ -2859,10 +2851,8 @@ function renderKanban(){
     if(!matchesKanbanSearch(t, state.filter.kanbanSearch)) return false;
     return true;
   });
-  const separateShared = state.kanbanSeparateShared;
-
   const normalColsHtml = cols.map(col=>{
-    const list = sortByDateThenPriority(filteredTasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t) && !(separateShared && t.project_id)));
+    const list = sortByDateThenPriority(filteredTasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t) && !t.project_id));
     const collapsed = col.hidden && !state.expandedCols.has(col.key);
     if(collapsed){
       return `
@@ -2892,50 +2882,43 @@ function renderKanban(){
         <div class="kb-cards">
           ${list.length===0
             ? `<div class="empty" style="padding:28px 8px;font-size:12px;"><strong>Nada aqui</strong>arraste ou crie</div>`
-            : list.map(t=>{
-              const pName = (!separateShared && t.project_id) ? projectName(t.project_id) : null;
-              return renderKbCard(t, col, {badge: pName ? ()=>`<span class="project-badge" style="margin-bottom:6px;">👥 ${esc(pName)}</span>` : null});
-            }).join('')}
+            : list.map(t=>renderKbCard(t, col)).join('')}
         </div>
       </div>`;
   }).join('');
 
-  let sharedColsHtml = '';
-  if(separateShared){
-    const projectIds = [...new Set(filteredTasks.filter(t=>t.project_id).map(t=>t.project_id))];
-    sharedColsHtml = projectIds.map(pid=>{
-      const p = state.projects.find(x=>x.id===pid);
-      const list = sortByDateThenPriority(filteredTasks.filter(t=>t.project_id===pid && !isHiddenFromKanban(t)));
-      return `
-        <div class="glass kb-col kb-col-shared" data-project="${pid}">
-          <div class="kb-col-head">
-            <div class="kb-col-title">👥 ${esc(p ? p.name : 'Projeto')}</div>
-            <div style="display:flex;align-items:center;gap:6px;">
-              <div class="kb-col-count">${list.length}</div>
-              <button class="kb-col-open-btn" onclick="openProjectView('${pid}')" title="Abrir quadro do projeto">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-              </button>
-            </div>
+  // Tarefas de projetos compartilhados nunca aparecem misturadas nas colunas
+  // pessoais acima — cada projeto ganha sua própria coluna aqui, sempre.
+  const projectIds = [...new Set(filteredTasks.filter(t=>t.project_id).map(t=>t.project_id))];
+  const sharedColsHtml = projectIds.map(pid=>{
+    const p = state.projects.find(x=>x.id===pid);
+    const list = sortByDateThenPriority(filteredTasks.filter(t=>t.project_id===pid && !isHiddenFromKanban(t)));
+    return `
+      <div class="glass kb-col kb-col-shared" data-project="${pid}">
+        <div class="kb-col-head">
+          <div class="kb-col-title">👥 ${esc(p ? p.name : 'Projeto')}</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div class="kb-col-count">${list.length}</div>
+            <button class="kb-col-open-btn" onclick="openProjectView('${pid}')" title="Abrir quadro do projeto">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </button>
           </div>
-          <div class="kb-cards">
-            ${list.length===0
-              ? `<div class="empty" style="padding:28px 8px;font-size:12px;"><strong>Nada aqui</strong></div>`
-              : list.map(t=>renderKbCard(t, getColumnForTask(t), {
-                  draggable: false,
-                  badge: ()=>`<span class="kb-card-status-pill" style="--pill-color:${taskColumnColor(t)};">${esc(taskColumnName(t))}</span>`
-                })).join('')}
-          </div>
-        </div>`;
-    }).join('');
-  }
+        </div>
+        <div class="kb-cards">
+          ${list.length===0
+            ? `<div class="empty" style="padding:28px 8px;font-size:12px;"><strong>Nada aqui</strong></div>`
+            : list.map(t=>renderKbCard(t, getColumnForTask(t), {
+                draggable: false,
+                badge: ()=>`<span class="kb-card-status-pill" style="--pill-color:${taskColumnColor(t)};">${esc(taskColumnName(t))}</span>`
+              })).join('')}
+        </div>
+      </div>`;
+  }).join('');
 
   return `
     <div class="view-header">
       <div><div class="eyebrow">Fluxo de trabalho</div><h1>Kanban</h1></div>
       <div class="kanban-header-actions" style="display:flex;gap:10px;">
-        <button class="btn-secondary ${separateShared?'is-active':''}" onclick="toggleSeparateShared()" title="Mostrar tarefas de projetos compartilhados em colunas próprias">
-          👥 Separar compartilhadas
-        </button>
         <button class="btn-secondary ${state.selecting?'is-active':''}" onclick="toggleSelectMode()" title="Selecionar várias tarefas">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>${state.selecting?'Cancelar':'Selecionar'}
         </button>
