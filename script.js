@@ -36,6 +36,10 @@ let gcalCalendarId = null;
 let gcalSyncToken = null;
 let gcalPullTimer = null;
 let gcalSyncing = false;
+let gcalConnectedAt = null;
+// Contas de teste do Google (não verificadas) têm o refresh token expirado pelo
+// próprio Google 7 dias após a conexão, não importa o que o app faça — ver README.
+const GOOGLE_TEST_TOKEN_LIFETIME_DAYS = 7;
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let session = null;
 let authMode = 'signin';
@@ -401,11 +405,13 @@ function openColumnModal(key, projectId){
     const col = cols.find(c=>c.key===key) || {name:key, color:COLUMN_COLOR_PRESETS[0]};
     title.textContent = 'Editar coluna';
     document.getElementById('col-name').value = col.name;
+    document.getElementById('col-hidden').checked = !!col.hidden;
     selectedColumnColor = col.color;
     delBtn.style.display = cols.length > 1 ? '' : 'none';
   } else {
     title.textContent = 'Nova coluna';
     document.getElementById('col-name').value = '';
+    document.getElementById('col-hidden').checked = false;
     selectedColumnColor = COLUMN_COLOR_PRESETS[0];
     delBtn.style.display = 'none';
   }
@@ -431,6 +437,7 @@ async function persistProjectColumns(projectId, cols){
 async function saveColumn(){
   const name = document.getElementById('col-name').value.trim();
   if(!name){document.getElementById('col-name').focus();return;}
+  const hidden = document.getElementById('col-hidden').checked;
 
   if(editingColumnProjectId){
     const p = state.projects.find(x=>x.id===editingColumnProjectId);
@@ -438,10 +445,10 @@ async function saveColumn(){
     let cols = JSON.parse(JSON.stringify(getProjectColumns(p)));
     if(editingColumnKey){
       const col = cols.find(c=>c.key===editingColumnKey);
-      if(col){col.name = name;col.color = selectedColumnColor;}
+      if(col){col.name = name;col.color = selectedColumnColor;col.hidden = hidden;}
     } else {
       const key = 'col_' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
-      cols.push({key, name, type: 'active', color: selectedColumnColor});
+      cols.push({key, name, type: 'active', color: selectedColumnColor, hidden});
     }
     const ok = await persistProjectColumns(editingColumnProjectId, cols);
     if(ok){closeColumnModal();render();}
@@ -451,10 +458,10 @@ async function saveColumn(){
   if(!state.columns) state.columns = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
   if(editingColumnKey){
     const col = state.columns.find(c=>c.key===editingColumnKey);
-    if(col){col.name = name;col.color = selectedColumnColor;}
+    if(col){col.name = name;col.color = selectedColumnColor;col.hidden = hidden;}
   } else {
     const key = 'col_' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
-    state.columns.push({key, name, type: 'active', color: selectedColumnColor});
+    state.columns.push({key, name, type: 'active', color: selectedColumnColor, hidden});
   }
   const ok = await persistColumns();
   if(ok){
@@ -531,6 +538,8 @@ let state = {
   dateFilter: 'all',
   filter: {client:'', status:'', search:'', project:'', assignee:'', tableDate:'all', kanbanClient:'', kanbanDate:'all', kanbanAssignee:'', kanbanSearch:''},
   hideDateOnDone: localStorage.getItem('hideDateOnDone') === '1',
+  kanbanSeparateShared: localStorage.getItem('kanbanSeparateShared') !== '0',
+  expandedCols: new Set(),
   selecting: false,
   selected: new Set(),
   ignoredEvents: new Set()
@@ -568,6 +577,22 @@ async function forgetTaskInGoogle(task){
 function toggleSelectMode(){
   state.selecting = !state.selecting;
   state.selected.clear();
+  skipEntranceOnce = true;
+  render();
+}
+
+// Colunas marcadas como "oculta" ficam recolhidas numa faixa fina; isto só
+// controla se estão abertas nesta sessão — não muda a marcação salva.
+function toggleColExpanded(key){
+  if(state.expandedCols.has(key)) state.expandedCols.delete(key);
+  else state.expandedCols.add(key);
+  skipEntranceOnce = true;
+  render();
+}
+
+function toggleSeparateShared(){
+  state.kanbanSeparateShared = !state.kanbanSeparateShared;
+  localStorage.setItem('kanbanSeparateShared', state.kanbanSeparateShared ? '1' : '0');
   skipEntranceOnce = true;
   render();
 }
@@ -920,8 +945,22 @@ async function loadGoogleSession(){
     googleTokenExpiry = Date.now() + 50 * 60 * 1000;
     gcalCalendarId = data.calendar_id || null;
     gcalSyncToken = data.sync_token || null;
+    gcalConnectedAt = data.connected_at ? new Date(data.connected_at).getTime() : null;
     return true;
   }catch(e){ return false; }
+}
+
+// Dias restantes até o Google derrubar sozinho a conexão (contas de teste — ver
+// GOOGLE_TEST_TOKEN_LIFETIME_DAYS). Null quando não dá pra saber.
+function googleDaysUntilExpiry(){
+  if(!gcalConnectedAt) return null;
+  const elapsedDays = (Date.now() - gcalConnectedAt) / 86400000;
+  return GOOGLE_TEST_TOKEN_LIFETIME_DAYS - elapsedDays;
+}
+
+function isGoogleExpiringSoon(){
+  const left = googleDaysUntilExpiry();
+  return left !== null && left <= 1.5;
 }
 
 async function ensureGoogleToken(){
@@ -947,6 +986,7 @@ function clearGoogleToken(){
   googleTokenExpiry = 0;
   gcalCalendarId = null;
   gcalSyncToken = null;
+  gcalConnectedAt = null;
   localEventMapCache = null;
   try{ localStorage.removeItem(gcalKey('localEvents')); }catch(e){}
 }
@@ -1046,7 +1086,9 @@ function updateGoogleStatusUI(){
   const btn = document.getElementById('google-cal-btn');
   const syncBtn = document.getElementById('google-cal-sync-btn');
   if(isGoogleConnected()){
-    el.innerHTML = `<span style="color:var(--done);">● Conectado</span>`;
+    const expiring = isGoogleExpiringSoon();
+    const hint = expiring ? ` <span style="color:var(--waiting);">· expira em breve, reconecte</span>` : '';
+    el.innerHTML = `<span style="color:var(--done);">● Conectado</span>${hint}`;
     btn.textContent = 'Desconectar';
     btn.onclick = disconnectGoogleCalendar;
     if(syncBtn) syncBtn.style.display = '';
@@ -1353,6 +1395,10 @@ async function applyGoogleEvent(evt){
   // Event created directly in Google Calendar — mirror it as a new task.
   if(evt.description && evt.description.includes('Sincronizado do samyest.mind')) return false;
   if(!isTaskWorthyEvent(evt)) return false;
+  // A sincronização incremental (via syncToken) não filtra por timeMin como a
+  // completa — só ela evita a varredura de meses. Sem isto, um compromisso
+  // antigo tocado no Google (cor, recorrência etc.) ressuscitava como tarefa.
+  if(when.date < isoDateFromTimestamp(Date.now())) return false;
   const created = await createTaskRemote({
     title,
     client: '',
@@ -2157,12 +2203,24 @@ function renderProjectPage(){
       <div class="kanban" style="margin-top:4px;">
         ${cols.map(col=>{
           const list = sortByDateThenPriority(filteredProjectTasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t)));
+          const collapsed = col.hidden && !state.expandedCols.has(col.key);
+          if(collapsed){
+            return `
+              <div class="glass kb-col kb-col-collapsed" data-status="${col.key}" onclick="toggleColExpanded('${col.key}')" title="Coluna oculta — toque para abrir">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                <div class="kb-col-collapsed-label"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}</div>
+                <div class="kb-col-count">${list.length}</div>
+              </div>`;
+          }
           return `
             <div class="glass kb-col" data-status="${col.key}" ondragover="dragOver(event)" ondrop="drop(event,'${col.key}')" ondragleave="dragLeave(event)">
               <div class="kb-col-head">
                 <div class="kb-col-title"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}</div>
                 <div style="display:flex;align-items:center;gap:6px;">
                   <div class="kb-col-count">${list.length}</div>
+                  ${col.hidden ? `<button class="kb-col-collapse-btn" onclick="toggleColExpanded('${col.key}')" title="Recolher coluna">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+                  </button>` : ''}
                   ${canEdit ? `<button class="kb-col-edit" onclick="openColumnModal('${col.key}', '${p.id}')" title="Editar coluna">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                   </button>` : ''}
@@ -2172,21 +2230,8 @@ function renderProjectPage(){
                 ${list.length===0
                   ? `<div class="empty" style="padding:22px 8px;font-size:12px;"><strong>Nada aqui</strong></div>`
                   : list.map(t=>{
-                    const badge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
-                    const doneCls = col.type === 'done' ? 'done' : '';
                     const assignee = getAssigneeLabel(t);
-                    const assigneeBadge = assignee ? `<span class="project-badge" style="margin-bottom:6px;">👤 ${esc(assignee)}</span>` : '';
-                    return `
-                    <div class="kb-card ${doneCls} ${state.selected.has(t.id)?'is-selected':''}" style="--col-color:${taskColor(t)}" draggable="${!state.selecting}" ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)" onclick="cardClick(event,'${t.id}')">
-                    ${state.selecting ? `<span class="kb-card-check">${state.selected.has(t.id)?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><polyline points="20 6 9 17 4 12"/></svg>':''}</span>` : ''}
-                      <div class="kb-card-client">${esc(t.client || '—')}</div>
-                      <div class="kb-card-title">${esc(t.title)}</div>
-                      ${assigneeBadge}
-                      <div class="kb-card-meta">
-                        ${(col.type === 'done' && state.hideDateOnDone) ? '' : `<span class="${taskDateStatus(t)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>`}
-                        ${badge}
-                      </div>
-                    </div>`;
+                    return renderKbCard(t, col, {badge: assignee ? ()=>`<span class="project-badge" style="margin-bottom:6px;">👤 ${esc(assignee)}</span>` : null});
                   }).join('')}
               </div>
             </div>`;
@@ -2375,7 +2420,10 @@ function renderProjectsModal(){
         <div class="project-card">
           <div class="project-card-head">
             <div class="project-card-name">${esc(p.name)}</div>
-            <div class="project-card-role">${isOwner ? 'Dono' : myRoleInProject(p.id) === 'editor' ? 'Editor' : 'Visualizador'}</div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div class="project-card-role">${isOwner ? 'Dono' : myRoleInProject(p.id) === 'editor' ? 'Editor' : 'Visualizador'}</div>
+              <button class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="closeProjectsModal();openProjectView('${p.id}');">Abrir quadro</button>
+            </div>
           </div>
           ${ownerRow}
           ${membersHtml}
@@ -2782,6 +2830,26 @@ function renderMiniCal(){
 
 function miniCalNav(delta){state.miniCalDate.setMonth(state.miniCalDate.getMonth()+delta);render();}
 
+function renderKbCard(t, col, opts){
+  opts = opts || {};
+  const badge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
+  const doneCls = col.type === 'done' ? 'done' : '';
+  const extraBadge = opts.badge ? opts.badge(t) : '';
+  const draggable = opts.draggable === false ? false : !state.selecting;
+  const dragAttrs = draggable ? `ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)"` : '';
+  return `
+    <div class="kb-card ${doneCls} ${state.selected.has(t.id)?'is-selected':''}" style="--col-color:${taskColor(t)}" draggable="${draggable}" ${dragAttrs} onclick="cardClick(event,'${t.id}')">
+      ${state.selecting ? `<span class="kb-card-check">${state.selected.has(t.id)?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><polyline points="20 6 9 17 4 12"/></svg>':''}</span>` : ''}
+      <div class="kb-card-client">${esc(t.client || '—')}</div>
+      <div class="kb-card-title">${esc(t.title)}</div>
+      ${extraBadge}
+      <div class="kb-card-meta">
+        ${(col.type === 'done' && state.hideDateOnDone) ? '' : `<span class="${taskDateStatus(t)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>`}
+        ${badge}
+      </div>
+    </div>`;
+}
+
 function renderKanban(){
   const cols = getColumns();
   const clientOptions = [...new Set(personalTasks().map(t=>t.client).filter(Boolean))].sort();
@@ -2791,10 +2859,83 @@ function renderKanban(){
     if(!matchesKanbanSearch(t, state.filter.kanbanSearch)) return false;
     return true;
   });
+  const separateShared = state.kanbanSeparateShared;
+
+  const normalColsHtml = cols.map(col=>{
+    const list = sortByDateThenPriority(filteredTasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t) && !(separateShared && t.project_id)));
+    const collapsed = col.hidden && !state.expandedCols.has(col.key);
+    if(collapsed){
+      return `
+        <div class="glass kb-col kb-col-collapsed" data-status="${col.key}" onclick="toggleColExpanded('${col.key}')" title="Coluna oculta — toque para abrir">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          <div class="kb-col-collapsed-label"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}</div>
+          <div class="kb-col-count">${list.length}</div>
+        </div>`;
+    }
+    return `
+      <div class="glass kb-col" data-status="${col.key}" ondragover="dragOver(event)" ondrop="drop(event,'${col.key}')" ondragleave="dragLeave(event)">
+        <div class="kb-col-head">
+          <div class="kb-col-title"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}${col.type==='done' ? '<span class="kb-col-hint" title="Concluídos somem toda semana no domingo — o histórico fica registrado no Calendário">↻</span>' : ''}</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div class="kb-col-count">${list.length}</div>
+            ${col.hidden ? `<button class="kb-col-collapse-btn" onclick="toggleColExpanded('${col.key}')" title="Recolher coluna">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+            </button>` : ''}
+            <div class="kb-col-drag-handle" onpointerdown="colHandlePointerDown(event,'${col.key}')" title="Arrastar para reordenar coluna">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8L22 12L18 16"/><path d="M6 8L2 12L6 16"/><path d="M2 12H22"/></svg>
+            </div>
+            <button class="kb-col-edit" onclick="openColumnModal('${col.key}')" title="Editar coluna">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="kb-cards">
+          ${list.length===0
+            ? `<div class="empty" style="padding:28px 8px;font-size:12px;"><strong>Nada aqui</strong>arraste ou crie</div>`
+            : list.map(t=>{
+              const pName = (!separateShared && t.project_id) ? projectName(t.project_id) : null;
+              return renderKbCard(t, col, {badge: pName ? ()=>`<span class="project-badge" style="margin-bottom:6px;">👥 ${esc(pName)}</span>` : null});
+            }).join('')}
+        </div>
+      </div>`;
+  }).join('');
+
+  let sharedColsHtml = '';
+  if(separateShared){
+    const projectIds = [...new Set(filteredTasks.filter(t=>t.project_id).map(t=>t.project_id))];
+    sharedColsHtml = projectIds.map(pid=>{
+      const p = state.projects.find(x=>x.id===pid);
+      const list = sortByDateThenPriority(filteredTasks.filter(t=>t.project_id===pid && !isHiddenFromKanban(t)));
+      return `
+        <div class="glass kb-col kb-col-shared" data-project="${pid}">
+          <div class="kb-col-head">
+            <div class="kb-col-title">👥 ${esc(p ? p.name : 'Projeto')}</div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div class="kb-col-count">${list.length}</div>
+              <button class="kb-col-open-btn" onclick="openProjectView('${pid}')" title="Abrir quadro do projeto">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="kb-cards">
+            ${list.length===0
+              ? `<div class="empty" style="padding:28px 8px;font-size:12px;"><strong>Nada aqui</strong></div>`
+              : list.map(t=>renderKbCard(t, getColumnForTask(t), {
+                  draggable: false,
+                  badge: ()=>`<span class="kb-card-status-pill" style="--pill-color:${taskColumnColor(t)};">${esc(taskColumnName(t))}</span>`
+                })).join('')}
+          </div>
+        </div>`;
+    }).join('');
+  }
+
   return `
     <div class="view-header">
       <div><div class="eyebrow">Fluxo de trabalho</div><h1>Kanban</h1></div>
       <div class="kanban-header-actions" style="display:flex;gap:10px;">
+        <button class="btn-secondary ${separateShared?'is-active':''}" onclick="toggleSeparateShared()" title="Mostrar tarefas de projetos compartilhados em colunas próprias">
+          👥 Separar compartilhadas
+        </button>
         <button class="btn-secondary ${state.selecting?'is-active':''}" onclick="toggleSelectMode()" title="Selecionar várias tarefas">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>${state.selecting?'Cancelar':'Selecionar'}
         </button>
@@ -2821,45 +2962,8 @@ function renderKanban(){
       </select>
     </div>
     <div class="kanban">
-      ${cols.map(col=>{
-        const list = sortByDateThenPriority(filteredTasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t)));
-        return `
-          <div class="glass kb-col" data-status="${col.key}" ondragover="dragOver(event)" ondrop="drop(event,'${col.key}')" ondragleave="dragLeave(event)">
-            <div class="kb-col-head">
-              <div class="kb-col-title"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}${col.type==='done' ? '<span class="kb-col-hint" title="Concluídos somem toda semana no domingo — o histórico fica registrado no Calendário">↻</span>' : ''}</div>
-              <div style="display:flex;align-items:center;gap:6px;">
-                <div class="kb-col-count">${list.length}</div>
-                <div class="kb-col-drag-handle" onpointerdown="colHandlePointerDown(event,'${col.key}')" title="Arrastar para reordenar coluna">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8L22 12L18 16"/><path d="M6 8L2 12L6 16"/><path d="M2 12H22"/></svg>
-                </div>
-                <button class="kb-col-edit" onclick="openColumnModal('${col.key}')" title="Editar coluna">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                </button>
-              </div>
-            </div>
-            <div class="kb-cards">
-              ${list.length===0
-                ? `<div class="empty" style="padding:28px 8px;font-size:12px;"><strong>Nada aqui</strong>arraste ou crie</div>`
-                : list.map(t=>{
-                  const badge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
-                  const doneCls = col.type === 'done' ? 'done' : '';
-                  const pName = t.project_id ? projectName(t.project_id) : null;
-                  const projBadge = pName ? `<span class="project-badge" style="margin-bottom:6px;">👥 ${esc(pName)}</span>` : '';
-                  return `
-                  <div class="kb-card ${doneCls} ${state.selected.has(t.id)?'is-selected':''}" style="--col-color:${taskColor(t)}" draggable="${!state.selecting}" ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)" onclick="cardClick(event,'${t.id}')">
-                    ${state.selecting ? `<span class="kb-card-check">${state.selected.has(t.id)?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><polyline points="20 6 9 17 4 12"/></svg>':''}</span>` : ''}
-                    <div class="kb-card-client">${esc(t.client || '—')}</div>
-                    <div class="kb-card-title">${esc(t.title)}</div>
-                    ${projBadge}
-                    <div class="kb-card-meta">
-                      ${(col.type === 'done' && state.hideDateOnDone) ? '' : `<span class="${taskDateStatus(t)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>`}
-                      ${badge}
-                    </div>
-                  </div>`;
-                }).join('')}
-            </div>
-          </div>`;
-      }).join('')}
+      ${normalColsHtml}
+      ${sharedColsHtml}
     </div>`;
 }
 
@@ -3073,7 +3177,15 @@ function renderCalendar(){
   const emptyMonthHint = !hasAnyTaskThisMonth ? `<div class="empty cal-empty-mobile" style="margin-top:10px;"><strong>Nada agendado em ${meses[month].toLowerCase()}.</strong>Toque em um dia pra criar uma tarefa.</div>` : '';
 
   const connected = isGoogleConnected();
-  const gcalBanner = connected ? '' : `
+  const gcalBanner = connected ? (isGoogleExpiringSoon() ? `
+    <div class="gcal-banner warn">
+      <svg class="gcal-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <div class="gcal-banner-text">
+        <strong>Sua conexão com o Google vai expirar em breve</strong>
+        <span>Conta em modo teste no Google — a conexão dura só 7 dias e depois precisa reconectar. Clique para renovar agora e não perder sincronizações.</span>
+      </div>
+      <button class="btn-primary" onclick="connectGoogleCalendar()">Reconectar</button>
+    </div>` : '') : `
     <div class="gcal-banner">
       <svg class="gcal-banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
       <div class="gcal-banner-text">

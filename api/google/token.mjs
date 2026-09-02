@@ -27,7 +27,8 @@ export default async function handler(req, res){
       connected: true,
       access_token: accessToken,
       calendar_id: cred.calendar_id || null,
-      sync_token: cred.sync_token || null
+      sync_token: cred.sync_token || null,
+      connected_at: cred.connected_at || null
     });
   }catch(e){
     json(res, 500, {error: e.message});
