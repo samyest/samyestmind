@@ -713,9 +713,12 @@ function lastSunday(){
   return d;
 }
 
+// Views pessoais (dashboard, calendário, alarmes, colunas normais do Kanban)
+// só mostram tarefa de projeto quando ela é atribuída a mim — o quadro do
+// projeto em si (renderProjectPage e as colunas compartilhadas do Kanban)
+// continua mostrando tudo, atribuído ou não.
 function isVisibleInPersonalViews(t){
   if(!t.project_id) return true;
-  if(!t.assigned_to) return true;
   return t.assigned_to === session.user.id;
 }
 
@@ -2233,6 +2236,52 @@ function renderProjectPage(){
   `;
 }
 
+// Tela dedicada pra projetos compartilhados — só alcançável pela aba
+// "Projetos" da barra inferior do celular (no desktop a lista já vive na
+// barra lateral). Convites pendentes ficam aqui também, pra aceitar sem
+// precisar entrar em Configurações.
+function renderProjectsList(){
+  const invitesHtml = state.pendingInvites.length === 0 ? '' : `
+    <div style="margin-bottom:20px;">
+      ${state.pendingInvites.map(inv=>`
+        <div class="pending-invite-card">
+          <div>
+            <div style="font-weight:500;color:var(--text-strong);font-size:13.5px;">${esc(inv.projects ? inv.projects.name : 'Projeto')}</div>
+            <div style="font-size:11.5px;color:var(--text-muted);">Convite como ${inv.role === 'editor' ? 'editor' : 'visualizador'}</div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn-secondary" style="padding:7px 12px;font-size:12px;" onclick="declineInvite('${inv.id}')">Recusar</button>
+            <button class="btn-primary" style="padding:7px 12px;font-size:12px;" onclick="acceptInvite('${inv.id}')">Aceitar</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>`;
+
+  const listHtml = state.projects.length === 0
+    ? `<div class="empty"><strong>Nenhum projeto compartilhado ainda.</strong>Crie um ou entre com um código de convite em "Gerenciar".</div>`
+    : `<div class="projects-list-grid">${state.projects.map(p=>{
+        const role = p.myRole === 'owner' ? 'Dono' : (myRoleInProject(p.id) === 'editor' ? 'Editor' : 'Visualizador');
+        const tasks = state.tasks.filter(t=>t.project_id===p.id);
+        const active = tasks.filter(t=>taskColumnType(t)!=='done').length;
+        return `
+          <div class="glass project-list-card" onclick="openProjectView('${p.id}')">
+            <div class="project-card-head" style="margin-bottom:6px;">
+              <div class="project-card-name">${esc(p.name)}</div>
+              <div class="project-card-role">${role}</div>
+            </div>
+            <div class="project-list-card-meta">${active} ativa${active!==1?'s':''} · ${tasks.length} no total</div>
+          </div>`;
+      }).join('')}</div>`;
+
+  return `
+    <div class="view-header">
+      <div><div class="eyebrow">Trabalho em equipe</div><h1>Projetos</h1></div>
+      <button class="btn-secondary" onclick="openProjectsModal()">👥 Gerenciar</button>
+    </div>
+    ${invitesHtml}
+    ${listHtml}`;
+}
+
 function openProjectsModal(){
   renderProjectsModal();
   document.getElementById('projects-modal').classList.add('open');
@@ -2571,6 +2620,7 @@ function render(){
   else if(state.view === 'calendar') m.innerHTML = renderCalendar();
   else if(state.view === 'table') m.innerHTML = renderTable();
   else if(state.view === 'project') m.innerHTML = renderProjectPage();
+  else if(state.view === 'projects') m.innerHTML = renderProjectsList();
 
   m.classList.toggle('no-entrance', sameView || skipEntranceOnce);
   skipEntranceOnce = false;
@@ -2842,15 +2892,21 @@ function renderKbCard(t, col, opts){
     </div>`;
 }
 
+function matchesKanbanFilters(t){
+  if(state.filter.kanbanClient && t.client !== state.filter.kanbanClient) return false;
+  if(state.filter.kanbanDate && state.filter.kanbanDate !== 'all' && !matchesDateFilter(t, state.filter.kanbanDate)) return false;
+  if(!matchesKanbanSearch(t, state.filter.kanbanSearch)) return false;
+  return true;
+}
+
 function renderKanban(){
   const cols = getColumns();
   const clientOptions = [...new Set(personalTasks().map(t=>t.client).filter(Boolean))].sort();
-  const filteredTasks = personalTasks().filter(t=>{
-    if(state.filter.kanbanClient && t.client !== state.filter.kanbanClient) return false;
-    if(state.filter.kanbanDate && state.filter.kanbanDate !== 'all' && !matchesDateFilter(t, state.filter.kanbanDate)) return false;
-    if(!matchesKanbanSearch(t, state.filter.kanbanSearch)) return false;
-    return true;
-  });
+  const filteredTasks = personalTasks().filter(matchesKanbanFilters);
+  // As colunas compartilhadas abaixo mostram o quadro inteiro do projeto —
+  // atribuído a mim ou não — por isso partem de state.tasks, não de
+  // personalTasks() (que só traz o que é meu).
+  const sharedFilteredTasks = state.tasks.filter(t=>t.project_id && matchesKanbanFilters(t));
   const normalColsHtml = cols.map(col=>{
     const list = sortByDateThenPriority(filteredTasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t) && !t.project_id));
     const collapsed = col.hidden && !state.expandedCols.has(col.key);
@@ -2889,10 +2945,10 @@ function renderKanban(){
 
   // Tarefas de projetos compartilhados nunca aparecem misturadas nas colunas
   // pessoais acima — cada projeto ganha sua própria coluna aqui, sempre.
-  const projectIds = [...new Set(filteredTasks.filter(t=>t.project_id).map(t=>t.project_id))];
+  const projectIds = [...new Set(sharedFilteredTasks.map(t=>t.project_id))];
   const sharedColsHtml = projectIds.map(pid=>{
     const p = state.projects.find(x=>x.id===pid);
-    const list = sortByDateThenPriority(filteredTasks.filter(t=>t.project_id===pid && !isHiddenFromKanban(t)));
+    const list = sortByDateThenPriority(sharedFilteredTasks.filter(t=>t.project_id===pid && !isHiddenFromKanban(t)));
     return `
       <div class="glass kb-col kb-col-shared" data-project="${pid}">
         <div class="kb-col-head">
