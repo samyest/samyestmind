@@ -256,13 +256,13 @@
 
   .app{
     display:grid;
-    grid-template-columns:var(--sidebar-w, 220px) 1fr;
+    grid-template-columns:var(--sidebar-w, 220px) minmax(0,1fr);
     height:100vh;
     position:relative;
     z-index:1;
     transition:grid-template-columns .22s ease;
   }
-  .app.sidebar-collapsed{grid-template-columns:0px 1fr;}
+  .app.sidebar-collapsed{grid-template-columns:0px minmax(0,1fr);}
 
   aside{
     background:var(--glass);
@@ -875,7 +875,7 @@
     transition:all .15s ease;
   }
   .mini-cal-nav button:hover{color:var(--accent);background:var(--glass-hover);}
-  .mini-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+  .mini-cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;}
   .mini-cal-dow{
     font-family:'JetBrains Mono',monospace;
     font-size:9.5px;
@@ -1133,7 +1133,7 @@
     background:var(--glass-hover);
     border-color:var(--line);
   }
-  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;}
   .cal-dow{
     font-family:'JetBrains Mono',monospace;
     font-size:10.5px;
@@ -1145,6 +1145,8 @@
   }
   .cal-cell{
     min-height:110px;
+    min-width:0;
+    overflow:hidden;
     background:var(--glass);
     border:1px solid var(--glass-border-soft);
     border-radius:12px;
@@ -1414,7 +1416,7 @@
     transition:all .15s ease;
   }
   .field textarea:focus{border-color:var(--accent);background:var(--glass-hover);}
-  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .field-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;}
 
   /* Campos lado a lado alinham os controles pela base: assim uma etiqueta que
      quebra em duas linhas não desencontra o horário do interruptor ao lado. */
@@ -1910,7 +1912,7 @@
 
   .theme-grid{
     display:grid;
-    grid-template-columns:repeat(2,1fr);
+    grid-template-columns:repeat(2,minmax(0,1fr));
     gap:10px;
     margin-top:6px;
   }
@@ -2433,7 +2435,7 @@
 
   @media (max-width:900px){
     *{-webkit-tap-highlight-color:transparent;}
-    .app{grid-template-columns:1fr;}
+    .app{grid-template-columns:minmax(0,1fr);}
     aside{display:none;}
     .sidebar-toggle{display:none;}
     .mobile-topbar{display:flex;}
@@ -2455,7 +2457,7 @@
     .header-cta{display:none;}
     .status-row{
       display:grid;
-      grid-template-columns:repeat(2, 1fr);
+      grid-template-columns:repeat(2, minmax(0,1fr));
       width:100%;
       gap:8px;
       padding:8px;
