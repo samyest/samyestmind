@@ -4031,7 +4031,7 @@ document.addEventListener('keydown', (e)=>{
     closeStatusModal();
     closeProjectsModal();
   }
-  if(e.key === 'n' && !document.getElementById('modal').classList.contains('open') && !document.getElementById('settings-modal').classList.contains('open') && !document.getElementById('column-modal').classList.contains('open') && !document.getElementById('status-modal').classList.contains('open') && !document.getElementById('projects-modal').classList.contains('open') && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA'){
+  if(e.key === 'n' && !document.getElementById('modal').classList.contains('open') && !document.getElementById('settings-modal').classList.contains('open') && !document.getElementById('column-modal').classList.contains('open') && !document.getElementById('status-modal').classList.contains('open') && !document.getElementById('projects-modal').classList.contains('open') && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA' && !document.activeElement.isContentEditable){
     e.preventDefault();openModal();
   }
 });
