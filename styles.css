@@ -2130,6 +2130,27 @@
   .color-swatch-custom.selected{border-style:solid;}
   .color-swatch-custom:hover{color:var(--accent);border-color:var(--accent);}
 
+  .weekday-picker{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;}
+  .weekday-btn{
+    width:34px;height:34px;
+    border-radius:50%;
+    border:1.5px solid var(--line-strong);
+    background:var(--glass-strong);
+    color:var(--text-muted);
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px;
+    font-weight:500;
+    display:grid;place-items:center;
+    transition:all .15s ease;
+    flex-shrink:0;
+  }
+  .weekday-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .weekday-btn.selected{
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#fff;
+  }
+
   .settings-col-item{
     display:flex;
     align-items:center;

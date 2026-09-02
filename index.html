@@ -223,6 +223,14 @@
       </div>
       <div class="field">
         <div class="field-label-row">
+          <label>🔁 Rotinas semanais</label>
+          <button class="btn-format" onclick="openRoutineModal()">+ Nova rotina</button>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;line-height:1.5;">Tarefas que se repetem sozinhas nos dias da semana marcados — pra não recadastrar a mesma coisa toda vez.</p>
+        <div id="settings-routines-list"></div>
+      </div>
+      <div class="field">
+        <div class="field-label-row">
           <label>Google Calendar</label>
           <span id="google-cal-status" style="font-family:'JetBrains Mono',monospace;font-size:11px;"></span>
         </div>
@@ -323,6 +331,81 @@
   </div>
 </div>
 
+<div class="modal-bg" id="routine-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-head-title" id="routine-modal-title">Nova rotina</div>
+      <button class="modal-close" onclick="closeRoutineModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>O que precisa ser feito</label>
+        <input type="text" class="input" id="rt-title" placeholder="Ex: Conferir grupos">
+      </div>
+      <div class="field">
+        <label>Dias da semana</label>
+        <div id="rt-days" class="weekday-picker">
+          <button type="button" class="weekday-btn" data-day="0" onclick="toggleWeekdayBtn(this)">D</button>
+          <button type="button" class="weekday-btn" data-day="1" onclick="toggleWeekdayBtn(this)">S</button>
+          <button type="button" class="weekday-btn" data-day="2" onclick="toggleWeekdayBtn(this)">T</button>
+          <button type="button" class="weekday-btn" data-day="3" onclick="toggleWeekdayBtn(this)">Q</button>
+          <button type="button" class="weekday-btn" data-day="4" onclick="toggleWeekdayBtn(this)">Q</button>
+          <button type="button" class="weekday-btn" data-day="5" onclick="toggleWeekdayBtn(this)">S</button>
+          <button type="button" class="weekday-btn" data-day="6" onclick="toggleWeekdayBtn(this)">S</button>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Cliente (opcional)</label>
+          <input type="text" class="input" id="rt-client" placeholder="Nome do cliente" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Coluna</label>
+          <select class="select" id="rt-status"></select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Prioridade</label>
+          <select class="select" id="rt-priority">
+            <option value="normal">Normal</option>
+            <option value="high">Alta</option>
+            <option value="urgent">🔥 Urgente</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>⏰ Horário (opcional)</label>
+          <div class="field-control-row">
+            <input type="time" class="input" id="rt-time" style="max-width:160px;">
+            <button type="button" class="time-clear-btn" onclick="document.getElementById('rt-time').value='';" title="Remover horário">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="field" id="rt-active-field" style="display:none;">
+        <div class="field-label-row">
+          <label>Ativa</label>
+          <label class="sound-toggle">
+            <input type="checkbox" id="rt-active">
+            <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
+          </label>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);line-height:1.5;">Pausada, ela para de gerar tarefa nova sem precisar excluir.</p>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-danger" id="rt-delete" onclick="deleteRoutine()" style="display:none;">Excluir</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-secondary" onclick="closeRoutineModal()">Cancelar</button>
+        <button class="btn-primary" onclick="saveRoutineModal()">Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal">
   <div class="modal">
     <div class="modal-head">
@@ -353,7 +436,7 @@
         </div>
       </div>
       <div class="field-row">
-        <div class="field">
+        <div class="field" id="m-date-field">
           <label>Prazo</label>
           <input type="date" class="input" id="m-date" onchange="updateGcalHint()">
         </div>
@@ -365,6 +448,25 @@
             <option value="urgent">🔥 Urgente</option>
           </select>
         </div>
+      </div>
+      <div class="field" id="m-repeat-field">
+        <div class="field-label-row">
+          <label>🔁 Repetir toda semana</label>
+          <label class="sound-toggle">
+            <input type="checkbox" id="m-repeat" onchange="toggleRepeatField()">
+            <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
+          </label>
+        </div>
+        <div id="m-repeat-days" class="weekday-picker" style="display:none;">
+          <button type="button" class="weekday-btn" data-day="0" onclick="toggleWeekdayBtn(this)">D</button>
+          <button type="button" class="weekday-btn" data-day="1" onclick="toggleWeekdayBtn(this)">S</button>
+          <button type="button" class="weekday-btn" data-day="2" onclick="toggleWeekdayBtn(this)">T</button>
+          <button type="button" class="weekday-btn" data-day="3" onclick="toggleWeekdayBtn(this)">Q</button>
+          <button type="button" class="weekday-btn" data-day="4" onclick="toggleWeekdayBtn(this)">Q</button>
+          <button type="button" class="weekday-btn" data-day="5" onclick="toggleWeekdayBtn(this)">S</button>
+          <button type="button" class="weekday-btn" data-day="6" onclick="toggleWeekdayBtn(this)">S</button>
+        </div>
+        <p id="m-repeat-hint" style="font-size:11.5px;color:var(--text-muted);margin-top:8px;line-height:1.5;display:none;">Cria a tarefa sozinha em cada dia marcado. Concluir ou apagar a de hoje não afeta os próximos dias — gerencie ou pare a rotina em Configurações.</p>
       </div>
       <div class="field-row">
         <div class="field">

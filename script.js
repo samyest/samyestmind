@@ -184,8 +184,122 @@ function openSettings(){
     </button>
   `).join('');
   renderSettingsColumnsList();
+  renderSettingsRoutinesList();
   updateGoogleStatusUI();
   document.getElementById('settings-modal').classList.add('open');
+}
+
+const DOW_LETTERS = ['D','S','T','Q','Q','S','S'];
+
+function renderSettingsRoutinesList(){
+  const wrap = document.getElementById('settings-routines-list');
+  if(!wrap) return;
+  if(!state.routines || state.routines.length === 0){
+    wrap.innerHTML = `<div class="empty" style="padding:16px 8px;font-size:12px;"><strong>Nenhuma rotina ainda.</strong>Crie uma acima.</div>`;
+    return;
+  }
+  wrap.innerHTML = state.routines.map(r=>{
+    const daysLabel = DOW_LETTERS.map((l,i)=>`<span style="opacity:${r.weekdays.includes(i)?1:0.3};font-weight:${r.weekdays.includes(i)?600:400};">${l}</span>`).join(' ');
+    return `
+      <div class="settings-col-item">
+        <div class="settings-col-dot" style="background:${r.active?'var(--accent)':'var(--text-soft)'}"></div>
+        <div class="settings-col-name" style="flex:1;">
+          ${esc(r.title)}${!r.active ? ' <span style="color:var(--text-soft);font-size:10.5px;">(pausada)</span>' : ''}
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-muted);margin-top:2px;">${daysLabel}</div>
+        </div>
+        <button class="settings-col-edit" onclick="toggleRoutineActive('${r.id}')" title="${r.active?'Pausar':'Reativar'}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${r.active ? '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>' : '<polygon points="5 3 19 12 5 21 5 3"/>'}</svg>
+        </button>
+        <button class="settings-col-edit" onclick="openRoutineModal('${r.id}')" title="Editar">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        </button>
+      </div>`;
+  }).join('');
+}
+
+let editingRoutineId = null;
+
+function openRoutineModal(id){
+  editingRoutineId = id || null;
+  const title = document.getElementById('routine-modal-title');
+  document.getElementById('rt-status').innerHTML = getColumns().map(c=>`<option value="${c.key}">${esc(c.name)}</option>`).join('');
+  document.querySelectorAll('#rt-days .weekday-btn').forEach(b=>b.classList.remove('selected'));
+  if(id){
+    const r = state.routines.find(x=>x.id===id);
+    if(!r) return;
+    title.textContent = 'Editar rotina';
+    document.getElementById('rt-title').value = r.title;
+    document.getElementById('rt-client').value = r.client || '';
+    document.getElementById('rt-status').value = r.status;
+    document.getElementById('rt-priority').value = r.priority;
+    document.getElementById('rt-time').value = r.time || '';
+    r.weekdays.forEach(d=>{
+      const btn = document.querySelector(`#rt-days .weekday-btn[data-day="${d}"]`);
+      if(btn) btn.classList.add('selected');
+    });
+    document.getElementById('rt-active-field').style.display = '';
+    document.getElementById('rt-active').checked = r.active;
+    document.getElementById('rt-delete').style.display = '';
+  }else{
+    title.textContent = 'Nova rotina';
+    document.getElementById('rt-title').value = '';
+    document.getElementById('rt-client').value = '';
+    document.getElementById('rt-status').value = getColumns()[0].key;
+    document.getElementById('rt-priority').value = 'normal';
+    document.getElementById('rt-time').value = '';
+    document.getElementById('rt-active-field').style.display = 'none';
+    document.getElementById('rt-delete').style.display = 'none';
+  }
+  document.getElementById('routine-modal').classList.add('open');
+  setTimeout(()=>document.getElementById('rt-title').focus(), 50);
+}
+
+function closeRoutineModal(){
+  document.getElementById('routine-modal').classList.remove('open');
+  editingRoutineId = null;
+}
+
+async function saveRoutineModal(){
+  const title = document.getElementById('rt-title').value.trim();
+  if(!title){document.getElementById('rt-title').focus();return;}
+  const weekdays = [...document.querySelectorAll('#rt-days .weekday-btn.selected')].map(b=>+b.dataset.day);
+  if(weekdays.length === 0){showToast('Escolha ao menos um dia da semana');return;}
+  const data = {
+    title,
+    client: document.getElementById('rt-client').value.trim(),
+    status: document.getElementById('rt-status').value,
+    priority: document.getElementById('rt-priority').value,
+    time: document.getElementById('rt-time').value,
+    weekdays
+  };
+  let ok;
+  if(editingRoutineId){
+    ok = await updateRoutineRemote(editingRoutineId, data);
+    const r = state.routines.find(x=>x.id===editingRoutineId);
+    const activeChecked = document.getElementById('rt-active').checked;
+    if(r && activeChecked !== r.active){
+      r.active = activeChecked;
+      await sb.from('routines').update({active: r.active}).eq('id', editingRoutineId);
+    }
+  }else{
+    ok = await createRoutine(data);
+  }
+  if(ok){
+    closeRoutineModal();
+    renderSettingsRoutinesList();
+    showToast(editingRoutineId ? 'Rotina atualizada' : 'Rotina criada');
+  }
+}
+
+async function deleteRoutine(){
+  if(!editingRoutineId) return;
+  if(!confirm('Excluir esta rotina? As tarefas já criadas continuam existindo, só param de se repetir.')) return;
+  const ok = await deleteRoutineRemote(editingRoutineId);
+  if(ok){
+    closeRoutineModal();
+    renderSettingsRoutinesList();
+    showToast('Rotina excluída');
+  }
 }
 
 function renderSettingsColumnsList(){
@@ -529,6 +643,7 @@ let state = {
   recentClients: [],
   projects: [],
   pendingInvites: [],
+  routines: [],
   view: 'dashboard',
   currentProjectId: null,
   editingId: null,
@@ -796,9 +911,12 @@ async function checkAuth(){
     document.getElementById('user-name-display').textContent = state.myName;
     renderMyAvatar('user-avatar', state.myName);
     await loadTasks();
+    await loadRoutines();
+    await generateRoutineInstances();
     await loadProjects();
     await loadIgnoredEvents();
     setupRealtime();
+    startRoutineCheckLoop();
     startAlarmChecker();
     await loadGoogleSession();
     updateGoogleStatusUI();
@@ -1654,6 +1772,7 @@ async function logout(){
   teardownRealtime();
   stopAlarmChecker();
   stopGoogleSyncLoop();
+  stopRoutineCheckLoop();
   await sb.auth.signOut();
   location.reload();
 }
@@ -1743,6 +1862,7 @@ async function loadTasks(){
     completed_at: t.completed_at || null,
     project_id: t.project_id || null,
     assigned_to: t.assigned_to || null,
+    routine_id: t.routine_id || null,
     owner_id: t.user_id,
     created: new Date(t.created_at).getTime()
   }));
@@ -1764,7 +1884,8 @@ async function createTaskRemote(data){
     from_google: !!data.from_google,
     completed_at: data.completed_at || null,
     project_id: data.project_id || null,
-    assigned_to: data.assigned_to || null
+    assigned_to: data.assigned_to || null,
+    routine_id: data.routine_id || null
   }).select().single();
   if(error){alert('Erro ao criar tarefa: ' + error.message);return null;}
   return {
@@ -1783,9 +1904,133 @@ async function createTaskRemote(data){
     completed_at: task.completed_at || null,
     project_id: task.project_id || null,
     assigned_to: task.assigned_to || null,
+    routine_id: task.routine_id || null,
     owner_id: task.user_id,
     created: new Date(task.created_at).getTime()
   };
+}
+
+/* ---------- Rotinas semanais ---------- */
+// Uma rotina é um molde (título, coluna, dias da semana); a tarefa de cada
+// dia é gerada como uma tarefa normal ligada a ela por routine_id. Concluir
+// ou apagar essa tarefa não mexe na rotina — ela gera de novo no próximo
+// dia marcado.
+
+function todayIso(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+async function loadRoutines(){
+  const {data, error} = await sb.from('routines').select('*').order('created_at', {ascending: true});
+  if(error){state.routines = [];return;}
+  state.routines = data.map(r => ({
+    id: r.id,
+    title: r.title,
+    client: r.client || '',
+    status: r.status || 'todo',
+    priority: r.priority || 'normal',
+    time: r.time || '',
+    weekdays: r.weekdays || [],
+    active: r.active !== false,
+    lastGeneratedDate: r.last_generated_date || null
+  }));
+}
+
+// Roda no carregamento do app e periodicamente enquanto fica aberto — pega
+// tanto o "hoje" de quem acabou de abrir quanto a virada da meia-noite pra
+// quem deixa a aba aberta.
+async function generateRoutineInstances(){
+  if(!state.routines || !state.routines.length) return;
+  const iso = todayIso();
+  const dow = new Date().getDay();
+  let changed = false;
+  for(const r of state.routines){
+    if(!r.active) continue;
+    if(!r.weekdays.includes(dow)) continue;
+    if(r.lastGeneratedDate === iso) continue;
+
+    const created = await createTaskRemote({
+      title: r.title,
+      client: r.client,
+      status: getColumns().some(c=>c.key===r.status) ? r.status : getColumns()[0].key,
+      priority: r.priority,
+      date: iso,
+      time: r.time,
+      notes: '',
+      routine_id: r.id
+    });
+    if(created){
+      state.tasks.push(created);
+      await syncTaskToGoogle(created);
+      changed = true;
+    }
+
+    await sb.from('routines').update({last_generated_date: iso}).eq('id', r.id);
+    r.lastGeneratedDate = iso;
+  }
+  if(changed){ skipEntranceOnce = true; safeRerender(); }
+}
+
+let routineCheckTimer = null;
+function startRoutineCheckLoop(){
+  if(routineCheckTimer) return;
+  routineCheckTimer = setInterval(()=>{ generateRoutineInstances(); }, 30 * 60 * 1000);
+}
+function stopRoutineCheckLoop(){
+  if(routineCheckTimer){ clearInterval(routineCheckTimer); routineCheckTimer = null; }
+}
+
+async function createRoutine(data){
+  const {data: r, error} = await sb.from('routines').insert({
+    user_id: session.user.id,
+    title: data.title,
+    client: data.client || null,
+    status: data.status,
+    priority: data.priority,
+    time: data.time || null,
+    weekdays: data.weekdays
+  }).select().single();
+  if(error){alert('Erro ao criar rotina: ' + error.message);return null;}
+  const routine = {
+    id: r.id, title: r.title, client: r.client || '', status: r.status,
+    priority: r.priority, time: r.time || '', weekdays: r.weekdays || [],
+    active: true, lastGeneratedDate: null
+  };
+  state.routines.push(routine);
+  await generateRoutineInstances();
+  return routine;
+}
+
+async function updateRoutineRemote(id, data){
+  const {error} = await sb.from('routines').update({
+    title: data.title,
+    client: data.client || null,
+    status: data.status,
+    priority: data.priority,
+    time: data.time || null,
+    weekdays: data.weekdays,
+    updated_at: new Date().toISOString()
+  }).eq('id', id);
+  if(error){alert('Erro ao salvar rotina: ' + error.message);return false;}
+  const r = state.routines.find(x=>x.id===id);
+  if(r) Object.assign(r, data);
+  return true;
+}
+
+async function toggleRoutineActive(id){
+  const r = state.routines.find(x=>x.id===id);
+  if(!r) return;
+  r.active = !r.active;
+  await sb.from('routines').update({active: r.active}).eq('id', id);
+  renderSettingsRoutinesList();
+}
+
+async function deleteRoutineRemote(id){
+  const {error} = await sb.from('routines').delete().eq('id', id);
+  if(error){alert('Erro ao excluir rotina: ' + error.message);return false;}
+  state.routines = state.routines.filter(x=>x.id!==id);
+  return true;
 }
 
 async function updateTaskRemote(id, data){
@@ -2883,7 +3128,7 @@ function renderKbCard(t, col, opts){
     <div class="kb-card ${doneCls} ${state.selected.has(t.id)?'is-selected':''}" style="--col-color:${taskColor(t)}" draggable="${draggable}" ${dragAttrs} onclick="cardClick(event,'${t.id}')">
       ${state.selecting ? `<span class="kb-card-check">${state.selected.has(t.id)?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><polyline points="20 6 9 17 4 12"/></svg>':''}</span>` : ''}
       <div class="kb-card-client">${esc(t.client || '—')}</div>
-      <div class="kb-card-title">${esc(t.title)}</div>
+      <div class="kb-card-title">${t.routine_id ? '<span title="Gerada por uma rotina" style="margin-right:4px;">🔁</span>' : ''}${esc(t.title)}</div>
       ${extraBadge}
       <div class="kb-card-meta">
         ${(col.type === 'done' && state.hideDateOnDone) ? '' : `<span class="${taskDateStatus(t)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>`}
@@ -3530,6 +3775,7 @@ function openModal(id, prefillDate, prefillProjectId){
   const delBtn = document.getElementById('m-delete');
   const commentsField = document.getElementById('m-comments-field');
   populateProjectSelect();
+  resetRepeatField(!id && !prefillProjectId);
   if(id){
     const t = state.tasks.find(x=>x.id===id);
     if(!t) return;
@@ -3576,9 +3822,40 @@ function openModal(id, prefillDate, prefillProjectId){
   document.getElementById('m-project').onchange = (e)=>{
     populateStatusSelect('m-status', getProjectColumns(state.projects.find(p=>p.id===e.target.value))[0].key, e.target.value || null);
     populateAssigneeSelect(e.target.value || null, null);
+    // Rotina é só pra tarefa pessoal — escolher um projeto desliga e some com a opção.
+    resetRepeatField(!id && !e.target.value);
   };
   modal.classList.add('open');
   setTimeout(()=>document.getElementById('m-title').focus(), 50);
+}
+
+// Disponível só ao criar uma tarefa pessoal nova (rotina não existe pra
+// tarefa de projeto nem faz sentido reaproveitar ao editar uma já existente).
+function resetRepeatField(available){
+  const field = document.getElementById('m-repeat-field');
+  const checkbox = document.getElementById('m-repeat');
+  field.style.display = available ? '' : 'none';
+  checkbox.checked = false;
+  document.querySelectorAll('#m-repeat-days .weekday-btn').forEach(b=>b.classList.remove('selected'));
+  toggleRepeatField();
+}
+
+function toggleRepeatField(){
+  const checked = document.getElementById('m-repeat').checked;
+  document.getElementById('m-repeat-days').style.display = checked ? 'flex' : 'none';
+  document.getElementById('m-repeat-hint').style.display = checked ? '' : 'none';
+  document.getElementById('m-date-field').style.opacity = checked ? '0.4' : '';
+  document.getElementById('m-date').disabled = checked;
+}
+
+function toggleWeekdayBtn(el){
+  el.classList.toggle('selected');
+}
+
+// #m-repeat-days (tarefa nova) e #rt-days (rotina em Configurações) têm
+// cada um o seu próprio jogo de botões — nunca ler os dois juntos.
+function selectedWeekdays(){
+  return [...document.querySelectorAll('#m-repeat-days .weekday-btn.selected')].map(b=>+b.dataset.day);
 }
 
 function filterClientSuggestions(){
@@ -3650,6 +3927,23 @@ function closeModal(){document.getElementById('modal').classList.remove('open');
 async function saveTask(){
   const title = document.getElementById('m-title').value.trim();
   if(!title){document.getElementById('m-title').focus();return;}
+
+  if(!state.editingId && document.getElementById('m-repeat').checked){
+    const weekdays = selectedWeekdays();
+    if(weekdays.length === 0){showToast('Escolha ao menos um dia da semana');return;}
+    const routine = await createRoutine({
+      title,
+      client: document.getElementById('m-client').value.trim(),
+      status: document.getElementById('m-status').value,
+      priority: document.getElementById('m-priority').value,
+      time: document.getElementById('m-time').value,
+      weekdays
+    });
+    closeModal();render();
+    if(routine) showToast('Rotina criada');
+    return;
+  }
+
   const newStatus = document.getElementById('m-status').value;
   const existingTask = state.editingId ? state.tasks.find(x=>x.id===state.editingId) : null;
   const gcalInput = document.getElementById('m-gcal');
