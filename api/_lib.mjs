@@ -129,8 +129,14 @@ export async function freshAccessToken(userId){
   });
 
   if(!res.ok){
-    // Refresh token revogado ou expirado: a conexão morreu de vez.
-    if(res.status === 400 || res.status === 401) await deleteCredential(userId);
+    // Só apaga a credencial quando o Google confirma que o refresh token
+    // morreu mesmo (invalid_grant). Qualquer outro erro (rede, cota,
+    // instabilidade momentânea do Google) também vem como 400/401, mas é
+    // passageiro — apagar aqui de novo derrubava a conexão à toa e o
+    // usuário precisava reconectar bem mais que a cada 7 dias.
+    let code = null;
+    try{ code = (await res.json()).error; }catch(e){}
+    if(code === 'invalid_grant') await deleteCredential(userId);
     return null;
   }
 
