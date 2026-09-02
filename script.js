@@ -2461,7 +2461,10 @@ function renderProjectPage(){
                   ${col.hidden ? `<button class="kb-col-collapse-btn" onclick="toggleColExpanded('${col.key}')" title="Recolher coluna">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
                   </button>` : ''}
-                  ${canEdit ? `<button class="kb-col-edit" onclick="openColumnModal('${col.key}', '${p.id}')" title="Editar coluna">
+                  ${canEdit ? `<div class="kb-col-drag-handle" onpointerdown="colHandlePointerDown(event,'${col.key}','${p.id}')" title="Arrastar para reordenar coluna">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8L22 12L18 16"/><path d="M6 8L2 12L6 16"/><path d="M2 12H22"/></svg>
+                  </div>
+                  <button class="kb-col-edit" onclick="openColumnModal('${col.key}', '${p.id}')" title="Editar coluna">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                   </button>` : ''}
                 </div>
@@ -3258,6 +3261,7 @@ let ptrStartX = 0, ptrStartY = 0;
 let ptrOriginalOrder = null;
 let ptrPreviewOrder = null;
 let ptrOriginalRects = null;
+let ptrProjectId = null;
 
 async function reorderColumns(fromKey, toKey){
   if(fromKey === toKey) return;
@@ -3272,12 +3276,13 @@ async function reorderColumns(fromKey, toKey){
   await persistColumns();
 }
 
-function colHandlePointerDown(e, key){
+function colHandlePointerDown(e, key, projectId){
   e.preventDefault();
   const colEl = e.currentTarget.closest('.kb-col');
   const container = colEl.closest('.kanban');
   const cols = [...container.querySelectorAll(':scope > .kb-col')];
 
+  ptrProjectId = projectId || null;
   ptrDragKey = key;
   ptrDragColEl = colEl;
   ptrContainer = container;
@@ -3352,12 +3357,21 @@ function colHandlePointerUp(){
 
   ptrDragKey = null;
 
+  const projectId = ptrProjectId;
+
   setTimeout(()=>{
     if(changed){
-      applyColumnOrder(finalOrder);
-      skipEntranceOnce = true;
-      render();
-      persistColumns();
+      if(projectId){
+        applyProjectColumnOrder(projectId, finalOrder);
+        skipEntranceOnce = true;
+        render();
+        persistProjectColumns(projectId, getProjectColumns(state.projects.find(x=>x.id===projectId)));
+      }else{
+        applyColumnOrder(finalOrder);
+        skipEntranceOnce = true;
+        render();
+        persistColumns();
+      }
     }else{
       if(colEl){
         colEl.classList.remove('kb-col-lifted');
@@ -3372,7 +3386,7 @@ function colHandlePointerUp(){
   }, changed ? 180 : 0);
 
   ptrDragColEl = null; ptrContainer = null;
-  ptrOriginalOrder = null; ptrPreviewOrder = null; ptrOriginalRects = null;
+  ptrOriginalOrder = null; ptrPreviewOrder = null; ptrOriginalRects = null; ptrProjectId = null;
 }
 
 function applyColumnOrder(orderedKeys){
@@ -3382,6 +3396,17 @@ function applyColumnOrder(orderedKeys){
   const reordered = orderedKeys.map(k=>byKey[k]).filter(Boolean);
   state.columns.forEach(c=>{ if(!reordered.includes(c)) reordered.push(c); });
   state.columns = reordered;
+}
+
+function applyProjectColumnOrder(projectId, orderedKeys){
+  const p = state.projects.find(x=>x.id===projectId);
+  if(!p) return;
+  const cols = getProjectColumns(p);
+  const byKey = {};
+  cols.forEach(c=>{byKey[c.key]=c;});
+  const reordered = orderedKeys.map(k=>byKey[k]).filter(Boolean);
+  cols.forEach(c=>{ if(!reordered.includes(c)) reordered.push(c); });
+  p.columns = reordered;
 }
 
 function dragStart(e, id){
