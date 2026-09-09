@@ -13,17 +13,33 @@ export function env(name){
   return v;
 }
 
-export function redirectUri(req){
-  if(process.env.GOOGLE_REDIRECT_URI) return process.env.GOOGLE_REDIRECT_URI;
-  const proto = req.headers['x-forwarded-proto'] || 'https';
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  return `${proto}://${host}/api/google/callback`;
+// x-forwarded-host vem do cliente. Se o Location do callback for montado a
+// partir dele sem checagem, dá para levar o usuário autenticado para outro
+// domínio. Ordem: APP_ORIGIN > origem do GOOGLE_REDIRECT_URI > header, e o
+// header só passa se tiver forma de hostname.
+const HOST_RE = /^[a-z0-9.-]+(:\d{1,5})?$/i;
+
+function configuredOrigin(){
+  if(process.env.APP_ORIGIN) return process.env.APP_ORIGIN.replace(/\/+$/, '');
+  if(process.env.GOOGLE_REDIRECT_URI){
+    try{ return new URL(process.env.GOOGLE_REDIRECT_URI).origin; }catch(e){}
+  }
+  if(process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  return null;
 }
 
 export function appOrigin(req){
-  const proto = req.headers['x-forwarded-proto'] || 'https';
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const fixed = configuredOrigin();
+  if(fixed) return fixed;
+  const proto = req.headers['x-forwarded-proto'] === 'http' ? 'http' : 'https';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || '';
+  if(!HOST_RE.test(host)) throw new Error('host inválido');
   return `${proto}://${host}`;
+}
+
+export function redirectUri(req){
+  if(process.env.GOOGLE_REDIRECT_URI) return process.env.GOOGLE_REDIRECT_URI;
+  return `${appOrigin(req)}/api/google/callback`;
 }
 
 /* ---------- state assinado (CSRF + identidade do usuário) ---------- */
@@ -82,7 +98,7 @@ function adminHeaders(){
 }
 
 export async function getCredential(userId){
-  const url = `${env('SUPABASE_URL')}/rest/v1/google_credentials?user_id=eq.${userId}&select=*`;
+  const url = `${env('SUPABASE_URL')}/rest/v1/google_credentials?user_id=eq.${encodeURIComponent(userId)}&select=*`;
   const res = await fetch(url, {headers: adminHeaders()});
   if(!res.ok) return null;
   const rows = await res.json();
@@ -102,7 +118,7 @@ export async function saveCredential(userId, patch){
 }
 
 export async function deleteCredential(userId){
-  const url = `${env('SUPABASE_URL')}/rest/v1/google_credentials?user_id=eq.${userId}`;
+  const url = `${env('SUPABASE_URL')}/rest/v1/google_credentials?user_id=eq.${encodeURIComponent(userId)}`;
   await fetch(url, {method: 'DELETE', headers: adminHeaders()});
 }
 
@@ -148,5 +164,15 @@ export async function freshAccessToken(userId){
 
 export function json(res, status, body){
   res.status(status).setHeader('Content-Type', 'application/json');
+  // Toda resposta destas rotas é por usuário e algumas carregam access token —
+  // nenhuma pode ficar em cache de CDN ou de navegador.
+  res.setHeader('Cache-Control', 'no-store, private');
   res.end(JSON.stringify(body));
+}
+
+// e.message vaza detalhe interno (nome de variável de ambiente ausente, resposta
+// crua do Supabase). O detalhe fica no log da função; o cliente recebe genérico.
+export function fail(res, e, tag){
+  console.error(`[${tag}]`, e);
+  json(res, 500, {error: 'Erro interno. Tente de novo em instantes.'});
 }

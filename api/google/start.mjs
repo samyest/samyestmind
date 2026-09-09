@@ -1,4 +1,4 @@
-import {userFromRequest, signState, redirectUri, env, json, GOOGLE_SCOPE} from '../_lib.mjs';
+import {userFromRequest, signState, redirectUri, env, json, fail, GOOGLE_SCOPE} from '../_lib.mjs';
 
 // Monta a URL de consentimento do Google. O cliente chama isto autenticado e
 // depois navega para a URL devolvida — a identidade vai no state assinado, então
@@ -21,6 +21,6 @@ export default async function handler(req, res){
 
     json(res, 200, {url: `https://accounts.google.com/o/oauth2/v2/auth?${params}`});
   }catch(e){
-    json(res, 500, {error: e.message});
+    fail(res, e, 'google/start');
   }
 }

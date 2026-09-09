@@ -1,4 +1,4 @@
-import {userFromRequest, getCredential, deleteCredential, json} from '../_lib.mjs';
+import {userFromRequest, getCredential, deleteCredential, json, fail} from '../_lib.mjs';
 
 export default async function handler(req, res){
   try{
@@ -19,6 +19,6 @@ export default async function handler(req, res){
     await deleteCredential(user.id);
     json(res, 200, {ok: true});
   }catch(e){
-    json(res, 500, {error: e.message});
+    fail(res, e, 'google/disconnect');
   }
 }

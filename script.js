@@ -19,7 +19,7 @@ const EVENT_COLORS = [
 
 function eventColorHex(colorId){
   const c = EVENT_COLORS.find(x=>x.id === String(colorId));
-  return c ? c.hex : null;
+  return c ? corSegura(c.hex) : null;
 }
 
 // Cor efetiva do cartão: a da tarefa, se escolhida; senão a da coluna.
@@ -293,7 +293,7 @@ async function saveRoutineModal(){
 
 async function deleteRoutine(){
   if(!editingRoutineId) return;
-  if(!confirm('Excluir esta rotina? As tarefas já criadas continuam existindo, só param de se repetir.')) return;
+  if(!await confirmar('As tarefas já criadas continuam existindo — só param de se repetir.', {title:'Excluir esta rotina?', okLabel:'Excluir rotina'})) return;
   const ok = await deleteRoutineRemote(editingRoutineId);
   if(ok){
     closeRoutineModal();
@@ -305,12 +305,19 @@ async function deleteRoutine(){
 function renderSettingsColumnsList(){
   const wrap = document.getElementById('settings-columns-list');
   if(!wrap) return;
-  wrap.innerHTML = getColumns().map(c=>`
+  const cols = getColumns();
+  wrap.innerHTML = cols.map((c, i)=>`
     <div class="settings-col-item" draggable="true" data-key="${c.key}" ondragstart="colDragStart(event,'${c.key}')" ondragover="colDragOver(event)" ondragleave="colDragLeave(event)" ondrop="colDrop(event,'${c.key}')" ondragend="colDragEnd(event)">
-      <div class="settings-col-handle" title="Arrastar para reordenar">⠿</div>
-      <div class="settings-col-dot" style="background:${c.color}"></div>
+      <div class="settings-col-handle" aria-hidden="true" title="Arrastar para reordenar">⠿</div>
+      <div class="settings-col-dot" style="background:${corSegura(c.color)}"></div>
       <div class="settings-col-name">${esc(c.name)}</div>
-      <button class="settings-col-edit" onclick="openColumnModal('${c.key}')" title="Editar">
+      <button class="settings-col-edit" onclick="moveColumn('${c.key}', -1)" ${i === 0 ? 'disabled' : ''} title="Mover para cima" aria-label="Mover ${esc(c.name)} para cima">
+        <svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+      </button>
+      <button class="settings-col-edit" onclick="moveColumn('${c.key}', 1)" ${i === cols.length - 1 ? 'disabled' : ''} title="Mover para baixo" aria-label="Mover ${esc(c.name)} para baixo">
+        <svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <button class="settings-col-edit" onclick="openColumnModal('${c.key}')" title="Editar" aria-label="Editar ${esc(c.name)}">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
       </button>
     </div>
@@ -334,6 +341,19 @@ function colDragOver(e){
 function colDragLeave(e){
   e.currentTarget.classList.remove('drag-over');
 }
+// Arrastar nao alcanca quem usa teclado ou leitor de tela; estas setas fazem a
+// mesma reordenacao.
+async function moveColumn(key, delta){
+  const cols = getColumns();
+  const i = cols.findIndex(c=>c.key === key);
+  const alvo = i + delta;
+  if(i === -1 || alvo < 0 || alvo >= cols.length) return;
+  await reorderColumns(key, cols[alvo].key);
+  renderSettingsColumnsList();
+  const botao = document.querySelector(`.settings-col-item[data-key="${key}"] .settings-col-edit`);
+  if(botao) botao.focus();
+}
+
 async function colDrop(e, targetKey){
   e.preventDefault();
   e.currentTarget.classList.remove('drag-over');
@@ -359,7 +379,7 @@ function selectTheme(name){
 
 async function saveSettings(){
   const name = document.getElementById('s-name').value.trim();
-  if(!name){alert('Preencha seu nome');return;}
+  if(!name){showToast('Escreva seu nome para continuar.', 'erro');document.getElementById('onboarding-name').focus();return;}
   const soundEnabled = document.getElementById('s-sound').checked;
   const hideDateOnDone = document.getElementById('s-hide-date-done').checked;
   localStorage.setItem('hideDateOnDone', hideDateOnDone ? '1' : '0');
@@ -372,7 +392,7 @@ async function saveSettings(){
     sound_enabled: soundEnabled,
     updated_at: new Date().toISOString()
   });
-  if(error){alert('Erro ao salvar: ' + error.message);return;}
+  if(error){console.error(error);showToast('Não deu para salvar. Confira a conexão e tente de novo.', 'erro');return;}
   state.myName = name;
   state.savedTheme = currentTheme;
   state.soundEnabled = soundEnabled;
@@ -430,7 +450,14 @@ function getColumnForTask(t){
   return cols.find(c=>c.key===t.status) || {key:t.status, name:t.status, color:'#9AAFC2', type:'active'};
 }
 function taskColumnName(t){ return getColumnForTask(t).name; }
-function taskColumnColor(t){ return getColumnForTask(t).color; }
+// Cores vao direto para dentro de atributos style=. Elas vem do banco e, num
+// projeto compartilhado, quem edita o projeto escreve nelas — validar aqui
+// fecha o buraco em todos os pontos de uso de uma vez.
+const COR_PADRAO = '#9AAFC2';
+function corSegura(v){
+  return /^#[0-9a-fA-F]{3,8}$/.test(String(v || '').trim()) ? String(v).trim() : COR_PADRAO;
+}
+function taskColumnColor(t){ return corSegura(getColumnForTask(t).color); }
 function taskColumnType(t){ return getColumnForTask(t).type; }
 function taskDotStyle(t){
   const col = getColumnForTask(t);
@@ -440,7 +467,7 @@ function taskDotStyle(t){
 
 async function persistColumns(){
   const {error} = await sb.from('profiles').update({kanban_columns: state.columns}).eq('id', session.user.id);
-  if(error){alert('Erro ao salvar colunas: ' + error.message);return false;}
+  if(error){console.error(error);showToast('Não deu para salvar as colunas. Tente de novo em instantes.', 'erro');return false;}
   return true;
 }
 
@@ -451,7 +478,7 @@ function renderColorSwatches(){
   wrap.innerHTML = COLUMN_COLOR_PRESETS.map(c=>`
     <button type="button" class="color-swatch-btn ${c===selectedColumnColor?'selected':''}" style="background:${c}" onclick="selectColumnColor('${c}')"></button>
   `).join('') + `
-    <label class="color-swatch-btn color-swatch-custom ${isCustom?'selected':''}" style="${isCustom ? `background:${selectedColumnColor};` : ''}" title="Escolher outra cor">
+    <label class="color-swatch-btn color-swatch-custom ${isCustom?'selected':''}" style="${isCustom ? `background:${corSegura(selectedColumnColor)};` : ''}" title="Escolher outra cor">
       ${isCustom ? '' : '<span>+</span>'}
       <input type="color" value="${selectedColumnColor}" oninput="selectColumnColor(this.value)" style="opacity:0;position:absolute;inset:0;width:100%;height:100%;cursor:pointer;border:none;padding:0;">
     </label>
@@ -464,6 +491,12 @@ function selectColumnColor(c){
 
 function openStatusDetail(filterKey, label){
   document.getElementById('status-modal-add-btn').style.display = 'none';
+  // O nome da coluna e escrito pelo usuario; deriva-lo aqui evita ter que
+  // escapar HTML e string JS ao mesmo tempo no onclick.
+  if(!label){
+    const col = getColumns().find(c=>c.key === filterKey.replace('col:', ''));
+    label = col ? col.name : 'Pendencias';
+  }
   let list;
   if(filterKey === 'overdue'){
     list = personalTasks().filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='overdue');
@@ -542,7 +575,7 @@ function closeColumnModal(){
 
 async function persistProjectColumns(projectId, cols){
   const {error} = await sb.from('projects').update({columns: cols}).eq('id', projectId);
-  if(error){alert('Erro ao salvar colunas do projeto: ' + error.message);return false;}
+  if(error){console.error(error);showToast('Não deu para salvar as colunas do projeto. Tente de novo em instantes.', 'erro');return false;}
   const p = state.projects.find(x=>x.id===projectId);
   if(p) p.columns = cols;
   return true;
@@ -592,9 +625,9 @@ async function deleteColumn(){
     const p = state.projects.find(x=>x.id===editingColumnProjectId);
     if(!p) return;
     let cols = JSON.parse(JSON.stringify(getProjectColumns(p)));
-    if(cols.length <= 1){alert('Precisa ter ao menos uma coluna.');return;}
+    if(cols.length <= 1){showToast('O quadro precisa de pelo menos uma coluna — crie outra antes de excluir esta.', 'erro');return;}
     const hasTasks = state.tasks.some(t=>t.project_id===editingColumnProjectId && t.status===editingColumnKey);
-    if(hasTasks && !confirm('Essa coluna tem tarefas — elas serão movidas para a primeira coluna restante. Continuar?')) return;
+    if(hasTasks && !(await confirmar('As tarefas dela vão para a primeira coluna restante.', {title:'Excluir a coluna?', okLabel:'Excluir coluna'}))) return;
     const fallback = cols.find(c=>c.key !== editingColumnKey);
     const toMove = state.tasks.filter(t=>t.project_id===editingColumnProjectId && t.status===editingColumnKey);
     for(const t of toMove){
@@ -608,9 +641,9 @@ async function deleteColumn(){
   }
 
   const cols = getColumns();
-  if(cols.length <= 1){alert('Precisa ter ao menos uma coluna.');return;}
+  if(cols.length <= 1){showToast('O quadro precisa de pelo menos uma coluna — crie outra antes de excluir esta.', 'erro');return;}
   const hasTasks = state.tasks.some(t=>!t.project_id && t.status===editingColumnKey);
-  if(hasTasks && !confirm('Essa coluna tem tarefas — elas serão movidas para a primeira coluna restante. Continuar?')) return;
+  if(hasTasks && !(await confirmar('As tarefas dela vão para a primeira coluna restante.', {title:'Excluir a coluna?', okLabel:'Excluir coluna'}))) return;
   const fallback = cols.find(c=>c.key !== editingColumnKey);
   const toMove = state.tasks.filter(t=>!t.project_id && t.status===editingColumnKey);
   for(const t of toMove){
@@ -731,7 +764,7 @@ function renderBulkBar(){
       <div class="bulk-bar-count">${n === 0 ? 'Toque nas tarefas para selecionar' : `${n} selecionada${n!==1?'s':''}`}</div>
       <div class="bulk-bar-actions">
         <select class="select" id="bulk-move" ${n===0?'disabled':''} onchange="bulkMove(this.value);this.value='';">
-          <option value="">Mover para...</option>
+          <option value="">Mover para…</option>
           ${getColumns().map(c=>`<option value="${c.key}">${esc(c.name)}</option>`).join('')}
         </select>
         <button class="btn-danger" ${n===0?'disabled':''} onclick="bulkDelete()">Excluir</button>
@@ -768,7 +801,7 @@ async function bulkMove(status){
 async function bulkDelete(){
   const list = selectedTasks().filter(canEditTask);
   if(list.length === 0){ showToast('Nada que você possa excluir'); return; }
-  if(!confirm(`Excluir ${list.length} tarefa${list.length!==1?'s':''}? Isso também remove os eventos do Google Calendar e não tem desfazer.`)) return;
+  if(!await confirmar(`Isso também remove os eventos correspondentes no Google Calendar. Não tem como desfazer.`, {title:`Excluir ${list.length} tarefa${list.length!==1?'s':''}?`, okLabel:'Excluir'})) return;
 
   let n = 0;
   for(const t of list){
@@ -941,7 +974,7 @@ async function saveOnboarding(){
   errorEl.classList.remove('show');
   if(!name){errorEl.textContent = 'Digite seu nome.';errorEl.classList.add('show');return;}
   btn.disabled = true;
-  btn.textContent = 'Salvando...';
+  btn.textContent = 'Salvando…';
   const {error} = await sb.from('profiles').upsert({id: session.user.id, name, theme: 'bluegray', updated_at: new Date().toISOString()});
   btn.disabled = false;
   btn.textContent = 'Continuar';
@@ -974,7 +1007,7 @@ async function doAuth(){
   errorEl.classList.remove('show');
   if(!email || !password){showAuthMessage('Preencha email e senha.');return;}
   btn.disabled = true;
-  btn.textContent = 'Aguarde...';
+  btn.textContent = 'Aguarde…';
   const fn = authMode === 'signin' ? 'signInWithPassword' : 'signUp';
   const {data, error} = await sb.auth[fn](
     authMode === 'signup'
@@ -1001,7 +1034,7 @@ async function signInWithGoogle(){
     btn.disabled = false;
     btn.textContent = 'Continuar com Google';
   };
-  if(btn){ btn.disabled = true; btn.textContent = 'Abrindo Google...'; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Abrindo Google…'; }
 
   // Em caso de sucesso o navegador sai desta página. Se continuarmos aqui, o
   // redirecionamento falhou — normalmente porque o provider Google não está
@@ -1141,18 +1174,18 @@ async function gapi(path, options, retried){
 // que assina o state com a identidade — o navegador só navega.
 async function connectGoogleCalendar(){
   const btn = document.getElementById('google-cal-btn');
-  if(btn){ btn.disabled = true; btn.textContent = 'Abrindo Google...'; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Abrindo Google…'; }
   try{
     const res = await fetch('/api/google/start', {headers: apiHeaders()});
     const data = await res.json();
     if(!res.ok || !data.url){
-      alert('Não foi possível iniciar a conexão: ' + (data.error || 'erro desconhecido'));
+      console.error(data);showToast('Não foi possível iniciar a conexão com o Google. Tente de novo em instantes.', 'erro');
       if(btn){ btn.disabled = false; btn.textContent = 'Conectar'; }
       return;
     }
     window.location.href = data.url;
   }catch(e){
-    alert('Não foi possível falar com o servidor: ' + e.message);
+    console.error(e);showToast('Sem resposta do servidor. Confira sua conexão e tente de novo.', 'erro');
     if(btn){ btn.disabled = false; btn.textContent = 'Conectar'; }
   }
 }
@@ -1581,7 +1614,7 @@ async function syncCalendarNow(){
 async function forceFullGoogleSync(){
   if(!isGoogleConnected()) return;
   const btn = document.getElementById('google-cal-sync-btn');
-  if(btn){ btn.disabled = true; btn.textContent = 'Sincronizando...'; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Sincronizando…'; }
   const n = await syncAllTasksToGoogle();
   await pullFromGoogle({full: true});
   if(btn){ btn.disabled = false; btn.textContent = 'Sincronizar tudo agora'; }
@@ -1786,7 +1819,7 @@ function renderMyAvatar(elId, name){
   if(!el) return;
   const url = getUserAvatarUrl();
   if(url){
-    el.innerHTML = `<img src="${esc(url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">`;
+    el.innerHTML = `<img src="${esc(url)}" alt="" width="96" height="96" decoding="async" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">`;
   } else {
     el.textContent = name[0].toUpperCase();
   }
@@ -1795,17 +1828,17 @@ function renderMyAvatar(elId, name){
 async function uploadAvatar(fileInput){
   const file = fileInput.files[0];
   if(!file) return;
-  if(!file.type.startsWith('image/')){alert('Escolhe uma imagem.');return;}
-  if(file.size > 4 * 1024 * 1024){alert('Imagem muito grande (máx 4MB).');return;}
+  if(!file.type.startsWith('image/')){showToast('Esse arquivo não é uma imagem — escolha um JPG ou PNG.', 'erro');return;}
+  if(file.size > 4 * 1024 * 1024){showToast('Imagem acima de 4\u00a0MB. Reduza o tamanho e envie de novo.', 'erro');return;}
 
   const ext = file.name.split('.').pop();
   const path = `${session.user.id}/avatar.${ext}`;
 
   const btn = document.getElementById('avatar-upload-label');
-  if(btn) btn.textContent = 'Enviando...';
+  if(btn) btn.textContent = 'Enviando…';
 
   const {error: upErr} = await sb.storage.from('avatars').upload(path, file, {upsert: true, cacheControl: '3600'});
-  if(upErr){alert('Erro ao enviar foto: ' + upErr.message);if(btn) btn.textContent = 'Trocar foto';return;}
+  if(upErr){console.error(upErr);showToast('Não deu para enviar a foto. Tente de novo em instantes.', 'erro');if(btn) btn.textContent = 'Trocar foto';return;}
 
   const {data: urlData} = sb.storage.from('avatars').getPublicUrl(path);
   const publicUrl = urlData.publicUrl + '?t=' + Date.now();
@@ -1816,7 +1849,7 @@ async function uploadAvatar(fileInput){
     avatar_url: publicUrl,
     updated_at: new Date().toISOString()
   });
-  if(dbErr){alert('Erro ao salvar: ' + dbErr.message);if(btn) btn.textContent = 'Trocar foto';return;}
+  if(dbErr){console.error(dbErr);showToast('A foto subiu, mas não deu para salvar no perfil. Tente de novo.', 'erro');if(btn) btn.textContent = 'Trocar foto';return;}
 
   state.myAvatarUrl = publicUrl;
   renderMyAvatar('user-avatar', getUserName());
@@ -1835,10 +1868,10 @@ function getUserName(){
 
 async function editUserName(){
   const current = getUserName();
-  const newName = prompt('Como você quer ser chamado?', current);
+  const newName = await perguntar('Como você quer ser chamado?', {value: current, label:'Seu nome', okLabel:'Salvar'});
   if(!newName || newName.trim() === '' || newName === current) return;
   const {error} = await sb.from('profiles').upsert({id: session.user.id, name: newName.trim(), updated_at: new Date().toISOString()});
-  if(error){alert('Erro ao salvar nome: ' + error.message);return;}
+  if(error){console.error(error);showToast('Não deu para salvar o nome. Tente de novo em instantes.', 'erro');return;}
   state.myName = newName.trim();
   render();
 }
@@ -1887,7 +1920,7 @@ async function createTaskRemote(data){
     assigned_to: data.assigned_to || null,
     routine_id: data.routine_id || null
   }).select().single();
-  if(error){alert('Erro ao criar tarefa: ' + error.message);return null;}
+  if(error){console.error(error);showToast('Não deu para criar a tarefa. Confira a conexão e tente de novo.', 'erro');return null;}
   return {
     id: task.id,
     title: task.title,
@@ -1991,7 +2024,7 @@ async function createRoutine(data){
     time: data.time || null,
     weekdays: data.weekdays
   }).select().single();
-  if(error){alert('Erro ao criar rotina: ' + error.message);return null;}
+  if(error){console.error(error);showToast('Não deu para criar a rotina. Tente de novo em instantes.', 'erro');return null;}
   const routine = {
     id: r.id, title: r.title, client: r.client || '', status: r.status,
     priority: r.priority, time: r.time || '', weekdays: r.weekdays || [],
@@ -2012,7 +2045,7 @@ async function updateRoutineRemote(id, data){
     weekdays: data.weekdays,
     updated_at: new Date().toISOString()
   }).eq('id', id);
-  if(error){alert('Erro ao salvar rotina: ' + error.message);return false;}
+  if(error){console.error(error);showToast('Não deu para salvar a rotina. Tente de novo em instantes.', 'erro');return false;}
   const r = state.routines.find(x=>x.id===id);
   if(r) Object.assign(r, data);
   return true;
@@ -2028,7 +2061,7 @@ async function toggleRoutineActive(id){
 
 async function deleteRoutineRemote(id){
   const {error} = await sb.from('routines').delete().eq('id', id);
-  if(error){alert('Erro ao excluir rotina: ' + error.message);return false;}
+  if(error){console.error(error);showToast('Não deu para excluir a rotina. Tente de novo em instantes.', 'erro');return false;}
   state.routines = state.routines.filter(x=>x.id!==id);
   return true;
 }
@@ -2049,13 +2082,13 @@ async function updateTaskRemote(id, data){
   if('project_id' in data) payload.project_id = data.project_id || null;
   if('assigned_to' in data) payload.assigned_to = data.assigned_to || null;
   const {error} = await sb.from('tasks').update(payload).eq('id', id);
-  if(error){alert('Erro ao atualizar: ' + error.message);return false;}
+  if(error){console.error(error);showToast('Não deu para atualizar. Tente de novo em instantes.', 'erro');return false;}
   return true;
 }
 
 async function deleteTaskRemote(id){
   const {error} = await sb.from('tasks').delete().eq('id', id);
-  if(error){alert('Erro ao excluir: ' + error.message);return false;}
+  if(error){console.error(error);showToast('Não deu para excluir. Tente de novo em instantes.', 'erro');return false;}
   return true;
 }
 
@@ -2166,7 +2199,7 @@ async function createProject(){
   const name = nameInput.value.trim();
   if(!name){nameInput.focus();return;}
   const {error} = await sb.from('projects').insert({name, owner_id: session.user.id, owner_email: session.user.email});
-  if(error){alert('Erro ao criar projeto: ' + error.message);return;}
+  if(error){console.error(error);showToast('Não deu para criar o projeto. Tente de novo em instantes.', 'erro');return;}
   nameInput.value = '';
   await loadProjects();
   renderProjectsModal();
@@ -2184,7 +2217,7 @@ async function inviteToProject(projectId){
     role: roleSelect.value,
     status: 'pending'
   });
-  if(error){alert('Erro ao convidar: ' + error.message);return;}
+  if(error){console.error(error);showToast('Não deu para enviar o convite. Confira o email e tente de novo.', 'erro');return;}
   emailInput.value = '';
   await loadProjects();
   renderProjectsModal();
@@ -2208,7 +2241,7 @@ async function generateInviteCode(projectId){
     status: 'pending',
     code
   });
-  if(error){alert('Erro ao gerar código: ' + error.message);return;}
+  if(error){console.error(error);showToast('Não deu para gerar o código. Tente de novo em instantes.', 'erro');return;}
   await loadProjects();
   renderProjectsModal();
   showToast(`Código gerado: ${code}`);
@@ -2219,9 +2252,9 @@ async function joinByCode(){
   const code = input.value.trim().toUpperCase();
   if(!code){input.focus();return;}
   const {data, error} = await sb.rpc('accept_invite_by_code', {p_code: code});
-  if(error){alert('Erro: ' + error.message);return;}
+  if(error){console.error(error);showToast('Não deu para concluir a ação. Tente de novo em instantes.', 'erro');return;}
   if(!data || !data.success){
-    alert(data && data.error ? data.error : 'Código inválido ou já usado.');
+    showToast(data && data.error ? data.error : 'Código inválido ou já usado. Peça um novo para quem te convidou.', 'erro');
     return;
   }
   input.value = '';
@@ -2232,9 +2265,9 @@ async function joinByCode(){
 }
 
 async function removeMember(memberId){
-  if(!confirm('Remover essa pessoa do projeto?')) return;
+  if(!await confirmar('Ela perde o acesso às tarefas compartilhadas deste projeto.', {title:'Remover essa pessoa?', okLabel:'Remover'})) return;
   const {error} = await sb.from('project_members').delete().eq('id', memberId);
-  if(error){alert('Erro: ' + error.message);return;}
+  if(error){console.error(error);showToast('Não deu para concluir a ação. Tente de novo em instantes.', 'erro');return;}
   await loadProjects();
   renderProjectsModal();
   showToast('Removido');
@@ -2252,7 +2285,7 @@ async function acceptInvite(memberId){
       render();
       return;
     }
-    alert('Erro ao aceitar: ' + error.message);
+    console.error(error);showToast('Não deu para aceitar o convite. Tente de novo em instantes.', 'erro');
     return;
   }
   await loadProjects();
@@ -2263,15 +2296,15 @@ async function acceptInvite(memberId){
 
 async function declineInvite(memberId){
   const {error} = await sb.from('project_members').delete().eq('id', memberId);
-  if(error){alert('Erro: ' + error.message);return;}
+  if(error){console.error(error);showToast('Não deu para concluir a ação. Tente de novo em instantes.', 'erro');return;}
   await loadProjects();
   renderProjectsModal();
 }
 
 async function leaveProject(projectId){
-  if(!confirm('Sair deste projeto? Você perde o acesso às tarefas compartilhadas dele.')) return;
+  if(!await confirmar('Você perde o acesso às tarefas compartilhadas dele.', {title:'Sair deste projeto?', okLabel:'Sair do projeto'})) return;
   const {error} = await sb.from('project_members').delete().eq('project_id', projectId).eq('user_id', session.user.id);
-  if(error){alert('Erro ao sair: ' + error.message);return;}
+  if(error){console.error(error);showToast('Não deu para sair do projeto. Tente de novo em instantes.', 'erro');return;}
   if(state.view === 'project' && state.currentProjectId === projectId){
     state.view = 'dashboard';
     state.currentProjectId = null;
@@ -2283,9 +2316,9 @@ async function leaveProject(projectId){
 }
 
 async function deleteProject(projectId){
-  if(!confirm('Excluir este projeto? As tarefas voltam a ser privadas, mas o projeto some pra todo mundo.')) return;
+  if(!await confirmar('As tarefas voltam a ser privadas, mas o projeto some para todo mundo.', {title:'Excluir este projeto?', okLabel:'Excluir projeto'})) return;
   const {error} = await sb.from('projects').delete().eq('id', projectId);
-  if(error){alert('Erro: ' + error.message);return;}
+  if(error){console.error(error);showToast('Não deu para concluir a ação. Tente de novo em instantes.', 'erro');return;}
   await loadProjects();
   renderProjectsModal();
   showToast('Projeto excluído');
@@ -2319,7 +2352,7 @@ async function saveProjectNotes(){
   if(!el) return;
   const p = state.projects.find(x=>x.id===state.currentProjectId);
   if(!p) return;
-  const html = el.innerHTML;
+  const html = sanitizeNotesHtml(el.innerHTML);
   const {error} = await sb.from('projects').update({notes: html}).eq('id', p.id);
   if(!error){
     p.notes = html;
@@ -2338,9 +2371,11 @@ function execEditorCmd(cmd, value){
   scheduleProjectNotesSave();
 }
 
-function insertProjectImage(){
-  const url = prompt('Cole o link da imagem:');
-  if(!url) return;
+async function insertProjectImage(){
+  const raw = await perguntar('Inserir imagem', {label:'Endereço da imagem', placeholder:'https://…', okLabel:'Inserir'});
+  if(!raw) return;
+  const url = safeUrl(raw, true);
+  if(!url){ showToast('Link de imagem inválido — use um endereço http:// ou https://', 'erro'); return; }
   document.getElementById('project-notes-editor').focus();
   document.execCommand('insertImage', false, url);
   scheduleProjectNotesSave();
@@ -2409,7 +2444,7 @@ function renderProjectPage(){
           </div>` : ''}
         </div>
       </div>
-      <div id="project-notes-editor" class="project-notes-editor" ${canEdit ? 'contenteditable="true"' : ''} oninput="scheduleProjectNotesSave()" data-placeholder="${canEdit ? 'Escreva aqui — contexto, links, decisões do projeto...' : 'Nenhuma nota ainda.'}">${p.notes || ''}</div>
+      <div id="project-notes-editor" class="project-notes-editor" ${canEdit ? 'contenteditable="true"' : ''} oninput="scheduleProjectNotesSave()" data-placeholder="${canEdit ? 'Escreva aqui — contexto, links, decisões do projeto…' : 'Nenhuma nota ainda.'}">${sanitizeNotesHtml(p.notes)}</div>
     </div>
 
     <div class="glass panel" style="padding-bottom:20px;">
@@ -2423,7 +2458,7 @@ function renderProjectPage(){
       <div class="kanban-filter-row">
         <div class="search-box">
           <svg class="search-box-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="search" class="input" id="kf-search" name="kf-search" autocomplete="off" placeholder="Pesquisar tarefas..." value="${esc(state.filter.kanbanSearch)}">
+          <input type="search" class="input" id="kf-search" name="kf-search" autocomplete="off" placeholder="Pesquisar tarefas…" value="${esc(state.filter.kanbanSearch)}">
         </div>
         <select class="select" id="kf-assignee" style="width:auto;">
           ${assigneeOptions.map(o=>`<option value="${o.id}" ${state.filter.kanbanAssignee===o.id?'selected':''}>${esc(o.label)}</option>`).join('')}
@@ -2448,14 +2483,14 @@ function renderProjectPage(){
             return `
               <div class="glass kb-col kb-col-collapsed" data-status="${col.key}" onclick="toggleColExpanded('${col.key}')" title="Coluna oculta — toque para abrir">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                <div class="kb-col-collapsed-label"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}</div>
+                <div class="kb-col-collapsed-label"><span class="kb-col-dot" style="background:${corSegura(col.color)}"></span>${esc(col.name)}</div>
                 <div class="kb-col-count">${list.length}</div>
               </div>`;
           }
           return `
             <div class="glass kb-col" data-status="${col.key}" ondragover="dragOver(event)" ondrop="drop(event,'${col.key}')" ondragleave="dragLeave(event)">
               <div class="kb-col-head">
-                <div class="kb-col-title"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}</div>
+                <div class="kb-col-title"><span class="kb-col-dot" style="background:${corSegura(col.color)}"></span>${esc(col.name)}</div>
                 <div style="display:flex;align-items:center;gap:6px;">
                   <div class="kb-col-count">${list.length}</div>
                   ${col.hidden ? `<button class="kb-col-collapse-btn" onclick="toggleColExpanded('${col.key}')" title="Recolher coluna">
@@ -2554,8 +2589,8 @@ let commentProfileCache = {};
 
 function fmtCommentTime(iso){
   const d = new Date(iso);
-  const dias = ['dom','seg','ter','qua','qui','sex','sáb'];
-  const meses = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  const dias = DIAS_CURTOS;
+  const meses = MESES_CURTOS;
   const now = new Date();
   const isToday = d.toDateString() === now.toDateString();
   const time = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
@@ -2618,22 +2653,22 @@ async function sendComment(){
     content
   });
   if(btn) btn.disabled = false;
-  if(error){alert('Erro ao comentar: ' + error.message);return;}
+  if(error){console.error(error);showToast('Não deu para enviar o comentário. Tente de novo em instantes.', 'erro');return;}
   input.value = '';
   await refreshComments();
 }
 
 async function deleteComment(commentId){
-  if(!confirm('Excluir esse comentário?')) return;
+  if(!await confirmar('O comentário some para todos os membros do projeto.', {title:'Excluir esse comentário?', okLabel:'Excluir'})) return;
   const {error} = await sb.from('task_comments').delete().eq('id', commentId);
-  if(error){alert('Erro: ' + error.message);return;}
+  if(error){console.error(error);showToast('Não deu para concluir a ação. Tente de novo em instantes.', 'erro');return;}
   await refreshComments();
 }
 
 function avatarChip(profile, fallbackChar){
   const url = profile && profile.avatar_url;
   if(url){
-    return `<div class="member-avatar"><img src="${esc(url)}" alt=""></div>`;
+    return `<div class="member-avatar"><img src="${esc(url)}" alt="" width="28" height="28" loading="lazy" decoding="async"></div>`;
   }
   return `<div class="member-avatar member-avatar-fallback">${esc((fallbackChar||'?').toUpperCase())}</div>`;
 }
@@ -2762,8 +2797,8 @@ function fmtDateFull(iso){
   if(!iso) return 'Sem prazo';
   const [y,m,d] = iso.split('-');
   const dt = new Date(+y, +m-1, +d);
-  const dias = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
-  const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const dias = DIAS_LONGOS;
+  const meses = MESES_CURTOS_CAP;
   return `${dias[dt.getDay()]}, ${+d} ${meses[+m-1]}`;
 }
 function dateStatus(iso){
@@ -2781,13 +2816,43 @@ function taskDateStatus(t){
   if(taskColumnType(t) === 'done') return t.date ? 'done' : '';
   return dateStatus(t.date);
 }
+/* --- Nomes de data --------------------------------------------------------
+   Estavam escritos a mao em 6 lugares (com tres grafias diferentes de mes).
+   Agora saem do Intl uma vez so; a indexacao continua a mesma de antes. */
+const LOCALE_APP = 'pt-BR';
+function nomesDeData(tipo, estilo){
+  const fmt = new Intl.DateTimeFormat(LOCALE_APP, tipo === 'mes'
+    ? {month: estilo, timeZone: 'UTC'}
+    : {weekday: estilo, timeZone: 'UTC'});
+  const out = [];
+  if(tipo === 'mes'){
+    for(let m = 0; m < 12; m++) out.push(fmt.format(new Date(Date.UTC(2021, m, 15))));
+  } else {
+    // 2021-08-01 caiu num domingo, entao o indice bate com getDay().
+    for(let d = 0; d < 7; d++) out.push(fmt.format(new Date(Date.UTC(2021, 7, 1 + d))));
+  }
+  return out.map(t=>t.replace(/\.$/, ''));
+}
+const capitaliza = (t)=> t.charAt(0).toUpperCase() + t.slice(1);
+const MESES_CURTOS = nomesDeData('mes', 'short');
+const MESES_CURTOS_CAP = MESES_CURTOS.map(capitaliza);
+const MESES_LONGOS = nomesDeData('mes', 'long');
+const MESES_LONGOS_CAP = MESES_LONGOS.map(capitaliza);
+const DIAS_CURTOS = nomesDeData('dia', 'short');
+const DIAS_CURTOS_CAP = DIAS_CURTOS.map(capitaliza);
+const DIAS_LONGOS = nomesDeData('dia', 'long').map(t=>capitaliza(t).replace('-feira', ''));
+
 let toastTimer = null;
-function showToast(msg){
+function showToast(msg, type){
   const old = document.querySelector('.toast');
   if(old) old.remove();
   if(toastTimer) clearTimeout(toastTimer);
   const t = document.createElement('div');
   t.className = 'toast';
+  if(type) t.dataset.type = type;
+  // Sem isto, nada do que o app avisa chega a quem usa leitor de tela.
+  t.setAttribute('role', type === 'erro' ? 'alert' : 'status');
+  t.setAttribute('aria-live', type === 'erro' ? 'assertive' : 'polite');
   t.innerHTML = `<span class="toast-dot"></span>${esc(msg)}`;
   document.body.appendChild(t);
   toastTimer = setTimeout(()=>{
@@ -2795,7 +2860,114 @@ function showToast(msg){
     t.style.opacity = '0';
     t.style.transform = 'translate(-50%, 8px)';
     setTimeout(()=>t.remove(), 250);
-  }, 2200);
+  }, type === 'erro' ? 5000 : 2200);
+}
+
+/* --- Dialogos do app ------------------------------------------------------
+   confirm()/prompt()/alert() nativos travam a aba inteira, ignoram o tema e
+   nao dao para rotular. Estes resolvem uma Promise e usam o mesmo modal do
+   resto do app. */
+/* --- Foco nos modais -----------------------------------------------------
+   Sem isto o Tab passeia pela pagina atras do modal aberto, e ao fechar o foco
+   cai no <body> — quem navega por teclado perde o lugar. */
+const FOCUSABLE_SEL = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
+const modalFocusStack = [];
+
+function focusablesIn(root){
+  return Array.from(root.querySelectorAll(FOCUSABLE_SEL)).filter(el=>el.offsetParent !== null);
+}
+
+function topOpenModal(){
+  const abertos = Array.from(document.querySelectorAll('.modal-bg.open'));
+  return abertos.length ? abertos[abertos.length - 1] : null;
+}
+
+function watchModalFocus(){
+  document.querySelectorAll('.modal-bg').forEach(modal=>{
+    new MutationObserver(()=>{
+      const aberto = modal.classList.contains('open');
+      const marcado = modal.dataset.focusTracked === '1';
+      if(aberto && !marcado){
+        modal.dataset.focusTracked = '1';
+        modalFocusStack.push(document.activeElement);
+        const alvos = focusablesIn(modal);
+        if(alvos.length) alvos[0].focus();
+      } else if(!aberto && marcado){
+        delete modal.dataset.focusTracked;
+        const anterior = modalFocusStack.pop();
+        if(anterior && document.contains(anterior)) anterior.focus();
+      }
+    }).observe(modal, {attributes: true, attributeFilter: ['class']});
+  });
+}
+
+document.addEventListener('keydown', (e)=>{
+  if(e.key !== 'Tab') return;
+  const modal = topOpenModal();
+  if(!modal) return;
+  const alvos = focusablesIn(modal);
+  if(!alvos.length) return;
+  const primeiro = alvos[0], ultimo = alvos[alvos.length - 1];
+  if(e.shiftKey && document.activeElement === primeiro){ e.preventDefault(); ultimo.focus(); }
+  else if(!e.shiftKey && document.activeElement === ultimo){ e.preventDefault(); primeiro.focus(); }
+  else if(!modal.contains(document.activeElement)){ e.preventDefault(); primeiro.focus(); }
+});
+
+let dialogResolver = null;
+
+function askDialog(opts){
+  const o = opts || {};
+  const modal = document.getElementById('confirm-modal');
+  document.getElementById('confirm-modal-title').textContent = o.title || 'Confirmar';
+  document.getElementById('confirm-modal-text').textContent = o.text || '';
+  const okBtn = document.getElementById('confirm-modal-ok');
+  okBtn.textContent = o.okLabel || 'Confirmar';
+  okBtn.classList.toggle('btn-danger', !!o.danger);
+  okBtn.classList.toggle('btn-primary', !o.danger);
+
+  const field = document.getElementById('confirm-modal-field');
+  const input = document.getElementById('confirm-modal-input');
+  const isPrompt = !!o.input;
+  field.style.display = isPrompt ? '' : 'none';
+  if(isPrompt){
+    document.getElementById('confirm-modal-label').textContent = o.input.label || 'Valor';
+    input.value = o.input.value || '';
+    input.placeholder = o.input.placeholder || '';
+  }
+
+  modal.classList.add('open');
+  setTimeout(()=>{ (isPrompt ? input : okBtn).focus(); }, 50);
+
+  return new Promise(resolve=>{ dialogResolver = resolve; });
+}
+
+// null = cancelou. Para confirmacao devolve true; para prompt, o texto.
+function resolveDialog(value){
+  const modal = document.getElementById('confirm-modal');
+  if(!modal.classList.contains('open')) return;
+  modal.classList.remove('open');
+  const r = dialogResolver;
+  dialogResolver = null;
+  if(r) r(value);
+}
+
+function submitDialog(){
+  const field = document.getElementById('confirm-modal-field');
+  if(field.style.display === 'none') return resolveDialog(true);
+  const v = document.getElementById('confirm-modal-input').value.trim();
+  resolveDialog(v || null);
+}
+
+function confirmar(text, opts){
+  const o = opts || {};
+  return askDialog({title: o.title || 'Tem certeza?', text, okLabel: o.okLabel || 'Confirmar', danger: o.danger !== false})
+    .then(v=> v === true);
+}
+
+function perguntar(text, opts){
+  const o = opts || {};
+  return askDialog({title: o.title || text, text: o.text || '', okLabel: o.okLabel || 'Salvar', danger: false,
+                    input: {label: o.label || text, value: o.value || '', placeholder: o.placeholder || ''}});
 }
 
 function animateCount(el, target){
@@ -2812,10 +2984,66 @@ function animateCount(el, target){
   requestAnimationFrame(tick);
 }
 
+// Escapa para texto E para dentro de atributo. A versao antiga usava
+// textContent -> innerHTML, que nao escapa aspas: qualquer titulo com " escapava
+// do atributo e virava execucao de script.
 function esc(str){
-  const d = document.createElement('div');
-  d.textContent = str || '';
-  return d.innerHTML;
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// --- Sanitizacao das notas de projeto -------------------------------------
+// As notas sao HTML de um contenteditable e ficam visiveis para todos os membros
+// do projeto. Sem allowlist, um membro injeta script no navegador dos outros.
+const NOTES_ALLOWED_TAGS = new Set(['B','STRONG','I','EM','U','S','STRIKE','H1','H2','H3','H4','H5','H6','P','BR','HR','DIV','SPAN','UL','OL','LI','BLOCKQUOTE','CODE','PRE','A','IMG']);
+const NOTES_ALLOWED_ATTRS = {A: ['href'], IMG: ['src','alt']};
+const NOTES_DROP_TAGS = new Set(['SCRIPT','STYLE','IFRAME','FRAME','FRAMESET','OBJECT','EMBED','APPLET','LINK','META','BASE','FORM','INPUT','BUTTON','SELECT','TEXTAREA','SVG','MATH','TEMPLATE','NOSCRIPT','AUDIO','VIDEO','SOURCE']);
+
+function safeUrl(value, allowInlineImage){
+  const v = String(value == null ? '' : value).trim();
+  if(/^(https?:\/\/|mailto:)/i.test(v)) return v;
+  if(allowInlineImage && /^data:image\/(png|jpe?g|gif|webp|avif);base64,[A-Za-z0-9+/=\s]*$/i.test(v)) return v;
+  return '';
+}
+
+function sanitizeNotesHtml(html){
+  const doc = new DOMParser().parseFromString(String(html == null ? '' : html), 'text/html');
+  const clean = (parent)=>{
+    Array.from(parent.childNodes).forEach(node=>{
+      if(node.nodeType === Node.TEXT_NODE) return;
+      if(node.nodeType !== Node.ELEMENT_NODE){ node.remove(); return; }
+      const tag = node.tagName.toUpperCase();
+      if(NOTES_DROP_TAGS.has(tag)){ node.remove(); return; }
+      clean(node);
+      if(!NOTES_ALLOWED_TAGS.has(tag)){ node.replaceWith(...node.childNodes); return; }
+      const allowed = NOTES_ALLOWED_ATTRS[tag] || [];
+      let drop = false;
+      Array.from(node.attributes).forEach(attr=>{
+        const name = attr.name.toLowerCase();
+        if(allowed.indexOf(name) === -1){ node.removeAttribute(attr.name); return; }
+        if(name === 'href'){
+          const u = safeUrl(attr.value, false);
+          if(u) node.setAttribute('href', u); else node.removeAttribute('href');
+        }
+        if(name === 'src'){
+          const u = safeUrl(attr.value, true);
+          if(u) node.setAttribute('src', u); else drop = true;
+        }
+      });
+      if(drop){ node.remove(); return; }
+      if(tag === 'A' && node.getAttribute('href')){
+        node.setAttribute('target', '_blank');
+        node.setAttribute('rel', 'noopener noreferrer');
+      }
+      if(tag === 'IMG'){ node.setAttribute('loading', 'lazy'); }
+    });
+  };
+  clean(doc.body);
+  return doc.body.innerHTML;
 }
 
 function updateNav(){
@@ -2823,8 +3051,8 @@ function updateNav(){
     el.classList.toggle('active', el.dataset.view === state.view);
   });
   const now = new Date();
-  const dias = ['dom','seg','ter','qua','qui','sex','sáb'];
-  const meses = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  const dias = DIAS_CURTOS;
+  const meses = MESES_CURTOS;
   document.getElementById('today-date').textContent = `${dias[now.getDay()]}, ${now.getDate()} ${meses[now.getMonth()]}`;
   const overdue = personalTasks().filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='overdue').length;
   const today = personalTasks().filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='today').length;
@@ -2863,6 +3091,15 @@ function render(){
   lastRenderedView = viewKey;
   const keepScroll = sameView ? m.scrollLeft : 0;
 
+  // O sync do Google e o realtime chamam render() a qualquer momento. Trocar o
+  // innerHTML inteiro sem isto apaga o campo em que a pessoa esta digitando.
+  const ativo = document.activeElement;
+  const focoId = ativo && ativo.id && m.contains(ativo) ? ativo.id : null;
+  let selIni = null, selFim = null;
+  if(focoId){
+    try{ selIni = ativo.selectionStart; selFim = ativo.selectionEnd; }catch(e){}
+  }
+
   if(state.view === 'dashboard') m.innerHTML = renderDashboard();
   else if(state.view === 'kanban') m.innerHTML = renderKanban();
   else if(state.view === 'calendar') m.innerHTML = renderCalendar();
@@ -2874,6 +3111,16 @@ function render(){
   skipEntranceOnce = false;
   m.scrollLeft = keepScroll;
   attachEvents();
+
+  if(focoId){
+    const denovo = document.getElementById(focoId);
+    if(denovo){
+      denovo.focus();
+      if(selIni !== null){
+        try{ denovo.setSelectionRange(selIni, selFim); }catch(e){}
+      }
+    }
+  }
 }
 
 function renderDashboard(){
@@ -2932,7 +3179,7 @@ function renderDashboard(){
       </div>
     </div>
     <div class="status-row">
-      ${colCounts.map(c=>`<div class="status-item" onclick="openStatusDetail('col:${c.key}', '${esc(c.name).replace(/'/g,"\\'")}')"><div class="lbl">${esc(c.name)}</div><div class="val" data-count="${c.count}">0</div></div>`).join('')}
+      ${colCounts.map(c=>`<div class="status-item" onclick="openStatusDetail('col:${c.key}')"><div class="lbl">${esc(c.name)}</div><div class="val" data-count="${c.count}">0</div></div>`).join('')}
       <div class="status-item overdue" onclick="openStatusDetail('overdue', 'Atrasadas')"><div class="lbl">Atrasadas</div><div class="val" data-count="${overdue}">0</div></div>
     </div>
     <div class="date-filter-row">
@@ -3041,8 +3288,8 @@ function renderTodayAlert(){
 function openMiniCalDay(iso){
   const [y,m,d] = iso.split('-').map(Number);
   const dt = new Date(y, m-1, d);
-  const dias = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
-  const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  const dias = DIAS_LONGOS;
+  const meses = MESES_LONGOS;
   const label = `${dias[dt.getDay()]}, ${d} de ${meses[m-1]}`;
 
   let list = personalTasks().filter(t=>t.date === iso);
@@ -3088,7 +3335,7 @@ function renderMiniCal(){
   const daysInMonth = new Date(year, month+1, 0).getDate();
   const prevMonthDays = new Date(year, month, 0).getDate();
   const dow = ['D','S','T','Q','Q','S','S'];
-  const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const meses = MESES_LONGOS_CAP;
   const today = new Date();
   const tasksWithDate = new Set(personalTasks().filter(t=>t.date && taskColumnType(t)!=='done').map(t=>t.date));
 
@@ -3162,14 +3409,14 @@ function renderKanban(){
       return `
         <div class="glass kb-col kb-col-collapsed" data-status="${col.key}" onclick="toggleColExpanded('${col.key}')" title="Coluna oculta — toque para abrir">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-          <div class="kb-col-collapsed-label"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}</div>
+          <div class="kb-col-collapsed-label"><span class="kb-col-dot" style="background:${corSegura(col.color)}"></span>${esc(col.name)}</div>
           <div class="kb-col-count">${list.length}</div>
         </div>`;
     }
     return `
       <div class="glass kb-col" data-status="${col.key}" ondragover="dragOver(event)" ondrop="drop(event,'${col.key}')" ondragleave="dragLeave(event)">
         <div class="kb-col-head">
-          <div class="kb-col-title"><span class="kb-col-dot" style="background:${col.color}"></span>${esc(col.name)}${col.type==='done' ? '<span class="kb-col-hint" title="Concluídos somem toda semana no domingo — o histórico fica registrado no Calendário">↻</span>' : ''}</div>
+          <div class="kb-col-title"><span class="kb-col-dot" style="background:${corSegura(col.color)}"></span>${esc(col.name)}${col.type==='done' ? '<span class="kb-col-hint" title="Concluídos somem toda semana no domingo — o histórico fica registrado no Calendário">↻</span>' : ''}</div>
           <div style="display:flex;align-items:center;gap:6px;">
             <div class="kb-col-count">${list.length}</div>
             ${col.hidden ? `<button class="kb-col-collapse-btn" onclick="toggleColExpanded('${col.key}')" title="Recolher coluna">
@@ -3234,7 +3481,7 @@ function renderKanban(){
     <div class="kanban-filter-row">
       <div class="search-box">
         <svg class="search-box-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="search" class="input" id="kf-search" name="kf-search" autocomplete="off" placeholder="Pesquisar tarefas..." value="${esc(state.filter.kanbanSearch)}">
+        <input type="search" class="input" id="kf-search" name="kf-search" autocomplete="off" placeholder="Pesquisar tarefas…" value="${esc(state.filter.kanbanSearch)}">
       </div>
       <select class="select" id="kf-client" style="width:auto;">
         <option value="">Todos clientes</option>
@@ -3449,8 +3696,8 @@ function renderCalendar(){
   const startDow = first.getDay();
   const daysInMonth = new Date(year, month+1, 0).getDate();
   const dow = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
-  const dowShort = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const dowShort = DIAS_CURTOS_CAP;
+  const meses = MESES_LONGOS_CAP;
   const today = new Date();
   const tasksByDate = {};
   personalTasks().forEach(t=>{
@@ -3543,8 +3790,8 @@ function renderCalendar(){
 function renderDayPanel(iso, tasks){
   const [y,m,d] = iso.split('-');
   const dt = new Date(+y, +m-1, +d);
-  const dias = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
-  const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  const dias = DIAS_LONGOS;
+  const meses = MESES_LONGOS;
   const dateLabel = `${dias[dt.getDay()]}, ${+d} de ${meses[+m-1]}`;
 
   return `
@@ -3643,7 +3890,7 @@ function renderTable(){
     </div>
     <div class="glass table-view">
       <div class="table-filters">
-        <input type="search" class="input search" id="f-search" name="f-search" autocomplete="off" placeholder="Buscar por título, cliente ou notas..." value="${esc(state.filter.search)}">
+        <input type="search" class="input search" id="f-search" name="f-search" autocomplete="off" placeholder="Buscar por título, cliente ou notas…" value="${esc(state.filter.search)}">
         <select class="select" id="f-project" style="width:auto;">
           <option value="">Pessoal (minhas tarefas)</option>
           ${myProjects.map(p=>`<option value="${p.id}" ${projectFilter===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}
@@ -3688,6 +3935,18 @@ function renderTable(){
 }
 
 function attachEvents(){
+  const notesEl = document.getElementById('project-notes-editor');
+  if(notesEl && notesEl.isContentEditable){
+    notesEl.onpaste = (e)=>{
+      e.preventDefault();
+      const cb = e.clipboardData;
+      const html = cb ? cb.getData('text/html') : '';
+      const text = cb ? cb.getData('text/plain') : '';
+      if(html) document.execCommand('insertHTML', false, sanitizeNotesHtml(html));
+      else if(text) document.execCommand('insertText', false, text);
+      scheduleProjectNotesSave();
+    };
+  }
   document.querySelectorAll('.status-item .val[data-count]').forEach(el=>{
     animateCount(el, parseInt(el.dataset.count, 10) || 0);
   });
@@ -3701,7 +3960,7 @@ function attachEvents(){
     window.scrollTo(0,0);
   };});
   const fs = document.getElementById('f-search');
-  if(fs) fs.oninput = (e)=>{state.filter.search = e.target.value;skipEntranceOnce=true;render();document.getElementById('f-search').focus();};
+  if(fs) fs.oninput = (e)=>{state.filter.search = e.target.value;skipEntranceOnce=true;render();};
   const fst = document.getElementById('f-status');
   if(fst) fst.onchange = (e)=>{state.filter.status = e.target.value;skipEntranceOnce=true;render();};
   const fc = document.getElementById('f-client');
@@ -3720,7 +3979,7 @@ function attachEvents(){
   const kfa = document.getElementById('kf-assignee');
   if(kfa) kfa.onchange = (e)=>{state.filter.kanbanAssignee = e.target.value;skipEntranceOnce=true;render();};
   const kfs = document.getElementById('kf-search');
-  if(kfs) kfs.oninput = (e)=>{state.filter.kanbanSearch = e.target.value;skipEntranceOnce=true;render();const el=document.getElementById('kf-search');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}};
+  if(kfs) kfs.oninput = (e)=>{state.filter.kanbanSearch = e.target.value;skipEntranceOnce=true;render();};
 
   document.querySelectorAll('.cal-cell[data-date]').forEach(cell=>{
     cell.addEventListener('click', (e)=>{
@@ -3823,7 +4082,7 @@ function openModal(id, prefillDate, prefillProjectId){
     setupGcalToggle(t, canEdit);
     commentsField.style.display = '';
     currentCommentTaskId = id;
-    document.getElementById('task-comments-list').innerHTML = `<div class="empty" style="padding:16px 12px;font-size:11.5px;">Carregando...</div>`;
+    document.getElementById('task-comments-list').innerHTML = `<div class="empty" style="padding:16px 12px;font-size:11.5px;">Carregando…</div>`;
     refreshComments();
   }else{
     title.textContent = 'Nova tarefa';
@@ -3899,8 +4158,13 @@ function filterClientSuggestions(){
     const label = (q && idx >= 0)
       ? `${esc(c.slice(0,idx))}<strong>${esc(c.slice(idx,idx+q.length))}</strong>${esc(c.slice(idx+q.length))}`
       : esc(c);
-    return `<div class="client-suggestion-item" onmousedown="selectClientSuggestion('${c.replace(/'/g,"\\'")}')">${label}</div>`;
+    // O nome do cliente e texto livre: passa por data- em vez de virar string JS
+    // dentro de um atributo, que exigiria escapar HTML e JS ao mesmo tempo.
+    return `<div class="client-suggestion-item" role="option" tabindex="-1" data-client="${esc(c)}">${label}</div>`;
   }).join('');
+  wrap.querySelectorAll('.client-suggestion-item').forEach(el=>{
+    el.onmousedown = ()=> selectClientSuggestion(el.dataset.client);
+  });
   wrap.classList.add('open');
 }
 
@@ -4017,7 +4281,7 @@ async function saveTask(){
 
 async function deleteTask(){
   if(!state.editingId) return;
-  if(!confirm('Excluir esta tarefa?')) return;
+  if(!await confirmar('A tarefa e o evento dela no Google Calendar são removidos.', {title:'Excluir esta tarefa?', okLabel:'Excluir'})) return;
   const t = state.tasks.find(x=>x.id===state.editingId);
   if(t) await forgetTaskInGoogle(t);
   const ok = await deleteTaskRemote(state.editingId);
@@ -4050,6 +4314,7 @@ document.getElementById('status-modal').addEventListener('click', (e)=>{if(e.tar
 document.getElementById('projects-modal').addEventListener('click', (e)=>{if(e.target.id === 'projects-modal') closeProjectsModal();});
 document.addEventListener('keydown', (e)=>{
   if(e.key === 'Escape'){
+    if(document.getElementById('confirm-modal').classList.contains('open')){ resolveDialog(null); return; }
     closeModal();
     closeSettings();
     closeColumnModal();
@@ -4061,4 +4326,17 @@ document.addEventListener('keydown', (e)=>{
   }
 });
 
+// Nao havia aviso nenhum: fechar a aba com nota em edicao ou modal preenchido
+// perdia o conteudo em silencio.
+window.addEventListener('beforeunload', (e)=>{
+  const notaPendente = !!notesSaveTimer;
+  const modalAberto = document.getElementById('modal').classList.contains('open');
+  const tituloPreenchido = modalAberto && (document.getElementById('m-title').value || '').trim() !== '';
+  if(notaPendente || tituloPreenchido){
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
+watchModalFocus();
 checkAuth();

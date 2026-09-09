@@ -2,20 +2,24 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#E9EDF1">
+<meta name="color-scheme" content="light dark">
 <title>samyest.mind</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/favicon.svg">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<a class="skip-link" href="#main">Pular para o conteudo</a>
 <div class="app" id="app" style="display:none;">
   <div class="mobile-topbar">
     <div class="mobile-topbar-brand">
@@ -23,46 +27,46 @@
       <span>samyest<span style="color:var(--palette-8);">.</span>mind</span>
     </div>
     <div style="display:flex;gap:8px;">
-      <button id="refresh-btn-mobile" class="refresh-btn" onclick="refreshAll()" title="Atualizar agora">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      <button id="refresh-btn-mobile" class="refresh-btn" onclick="refreshAll()" title="Atualizar agora" aria-label="Atualizar agora">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
       </button>
-      <button class="mobile-topbar-settings" onclick="openSettings()" title="Configurações">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      <button class="mobile-topbar-settings" onclick="openSettings()" title="Configurações" aria-label="Configurações">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
       </button>
     </div>
   </div>
   <aside>
     <div class="brand">
       <div class="brand-dot">s</div>
-      <div class="brand-name">samyest<span>.</span>mind</div>
+      <div class="brand-name" translate="no">samyest<span>.</span>mind</div>
     </div>
     <nav>
       <div class="nav-label">Trabalho</div>
       <button class="nav-item" data-view="dashboard">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>
+        <svg aria-hidden="true" focusable="false" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>
         Visão geral
       </button>
       <button class="nav-item" data-view="kanban">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="14" rx="1.5"/></svg>
+        <svg aria-hidden="true" focusable="false" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="14" rx="1.5"/></svg>
         Kanban
       </button>
       <button class="nav-item" data-view="calendar">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <svg aria-hidden="true" focusable="false" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         Calendário
       </button>
       <button class="nav-item" data-view="table">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        <svg aria-hidden="true" focusable="false" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
         Todas as tarefas
       </button>
       <div id="sidebar-projects"></div>
       <button class="settings-btn" onclick="openSettings()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         Configurações
       </button>
     </nav>
     <div class="side-footer">
       <div id="today-date">—</div>
-      <div id="today-hint">carregando</div>
+      <div id="today-hint">carregando…</div>
     </div>
     <div class="side-user">
       <div class="side-user-avatar" id="user-avatar">?</div>
@@ -70,41 +74,41 @@
         <div class="side-user-email" id="user-name-display">—</div>
         <div class="side-user-email" id="user-email" style="color:var(--text-muted);font-size:10.5px;">—</div>
       </div>
-      <button class="side-user-logout" onclick="editUserName()" title="Editar nome" style="margin-right:2px;">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+      <button class="side-user-logout" onclick="editUserName()" title="Editar nome" aria-label="Editar nome" style="margin-right:2px;">
+        <svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
       </button>
       <button class="side-user-logout" onclick="logout()" title="Sair">SAIR</button>
     </div>
   </aside>
-  <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Esconder/mostrar barra lateral">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="15 18 9 12 15 6"/></svg>
+  <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Esconder/mostrar barra lateral" aria-label="Esconder ou mostrar a barra lateral" aria-expanded="true">
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="15 18 9 12 15 6"/></svg>
   </button>
 
   <nav class="mobile-nav">
     <button class="mobile-nav-item" data-view="dashboard">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>
       <span>Início</span>
     </button>
     <button class="mobile-nav-item" data-view="kanban">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="14" rx="1.5"/></svg>
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="14" rx="1.5"/></svg>
       <span>Kanban</span>
     </button>
-    <button class="mobile-nav-fab" onclick="openModal()" title="Nova tarefa">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    <button class="mobile-nav-fab" onclick="openModal()" title="Nova tarefa" aria-label="Nova tarefa">
+      <svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
     </button>
     <button class="mobile-nav-item" data-view="calendar">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
       <span>Agenda</span>
     </button>
     <button class="mobile-nav-item" data-view="projects">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
       <span>Projetos</span>
     </button>
   </nav>
 
-  <main id="main">
+  <main id="main" tabindex="-1">
     <div class="loading-state">
-      carregando seu espaço
+      carregando seu espaço…
       <span class="loading-dots"><span></span><span></span><span></span></span>
     </div>
   </main>
@@ -114,14 +118,15 @@
   <div class="auth-card">
     <div class="auth-brand">
       <div class="brand-dot">s</div>
-      <div class="brand-name">samyest<span>.</span>mind</div>
+      <div class="brand-name" translate="no">samyest<span>.</span>mind</div>
     </div>
-    <div class="auth-title">Como devemos te chamar?</div>
+    <h1 class="auth-title">Como devemos te chamar?</h1>
     <div class="auth-sub">Esse nome vai aparecer nas saudações e no seu perfil.</div>
-    <div class="auth-error" id="onboarding-error"></div>
+    <div class="auth-error" id="onboarding-error" role="alert" aria-live="assertive"></div>
     <form onsubmit="event.preventDefault();saveOnboarding();">
       <div class="auth-field">
-        <input type="text" class="input" id="onboarding-name" placeholder="Seu nome">
+        <label class="sr-only" for="onboarding-name">Seu nome</label>
+        <input type="text" class="input" id="onboarding-name" name="name" autocomplete="name" placeholder="Seu nome">
       </div>
       <button class="auth-btn" id="onboarding-btn" type="submit">Continuar</button>
     </form>
@@ -132,11 +137,11 @@
   <div class="auth-card">
     <div class="auth-brand">
       <div class="brand-dot">s</div>
-      <div class="brand-name">samyest<span>.</span>mind</div>
+      <div class="brand-name" translate="no">samyest<span>.</span>mind</div>
     </div>
-    <div class="auth-title" id="auth-title">Entrar</div>
+    <h1 class="auth-title" id="auth-title">Entrar</h1>
     <div class="auth-sub" id="auth-sub">Acesse sua conta pra continuar de onde parou</div>
-    <div class="auth-error" id="auth-error"></div>
+    <div class="auth-error" id="auth-error" role="alert" aria-live="assertive"></div>
     <button type="button" class="btn-google" id="google-signin-btn" onclick="signInWithGoogle()">
       <svg viewBox="0 0 48 48" aria-hidden="true">
         <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
@@ -149,10 +154,12 @@
     <div class="auth-divider">ou</div>
     <form onsubmit="event.preventDefault();doAuth();">
       <div class="auth-field">
-        <input type="email" class="input" id="auth-email" placeholder="Email" autocomplete="username">
+        <label class="sr-only" for="auth-email">Email</label>
+        <input type="email" class="input" id="auth-email" name="email" placeholder="voce@exemplo.com" autocomplete="username" spellcheck="false" autocapitalize="none">
       </div>
       <div class="auth-field">
-        <input type="password" class="input" id="auth-password" placeholder="Senha" autocomplete="current-password">
+        <label class="sr-only" for="auth-password">Senha</label>
+        <input type="password" class="input" id="auth-password" name="password" placeholder="Senha" autocomplete="current-password" spellcheck="false">
       </div>
       <button class="auth-btn" id="auth-btn" type="submit">Entrar</button>
     </form>
@@ -166,12 +173,12 @@
   </div>
 </div>
 
-<div class="modal-bg" id="settings-modal">
+<div class="modal-bg" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
   <div class="modal">
     <div class="modal-head">
-      <div class="modal-head-title">Configurações</div>
-      <button class="modal-close" onclick="closeSettings()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      <div class="modal-head-title" id="settings-modal-title">Configurações</div>
+      <button class="modal-close" onclick="closeSettings()" aria-label="Fechar configurações">
+        <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <div class="modal-body">
@@ -180,23 +187,23 @@
         <div style="display:flex;align-items:center;gap:14px;">
           <div id="settings-avatar-preview" class="settings-avatar-preview">?</div>
           <div>
-            <label id="avatar-upload-label" for="avatar-upload-input" class="btn-secondary" style="cursor:pointer;display:inline-block;">Trocar foto</label>
+            <button type="button" id="avatar-upload-label" class="btn-secondary" onclick="document.getElementById('avatar-upload-input').click();">Trocar foto</button>
             <input type="file" id="avatar-upload-input" accept="image/*" style="display:none;" onchange="uploadAvatar(this)">
             <div style="font-size:11px;color:var(--text-soft);margin-top:6px;">JPG ou PNG, até 4MB</div>
           </div>
         </div>
       </div>
       <div class="field">
-        <label>Como você quer ser chamado</label>
-        <input type="text" class="input" id="s-name" placeholder="Seu nome">
+        <label for="s-name">Como você quer ser chamado</label>
+        <input type="text" class="input" id="s-name" name="name" autocomplete="name" placeholder="Seu nome">
       </div>
       <div class="field">
         <label>Tema de cores</label>
-        <div class="theme-grid" id="theme-grid"></div>
+        <div class="theme-grid" id="theme-grid" role="group" aria-label="Tema de cores"></div>
       </div>
       <div class="field">
         <div class="field-label-row">
-          <label>🔔 Alarme sonoro</label>
+          <label for="s-sound">🔔 Alarme sonoro</label>
           <label class="sound-toggle">
             <input type="checkbox" id="s-sound" checked>
             <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
@@ -206,7 +213,7 @@
       </div>
       <div class="field">
         <div class="field-label-row">
-          <label>📅 Ocultar data nos concluídos</label>
+          <label for="s-hide-date-done">📅 Ocultar data nos concluídos</label>
           <label class="sound-toggle">
             <input type="checkbox" id="s-hide-date-done">
             <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
@@ -232,7 +239,7 @@
       <div class="field">
         <div class="field-label-row">
           <label>Google Calendar</label>
-          <span id="google-cal-status" style="font-family:'JetBrains Mono',monospace;font-size:11px;"></span>
+          <span id="google-cal-status" aria-live="polite" style="font-family:'JetBrains Mono',monospace;font-size:11px;"></span>
         </div>
         <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">Sincroniza nos dois sentidos com a sua <strong>agenda principal</strong> do Google: tarefas com prazo viram eventos, e eventos da agenda viram tarefas. Cor e horário acompanham nos dois lados.</p>
         <button class="btn-secondary" id="google-cal-btn" onclick="connectGoogleCalendar()" style="width:100%;">Conectar</button>
@@ -260,16 +267,16 @@
   </div>
 </div>
 
-<div class="modal-bg" id="status-modal">
+<div class="modal-bg" id="status-modal" role="dialog" aria-modal="true" aria-labelledby="status-modal-title">
   <div class="modal">
     <div class="modal-head">
       <div class="modal-head-title" id="status-modal-title">Pendências</div>
       <div style="display:flex;gap:6px;align-items:center;">
-        <button class="modal-close" id="status-modal-add-btn" style="display:none;" title="Nova tarefa nesse dia">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <button class="modal-close" id="status-modal-add-btn" style="display:none;" title="Nova tarefa nesse dia" aria-label="Nova tarefa nesse dia">
+          <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </button>
-        <button class="modal-close" onclick="closeStatusModal()">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        <button class="modal-close" onclick="closeStatusModal()" aria-label="Fechar">
+          <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
     </div>
@@ -277,12 +284,12 @@
   </div>
 </div>
 
-<div class="modal-bg" id="projects-modal">
+<div class="modal-bg" id="projects-modal" role="dialog" aria-modal="true" aria-labelledby="projects-modal-title">
   <div class="modal">
     <div class="modal-head">
-      <div class="modal-head-title">Projetos compartilhados</div>
-      <button class="modal-close" onclick="closeProjectsModal()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      <div class="modal-head-title" id="projects-modal-title">Projetos compartilhados</div>
+      <button class="modal-close" onclick="closeProjectsModal()" aria-label="Fechar projetos">
+        <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <div class="modal-body" id="projects-modal-body" style="padding-top:16px;"></div>
@@ -293,26 +300,26 @@
   </div>
 </div>
 
-<div class="modal-bg" id="column-modal">
+<div class="modal-bg" id="column-modal" role="dialog" aria-modal="true" aria-labelledby="column-modal-title">
   <div class="modal">
     <div class="modal-head">
       <div class="modal-head-title" id="column-modal-title">Nova coluna</div>
-      <button class="modal-close" onclick="closeColumnModal()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      <button class="modal-close" onclick="closeColumnModal()" aria-label="Fechar">
+        <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <div class="modal-body">
       <div class="field">
-        <label>Nome da coluna</label>
+        <label for="col-name">Nome da coluna</label>
         <input type="text" class="input" id="col-name" placeholder="Ex: Em revisão">
       </div>
       <div class="field">
         <label>Cor</label>
-        <div class="color-swatch-row" id="col-color-swatches"></div>
+        <div class="color-swatch-row" id="col-color-swatches" role="group" aria-label="Cor da coluna"></div>
       </div>
       <div class="field">
         <div class="field-label-row">
-          <label>🙈 Ocultar coluna por padrão</label>
+          <label for="col-hidden">🙈 Ocultar coluna por padrão</label>
           <label class="sound-toggle">
             <input type="checkbox" id="col-hidden">
             <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
@@ -331,22 +338,22 @@
   </div>
 </div>
 
-<div class="modal-bg" id="routine-modal">
+<div class="modal-bg" id="routine-modal" role="dialog" aria-modal="true" aria-labelledby="routine-modal-title">
   <div class="modal">
     <div class="modal-head">
       <div class="modal-head-title" id="routine-modal-title">Nova rotina</div>
-      <button class="modal-close" onclick="closeRoutineModal()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      <button class="modal-close" onclick="closeRoutineModal()" aria-label="Fechar">
+        <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <div class="modal-body">
       <div class="field">
-        <label>O que precisa ser feito</label>
+        <label for="rt-title">O que precisa ser feito</label>
         <input type="text" class="input" id="rt-title" placeholder="Ex: Conferir grupos">
       </div>
       <div class="field">
         <label>Dias da semana</label>
-        <div id="rt-days" class="weekday-picker">
+        <div id="rt-days" class="weekday-picker" role="group" aria-label="Dias da semana">
           <button type="button" class="weekday-btn" data-day="0" onclick="toggleWeekdayBtn(this)">D</button>
           <button type="button" class="weekday-btn" data-day="1" onclick="toggleWeekdayBtn(this)">S</button>
           <button type="button" class="weekday-btn" data-day="2" onclick="toggleWeekdayBtn(this)">T</button>
@@ -358,17 +365,17 @@
       </div>
       <div class="field-row">
         <div class="field">
-          <label>Cliente (opcional)</label>
+          <label for="rt-client">Cliente (opcional)</label>
           <input type="text" class="input" id="rt-client" placeholder="Nome do cliente" autocomplete="off">
         </div>
         <div class="field">
-          <label>Coluna</label>
+          <label for="rt-status">Coluna</label>
           <select class="select" id="rt-status"></select>
         </div>
       </div>
       <div class="field-row">
         <div class="field">
-          <label>Prioridade</label>
+          <label for="rt-priority">Prioridade</label>
           <select class="select" id="rt-priority">
             <option value="normal">Normal</option>
             <option value="high">Alta</option>
@@ -376,18 +383,18 @@
           </select>
         </div>
         <div class="field">
-          <label>⏰ Horário (opcional)</label>
+          <label for="rt-time">⏰ Horário (opcional)</label>
           <div class="field-control-row">
             <input type="time" class="input" id="rt-time" style="max-width:160px;">
-            <button type="button" class="time-clear-btn" onclick="document.getElementById('rt-time').value='';" title="Remover horário">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <button type="button" class="time-clear-btn" onclick="document.getElementById('rt-time').value='';" title="Remover horário" aria-label="Remover horário">
+              <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
         </div>
       </div>
       <div class="field" id="rt-active-field" style="display:none;">
         <div class="field-label-row">
-          <label>Ativa</label>
+          <label for="rt-active">Ativa</label>
           <label class="sound-toggle">
             <input type="checkbox" id="rt-active">
             <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
@@ -406,27 +413,27 @@
   </div>
 </div>
 
-<div class="modal-bg" id="modal">
+<div class="modal-bg" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
   <div class="modal">
     <div class="modal-head">
       <div class="modal-head-title" id="modal-title">Nova tarefa</div>
-      <button class="modal-close" onclick="closeModal()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      <button class="modal-close" onclick="closeModal()" aria-label="Fechar">
+        <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <div class="modal-body">
       <div class="field">
-        <label>O que precisa ser feito</label>
+        <label for="m-title">O que precisa ser feito</label>
         <input type="text" class="input" id="m-title" placeholder="Ex: Enviar orçamento para o cliente">
       </div>
       <div class="field-row">
         <div class="field" style="position:relative;">
-          <label>Cliente / Projeto</label>
+          <label for="m-client">Cliente / Projeto</label>
           <input type="text" class="input" id="m-client" placeholder="Nome do cliente" autocomplete="off" oninput="filterClientSuggestions()" onfocus="filterClientSuggestions()" onblur="setTimeout(hideClientSuggestions, 150)">
           <div id="client-suggestions" class="client-suggestions"></div>
         </div>
         <div class="field">
-          <label>Status</label>
+          <label for="m-status">Status</label>
           <select class="select" id="m-status">
             <option value="todo">A Fazer</option>
             <option value="waiting">Aguardando retorno</option>
@@ -437,11 +444,11 @@
       </div>
       <div class="field-row">
         <div class="field" id="m-date-field">
-          <label>Prazo</label>
+          <label for="m-date">Prazo</label>
           <input type="date" class="input" id="m-date" onchange="updateGcalHint()">
         </div>
         <div class="field">
-          <label>Prioridade</label>
+          <label for="m-priority">Prioridade</label>
           <select class="select" id="m-priority">
             <option value="normal">Normal</option>
             <option value="high">Alta</option>
@@ -451,13 +458,13 @@
       </div>
       <div class="field" id="m-repeat-field">
         <div class="field-label-row">
-          <label>🔁 Repetir toda semana</label>
+          <label for="m-repeat">🔁 Repetir toda semana</label>
           <label class="sound-toggle">
             <input type="checkbox" id="m-repeat" onchange="toggleRepeatField()">
             <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
           </label>
         </div>
-        <div id="m-repeat-days" class="weekday-picker" style="display:none;">
+        <div id="m-repeat-days" class="weekday-picker" style="display:none;" role="group" aria-label="Dias em que repete">
           <button type="button" class="weekday-btn" data-day="0" onclick="toggleWeekdayBtn(this)">D</button>
           <button type="button" class="weekday-btn" data-day="1" onclick="toggleWeekdayBtn(this)">S</button>
           <button type="button" class="weekday-btn" data-day="2" onclick="toggleWeekdayBtn(this)">T</button>
@@ -470,16 +477,16 @@
       </div>
       <div class="field-row">
         <div class="field">
-          <label>⏰ Horário (opcional — te avisa com som na hora)</label>
+          <label for="m-time">⏰ Horário (opcional — te avisa com som na hora)</label>
           <div class="field-control-row">
             <input type="time" class="input" id="m-time" style="max-width:160px;">
-            <button type="button" class="time-clear-btn" onclick="document.getElementById('m-time').value='';" title="Remover horário">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <button type="button" class="time-clear-btn" onclick="document.getElementById('m-time').value='';" title="Remover horário" aria-label="Remover horário">
+              <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
         </div>
         <div class="field" id="m-gcal-field" style="display:none;">
-          <label>📅 Adicionar ao Google Calendar</label>
+          <label for="m-gcal">📅 Adicionar ao Google Calendar</label>
           <div class="field-control-row">
             <label class="sound-toggle">
               <input type="checkbox" id="m-gcal" checked onchange="updateGcalHint()">
@@ -491,29 +498,29 @@
       </div>
       <div class="field">
         <label>🎨 Cor <span style="font-weight:400;color:var(--text-soft);">(sincroniza com o Google Calendar)</span></label>
-        <div id="m-color-swatches" class="task-color-row"></div>
+        <div id="m-color-swatches" class="task-color-row" role="group" aria-label="Cor da tarefa"></div>
       </div>
       <div class="field" id="m-project-field" style="display:none;">
-        <label>Projeto compartilhado</label>
+        <label for="m-project">Projeto compartilhado</label>
         <select class="select" id="m-project">
           <option value="">Pessoal (privado)</option>
         </select>
       </div>
       <div class="field" id="m-assignee-field" style="display:none;">
-        <label>Atribuir a</label>
+        <label for="m-assignee">Atribuir a</label>
         <select class="select" id="m-assignee">
           <option value="">Todo mundo do projeto</option>
         </select>
       </div>
       <div class="field">
-        <label>Notas</label>
-        <textarea id="m-notes" placeholder="Escreva suas notas aqui..."></textarea>
+        <label for="m-notes">Notas</label>
+        <textarea id="m-notes" placeholder="Escreva suas notas aqui…"></textarea>
       </div>
       <div class="field" id="m-comments-field" style="display:none;">
-        <label>💬 Comentários</label>
+        <label for="comment-input">💬 Comentários</label>
         <div id="task-comments-list" class="comments-list"></div>
         <div class="comment-composer">
-          <textarea id="comment-input" placeholder="Escreva um comentário... (Enter envia, Shift+Enter quebra linha)" rows="2" onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendComment();}"></textarea>
+          <textarea id="comment-input" placeholder="Escreva um comentário… (Enter envia, Shift+Enter quebra linha)" rows="2" onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendComment();}"></textarea>
           <button class="btn-primary comment-send-btn" onclick="sendComment()">Enviar</button>
         </div>
       </div>
@@ -528,6 +535,31 @@
   </div>
 </div>
 
-<script src="script.js"></script>
+<div class="modal-bg" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+  <div class="modal modal-narrow">
+    <div class="modal-head">
+      <div class="modal-head-title" id="confirm-modal-title">Confirmar</div>
+      <button class="modal-close" onclick="resolveDialog(null)" aria-label="Fechar">
+        <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p id="confirm-modal-text" class="dialog-text"></p>
+      <div class="field" id="confirm-modal-field" style="display:none;">
+        <label id="confirm-modal-label" for="confirm-modal-input">Valor</label>
+        <input type="text" class="input" id="confirm-modal-input" autocomplete="off">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <div></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-secondary" onclick="resolveDialog(null)">Cancelar</button>
+        <button class="btn-primary" id="confirm-modal-ok" onclick="submitDialog()">Confirmar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="script.js" defer></script>
 </body>
 </html>

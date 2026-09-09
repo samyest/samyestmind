@@ -1,4 +1,4 @@
-import {userFromRequest, freshAccessToken, getCredential, saveCredential, json} from '../_lib.mjs';
+import {userFromRequest, freshAccessToken, getCredential, saveCredential, json, fail} from '../_lib.mjs';
 
 // Devolve ao navegador um access token curto (~1h), renovando pelo refresh token
 // guardado quando necessário. Também carrega/persiste o id do calendário e o
@@ -11,8 +11,9 @@ export default async function handler(req, res){
     if(req.method === 'PATCH'){
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
       const patch = {};
-      if('calendar_id' in body) patch.calendar_id = body.calendar_id;
-      if('sync_token' in body) patch.sync_token = body.sync_token;
+      const str = (v)=> typeof v === 'string' && v.length <= 512 ? v : null;
+      if('calendar_id' in body) patch.calendar_id = str(body.calendar_id);
+      if('sync_token' in body) patch.sync_token = str(body.sync_token);
       if(Object.keys(patch).length) await saveCredential(user.id, patch);
       return json(res, 200, {ok: true});
     }
@@ -31,6 +32,6 @@ export default async function handler(req, res){
       connected_at: cred.connected_at || null
     });
   }catch(e){
-    json(res, 500, {error: e.message});
+    fail(res, e, 'google/token');
   }
 }

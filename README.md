@@ -44,6 +44,7 @@ refresh tokens — só as funções em `api/`, que usam a service role key.
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API (**secreta**) |
 | `OAUTH_STATE_SECRET` | Qualquer string aleatória longa: `openssl rand -base64 32` |
 | `GOOGLE_REDIRECT_URI` | Opcional. Só se o domínio do callback for diferente do host da requisição |
+| `APP_ORIGIN` | Opcional, mas recomendado. Origem fixa do app (`https://SEU-APP.vercel.app`). Sem ela, o redirect do callback é montado a partir do header `x-forwarded-host`, que vem do cliente |
 
 > A service role key ignora todo o RLS do Supabase e o client secret dá acesso ao
 > Google em nome do app. Nenhum dos dois pode ir para o repositório nem para o

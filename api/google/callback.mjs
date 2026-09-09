@@ -2,13 +2,16 @@ import {verifyState, saveCredential, redirectUri, appOrigin, env} from '../_lib.
 
 function back(res, origin, status){
   res.status(302).setHeader('Location', `${origin}/?google=${status}`);
+  res.setHeader('Cache-Control', 'no-store, private');
   res.end();
 }
 
 // O Google redireciona pra cá depois do consentimento. Troca o código pelos
 // tokens e guarda o refresh token — que nunca chega ao navegador.
 export default async function handler(req, res){
-  const origin = appOrigin(req);
+  let origin;
+  try{ origin = appOrigin(req); }
+  catch(e){ res.status(400); res.end('host inválido'); return; }
   const {code, state, error} = req.query || {};
 
   if(error) return back(res, origin, 'negado');
