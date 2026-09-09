@@ -231,6 +231,7 @@ function openRoutineModal(id){
     document.getElementById('rt-title').value = r.title;
     document.getElementById('rt-client').value = r.client || '';
     document.getElementById('rt-status').value = r.status;
+    if(!document.getElementById('rt-status').value) document.getElementById('rt-status').value = getColumns()[0].key;
     document.getElementById('rt-priority').value = r.priority;
     document.getElementById('rt-time').value = r.time || '';
     r.weekdays.forEach(d=>{
@@ -659,11 +660,27 @@ async function deleteColumn(){
   }
 }
 
+// Lista de colunas que vale para um contexto: as do projeto, ou as pessoais.
+function colunasDe(projectId){
+  return projectId ? getProjectColumns(state.projects.find(p=>p.id===projectId)) : getColumns();
+}
+
 function populateStatusSelect(selectId, currentValue, projectId){
   const sel = document.getElementById(selectId);
-  const cols = projectId ? getProjectColumns(state.projects.find(p=>p.id===projectId)) : getColumns();
+  const cols = colunasDe(projectId);
   sel.innerHTML = cols.map(c=>`<option value="${c.key}">${esc(c.name)}</option>`).join('');
   sel.value = currentValue;
+  // Atribuir um value que nao existe entre as <option> deixa o select em "".
+  // Sem esta rede, a tarefa era salva com status vazio e nunca mais aparecia.
+  if(!sel.value && cols.length) sel.value = cols[0].key;
+}
+
+// Uma tarefa cujo status nao bate com nenhuma coluna (coluna excluida, ou o bug
+// acima) era filtrada para fora de todas as colunas. Passa a cair na primeira,
+// para poder ser vista e corrigida em vez de ficar presa no banco.
+function statusVisivel(t, cols){
+  if(cols.some(c=>c.key === t.status)) return t.status;
+  return cols.length ? cols[0].key : t.status;
 }
 
 const DEFAULT_CLIENTS = [];
@@ -2477,7 +2494,7 @@ function renderProjectPage(){
       </div>
       <div class="kanban" style="margin-top:4px;">
         ${cols.map(col=>{
-          const list = sortByDateThenPriority(filteredProjectTasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t)));
+          const list = sortByDateThenPriority(filteredProjectTasks.filter(t=>statusVisivel(t, cols)===col.key && !isHiddenFromKanban(t)));
           const collapsed = col.hidden && !state.expandedCols.has(col.key);
           if(collapsed){
             return `
@@ -3129,7 +3146,7 @@ function renderDashboard(){
   const saudacao = hrs < 12 ? 'Bom dia' : hrs < 18 ? 'Boa tarde' : 'Boa noite';
   const cols = getColumns();
   const pTasks = personalTasks();
-  const colCounts = cols.map(c=>({...c, count: pTasks.filter(t=>t.status===c.key).length}));
+  const colCounts = cols.map(c=>({...c, count: pTasks.filter(t=>statusVisivel(t, cols)===c.key).length}));
   const overdue = pTasks.filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='overdue').length;
   const acoes = sortByDateThenPriority(
     pTasks.filter(t=>taskColumnType(t)==='active' && matchesDateFilter(t, state.dateFilter))
@@ -3403,7 +3420,7 @@ function renderKanban(){
   // personalTasks() (que só traz o que é meu).
   const sharedFilteredTasks = state.tasks.filter(t=>t.project_id && matchesKanbanFilters(t));
   const normalColsHtml = cols.map(col=>{
-    const list = sortByDateThenPriority(filteredTasks.filter(t=>t.status===col.key && !isHiddenFromKanban(t) && !t.project_id));
+    const list = sortByDateThenPriority(filteredTasks.filter(t=>statusVisivel(t, cols)===col.key && !isHiddenFromKanban(t) && !t.project_id));
     const collapsed = col.hidden && !state.expandedCols.has(col.key);
     if(collapsed){
       return `
@@ -4066,7 +4083,7 @@ function openModal(id, prefillDate, prefillProjectId){
     title.textContent = 'Editar tarefa';
     document.getElementById('m-title').value = t.title || '';
     document.getElementById('m-client').value = t.client || '';
-    populateStatusSelect('m-status', t.status || getColumns()[0].key, t.project_id);
+    populateStatusSelect('m-status', t.status || colunasDe(t.project_id)[0].key, t.project_id);
     document.getElementById('m-date').value = t.date || '';
     document.getElementById('m-time').value = t.time || '';
     document.getElementById('m-priority').value = t.priority || 'normal';
@@ -4088,7 +4105,7 @@ function openModal(id, prefillDate, prefillProjectId){
     title.textContent = 'Nova tarefa';
     document.getElementById('m-title').value = '';
     document.getElementById('m-client').value = '';
-    populateStatusSelect('m-status', getProjectColumns(state.projects.find(p=>p.id===prefillProjectId))[0].key, prefillProjectId);
+    populateStatusSelect('m-status', colunasDe(prefillProjectId)[0].key, prefillProjectId);
     document.getElementById('m-date').value = prefillDate || '';
     document.getElementById('m-time').value = `${String(new Date().getHours()).padStart(2,'0')}:${String(new Date().getMinutes()).padStart(2,'0')}`;
     document.getElementById('m-priority').value = 'normal';
@@ -4104,7 +4121,7 @@ function openModal(id, prefillDate, prefillProjectId){
     currentCommentTaskId = null;
   }
   document.getElementById('m-project').onchange = (e)=>{
-    populateStatusSelect('m-status', getProjectColumns(state.projects.find(p=>p.id===e.target.value))[0].key, e.target.value || null);
+    populateStatusSelect('m-status', colunasDe(e.target.value || null)[0].key, e.target.value || null);
     populateAssigneeSelect(e.target.value || null, null);
     // Rotina é só pra tarefa pessoal — escolher um projeto desliga e some com a opção.
     resetRepeatField(!id && !e.target.value);
@@ -4223,7 +4240,7 @@ async function saveTask(){
     const routine = await createRoutine({
       title,
       client: document.getElementById('m-client').value.trim(),
-      status: document.getElementById('m-status').value,
+      status: document.getElementById('m-status').value || getColumns()[0].key,
       priority: document.getElementById('m-priority').value,
       time: document.getElementById('m-time').value,
       weekdays
@@ -4233,7 +4250,10 @@ async function saveTask(){
     return;
   }
 
-  const newStatus = document.getElementById('m-status').value;
+  // Barreira final: mesmo que algo acima falhe, a tarefa nao vai para o banco
+  // sem status — era isso que a fazia sumir.
+  const statusEscolhido = document.getElementById('m-status').value;
+  const newStatus = statusEscolhido || colunasDe(document.getElementById('m-project').value || null)[0].key;
   const existingTask = state.editingId ? state.tasks.find(x=>x.id===state.editingId) : null;
   const gcalInput = document.getElementById('m-gcal');
   // Sem Calendar conectado o interruptor fica escondido: aí a tarefa guarda a
