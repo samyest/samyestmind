@@ -512,6 +512,14 @@
           <option value="">Todo mundo do projeto</option>
         </select>
       </div>
+      <div class="field" style="position:relative;">
+        <label for="m-tag-input">🏷️ Tags <span style="font-weight:400;color:var(--text-soft);">(Enter para adicionar)</span></label>
+        <div class="tag-input" id="m-tags" onclick="document.getElementById('m-tag-input').focus()">
+          <span id="m-tags-chips" class="tag-chips"></span>
+          <input type="text" id="m-tag-input" class="tag-input-field" placeholder="Ex: Marketing" autocomplete="off" maxlength="24" oninput="filterTagSuggestions()" onfocus="filterTagSuggestions()" onkeydown="tagInputKeydown(event)" onblur="setTimeout(()=>{commitTagInput();hideTagSuggestions();}, 150)">
+        </div>
+        <div id="tag-suggestions" class="client-suggestions" role="listbox" aria-label="Tags já usadas"></div>
+      </div>
       <div class="field">
         <label for="m-notes">Notas</label>
         <textarea id="m-notes" placeholder="Escreva suas notas aqui…"></textarea>

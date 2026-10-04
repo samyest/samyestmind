@@ -2894,3 +2894,74 @@
     .desafio-row{flex-wrap:wrap;row-gap:6px;}
     .desafio-row-label{flex:1 1 150px;white-space:normal;}
   }
+
+  /* Tags de tarefa ------------------------------------------------------------ */
+  .tag-row{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 2px;}
+  td .tag-row{margin:5px 0 0;}
+  .tag-chip{
+    display:inline-flex;
+    align-items:center;
+    gap:5px;
+    max-width:100%;
+    padding:2px 8px;
+    border-radius:20px;
+    font-size:10.5px;
+    font-weight:500;
+    line-height:1.5;
+    color:var(--text-strong);
+    background:color-mix(in srgb, var(--tag-color, var(--accent)) 16%, transparent);
+    border:1px solid color-mix(in srgb, var(--tag-color, var(--accent)) 34%, transparent);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .tag-chip::before{
+    content:'';
+    width:6px;height:6px;
+    flex-shrink:0;
+    border-radius:50%;
+    background:var(--tag-color, var(--accent));
+  }
+  .tag-chip-more{--tag-color:var(--text-soft);}
+  .tag-chip-more::before{display:none;}
+
+  .tag-input{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:6px;
+    min-height:42px;
+    padding:6px 10px;
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+    border-radius:10px;
+    cursor:text;
+    transition:background-color .15s ease, border-color .15s ease;
+  }
+  .tag-input:focus-within{border-color:var(--accent);background:var(--glass-hover);}
+  .tag-chips{display:contents;}
+  .tag-chip-edit{font-size:12px;padding:3px 4px 3px 9px;}
+  .tag-chip-remove{
+    width:18px;height:18px;
+    border-radius:50%;
+    display:grid;place-items:center;
+    font-size:13px;
+    line-height:1;
+    color:var(--text-muted);
+  }
+  .tag-chip-remove:hover:not(:disabled){color:var(--danger);background:color-mix(in srgb, var(--danger) 14%, transparent);}
+  .tag-chip-remove:disabled{display:none;}
+  .tag-input-field{
+    flex:1;
+    min-width:110px;
+    border:none;
+    outline:none;
+    background:transparent;
+    font-size:13px;
+    color:var(--text);
+    padding:4px 2px;
+  }
+  .tag-input-field::placeholder{color:var(--text-soft);}
+  .tag-input-field:disabled{cursor:not-allowed;}
+  .tag-suggestion-item{display:flex;align-items:center;gap:8px;}
+  .tag-suggestion-item .tag-chip{font-size:12px;}

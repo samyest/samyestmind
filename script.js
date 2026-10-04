@@ -701,7 +701,7 @@ let state = {
   calSelectedDate: null,
   miniCalDate: new Date(),
   dateFilter: 'all',
-  filter: {client:'', status:'', search:'', project:'', assignee:'', tableDate:'all', kanbanClient:'', kanbanDate:'all', kanbanAssignee:'', kanbanSearch:''},
+  filter: {client:'', status:'', search:'', project:'', assignee:'', tableDate:'all', kanbanClient:'', kanbanDate:'all', kanbanAssignee:'', kanbanSearch:'', kanbanTag:'', tag:''},
   hideDateOnDone: localStorage.getItem('hideDateOnDone') === '1',
   expandedCols: new Set(),
   selecting: false,
@@ -1916,6 +1916,7 @@ async function loadTasks(){
     project_id: t.project_id || null,
     assigned_to: t.assigned_to || null,
     routine_id: t.routine_id || null,
+    tags: Array.isArray(t.tags) ? t.tags : [],
     owner_id: t.user_id,
     created: new Date(t.created_at).getTime()
   }));
@@ -1923,7 +1924,7 @@ async function loadTasks(){
 }
 
 async function createTaskRemote(data){
-  const {data: task, error} = await sb.from('tasks').insert({
+  const linha = {
     user_id: session.user.id,
     title: data.title,
     client: data.client || null,
@@ -1939,7 +1940,11 @@ async function createTaskRemote(data){
     project_id: data.project_id || null,
     assigned_to: data.assigned_to || null,
     routine_id: data.routine_id || null
-  }).select().single();
+  };
+  // Só manda a coluna quando a tarefa tem tag: assim criar tarefa continua
+  // funcionando mesmo antes do supabase/task_tags.sql ser aplicado.
+  if(data.tags && data.tags.length) linha.tags = data.tags;
+  const {data: task, error} = await sb.from('tasks').insert(linha).select().single();
   if(error){console.error(error);showToast('Não deu para criar a tarefa. Confira a conexão e tente de novo.', 'erro');return null;}
   return {
     id: task.id,
@@ -1958,6 +1963,7 @@ async function createTaskRemote(data){
     project_id: task.project_id || null,
     assigned_to: task.assigned_to || null,
     routine_id: task.routine_id || null,
+    tags: Array.isArray(task.tags) ? task.tags : [],
     owner_id: task.user_id,
     created: new Date(task.created_at).getTime()
   };
@@ -2101,6 +2107,7 @@ async function updateTaskRemote(id, data){
   if('completed_at' in data) payload.completed_at = data.completed_at || null;
   if('project_id' in data) payload.project_id = data.project_id || null;
   if('assigned_to' in data) payload.assigned_to = data.assigned_to || null;
+  if('tags' in data) payload.tags = data.tags || [];
   const {error} = await sb.from('tasks').update(payload).eq('id', id);
   if(error){console.error(error);showToast('Não deu para atualizar. Tente de novo em instantes.', 'erro');return false;}
   return true;
@@ -2420,8 +2427,10 @@ function renderProjectPage(){
     {id: p.owner_id, label: (p.ownerProfile && p.ownerProfile.name) || p.owner_email || 'Dono'},
     ...p.members.filter(m=>m.status==='accepted' && m.user_id).map(m=>({id:m.user_id, label:(m.profile && m.profile.name) || m.invited_email || 'Membro'}))
   ];
+  const tagOptions = tagsInList(projectTasks);
   const filteredProjectTasks = projectTasks.filter(t=>{
     if(state.filter.kanbanClient && t.client !== state.filter.kanbanClient) return false;
+    if(state.filter.kanbanTag && !taskHasTag(t, state.filter.kanbanTag)) return false;
     if(state.filter.kanbanAssignee){
       if(state.filter.kanbanAssignee === 'unassigned'){ if(t.assigned_to) return false; }
       else if(t.assigned_to !== state.filter.kanbanAssignee) return false;
@@ -2487,6 +2496,7 @@ function renderProjectPage(){
           <option value="">Todos clientes</option>
           ${clientOptions.map(c=>`<option value="${esc(c)}" ${state.filter.kanbanClient===c?'selected':''}>${esc(c)}</option>`).join('')}
         </select>
+        ${renderTagFilterSelect('kf-tag', tagOptions, state.filter.kanbanTag)}
         <select class="select" id="kf-date" style="width:auto;">
           <option value="all" ${(!state.filter.kanbanDate||state.filter.kanbanDate==='all')?'selected':''}>Qualquer prazo</option>
           <option value="today" ${state.filter.kanbanDate==='today'?'selected':''}>Hoje</option>
@@ -3401,6 +3411,7 @@ function renderKbCard(t, col, opts){
       <div class="kb-card-client">${esc(t.client || '—')}</div>
       <div class="kb-card-title">${t.routine_id ? '<span title="Gerada por uma rotina" style="margin-right:4px;">🔁</span>' : ''}${esc(t.title)}</div>
       ${extraBadge}
+      ${renderTagChipsInline(t, 3)}
       <div class="kb-card-meta">
         ${(col.type === 'done' && state.hideDateOnDone) ? '' : `<span class="${taskDateStatus(t)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>`}
         ${badge}
@@ -3410,6 +3421,7 @@ function renderKbCard(t, col, opts){
 
 function matchesKanbanFilters(t){
   if(state.filter.kanbanClient && t.client !== state.filter.kanbanClient) return false;
+  if(state.filter.kanbanTag && !taskHasTag(t, state.filter.kanbanTag)) return false;
   if(state.filter.kanbanDate && state.filter.kanbanDate !== 'all' && !matchesDateFilter(t, state.filter.kanbanDate)) return false;
   if(!matchesKanbanSearch(t, state.filter.kanbanSearch)) return false;
   return true;
@@ -3418,6 +3430,7 @@ function matchesKanbanFilters(t){
 function renderKanban(){
   const cols = getColumns();
   const clientOptions = [...new Set(personalTasks().map(t=>t.client).filter(Boolean))].sort();
+  const tagOptions = tagsInList([...personalTasks(), ...state.tasks.filter(t=>t.project_id)]);
   const filteredTasks = personalTasks().filter(matchesKanbanFilters);
   // As colunas compartilhadas abaixo mostram o quadro inteiro do projeto —
   // atribuído a mim ou não — por isso partem de state.tasks, não de
@@ -3508,6 +3521,7 @@ function renderKanban(){
         <option value="">Todos clientes</option>
         ${clientOptions.map(c=>`<option value="${esc(c)}" ${state.filter.kanbanClient===c?'selected':''}>${esc(c)}</option>`).join('')}
       </select>
+      ${renderTagFilterSelect('kf-tag', tagOptions, state.filter.kanbanTag)}
       <select class="select" id="kf-date" style="width:auto;">
         <option value="all" ${(!state.filter.kanbanDate||state.filter.kanbanDate==='all')?'selected':''}>Qualquer prazo</option>
         <option value="today" ${state.filter.kanbanDate==='today'?'selected':''}>Hoje</option>
@@ -3876,10 +3890,12 @@ function renderTable(){
   }
 
   const clientes = [...new Set(baseTasks.map(t=>t.client).filter(Boolean))].sort();
+  const tagOptions = tagsInList(baseTasks);
 
   let filtered = baseTasks;
   if(state.filter.status) filtered = filtered.filter(t=>t.status===state.filter.status);
   if(state.filter.client) filtered = filtered.filter(t=>t.client===state.filter.client);
+  if(state.filter.tag) filtered = filtered.filter(t=>taskHasTag(t, state.filter.tag));
   if(selectedProject && state.filter.assignee){
     if(state.filter.assignee === 'unassigned'){
       filtered = filtered.filter(t=>!t.assigned_to);
@@ -3928,6 +3944,7 @@ function renderTable(){
           <option value="">Todos clientes</option>
           ${clientes.map(c=>`<option value="${esc(c)}" ${state.filter.client===c?'selected':''}>${esc(c)}</option>`).join('')}
         </select>
+        ${renderTagFilterSelect('f-tag', tagOptions, state.filter.tag)}
         <select class="select" id="f-table-date" style="width:auto;">
           <option value="all" ${(!state.filter.tableDate || state.filter.tableDate==='all')?'selected':''}>Qualquer prazo</option>
           <option value="today" ${state.filter.tableDate==='today'?'selected':''}>Hoje</option>
@@ -3943,7 +3960,7 @@ function renderTable(){
             <tbody>
               ${filtered.map(t=>`
                 <tr onclick="openModal('${t.id}')">
-                  <td>${esc(t.title)}</td>
+                  <td>${esc(t.title)}${renderTagChipsInline(t, 4)}</td>
                   <td>${esc(t.client || '—')}</td>
                   ${selectedProject ? `<td>${esc(getAssigneeLabel(t) || 'Todo mundo')}</td>` : ''}
                   <td><span class="badge"><span class="badge-dot" style="background:${taskColumnColor(t)}"></span>${esc(taskColumnName(t))}</span></td>
@@ -3987,7 +4004,9 @@ function attachEvents(){
   const fc = document.getElementById('f-client');
   if(fc) fc.onchange = (e)=>{state.filter.client = e.target.value;skipEntranceOnce=true;render();};
   const fp = document.getElementById('f-project');
-  if(fp) fp.onchange = (e)=>{state.filter.project = e.target.value;state.filter.status='';state.filter.client='';state.filter.assignee='';skipEntranceOnce=true;render();};
+  if(fp) fp.onchange = (e)=>{state.filter.project = e.target.value;state.filter.status='';state.filter.client='';state.filter.assignee='';state.filter.tag='';skipEntranceOnce=true;render();};
+  const ftg = document.getElementById('f-tag');
+  if(ftg) ftg.onchange = (e)=>{state.filter.tag = e.target.value;skipEntranceOnce=true;render();};
   const fa = document.getElementById('f-assignee');
   if(fa) fa.onchange = (e)=>{state.filter.assignee = e.target.value;skipEntranceOnce=true;render();};
   const ftd = document.getElementById('f-table-date');
@@ -3997,6 +4016,8 @@ function attachEvents(){
   if(kfc) kfc.onchange = (e)=>{state.filter.kanbanClient = e.target.value;skipEntranceOnce=true;render();};
   const kfd = document.getElementById('kf-date');
   if(kfd) kfd.onchange = (e)=>{state.filter.kanbanDate = e.target.value;skipEntranceOnce=true;render();};
+  const kft = document.getElementById('kf-tag');
+  if(kft) kft.onchange = (e)=>{state.filter.kanbanTag = e.target.value;skipEntranceOnce=true;render();};
   const kfa = document.getElementById('kf-assignee');
   if(kfa) kfa.onchange = (e)=>{state.filter.kanbanAssignee = e.target.value;skipEntranceOnce=true;render();};
   const kfs = document.getElementById('kf-search');
@@ -4073,6 +4094,149 @@ function updateGcalHint(){
     : 'Defina um prazo acima.';
 }
 
+/* ---------- Tags ---------- */
+// Não existe tabela de tags: as tags de um projeto são as que já estão nas
+// tarefas dele, então todo mundo do projeto reaproveita as mesmas. A cor sai
+// do nome, igual para todos os membros e em todos os temas.
+
+let selectedTaskTags = [];
+
+function normalizeTag(raw){
+  return String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 24);
+}
+
+function tagKey(tag){
+  return normalizeTag(tag).toLowerCase();
+}
+
+function taskHasTag(t, tag){
+  const k = tagKey(tag);
+  return (t.tags || []).some(x=>tagKey(x) === k);
+}
+
+function tagHue(tag){
+  const k = tagKey(tag);
+  let h = 0;
+  for(let i=0;i<k.length;i++) h = (h * 31 + k.charCodeAt(i)) % 360;
+  return h;
+}
+
+function tagStyle(tag){
+  return `--tag-color:hsl(${tagHue(tag)} 55% 52%)`;
+}
+
+// Junta as tags de uma lista de tarefas sem repetir maiúscula/minúscula,
+// mantendo a grafia que apareceu primeiro.
+function tagsInList(tasks){
+  const vistos = new Map();
+  tasks.forEach(t=>(t.tags || []).forEach(tag=>{
+    const k = tagKey(tag);
+    if(k && !vistos.has(k)) vistos.set(k, normalizeTag(tag));
+  }));
+  return [...vistos.values()].sort((a,b)=>a.localeCompare(b, 'pt-BR'));
+}
+
+function tagsForModalScope(){
+  const projectId = document.getElementById('m-project').value || null;
+  const lista = projectId
+    ? state.tasks.filter(t=>t.project_id === projectId)
+    : state.tasks.filter(t=>!t.project_id && t.owner_id === session.user.id);
+  return tagsInList(lista);
+}
+
+function renderTagChipsInline(t, max){
+  const tags = t.tags || [];
+  if(!tags.length) return '';
+  const visiveis = tags.slice(0, max);
+  const resto = tags.length - visiveis.length;
+  return `<div class="tag-row">${visiveis.map(tag=>`<span class="tag-chip" style="${tagStyle(tag)}">${esc(tag)}</span>`).join('')}${resto > 0 ? `<span class="tag-chip tag-chip-more">+${resto}</span>` : ''}</div>`;
+}
+
+function renderTagFilterSelect(id, options, current){
+  if(!options.length && !current) return '';
+  return `<select class="select" id="${id}" style="width:auto;" aria-label="Filtrar por tag">
+    <option value="">Todas as tags</option>
+    ${options.map(tag=>`<option value="${esc(tag)}" ${tagKey(current)===tagKey(tag)?'selected':''}>🏷️ ${esc(tag)}</option>`).join('')}
+  </select>`;
+}
+
+function renderTaskTagChips(){
+  const wrap = document.getElementById('m-tags-chips');
+  if(!wrap) return;
+  const input = document.getElementById('m-tag-input');
+  const travado = input && input.disabled;
+  wrap.innerHTML = selectedTaskTags.map((tag, i)=>`
+    <span class="tag-chip tag-chip-edit" style="${tagStyle(tag)}">${esc(tag)}<button type="button" class="tag-chip-remove" data-i="${i}" aria-label="Remover tag ${esc(tag)}" ${travado ? 'disabled' : ''}>×</button></span>`).join('');
+  wrap.querySelectorAll('.tag-chip-remove').forEach(btn=>{
+    btn.onclick = (e)=>{
+      e.stopPropagation();
+      selectedTaskTags.splice(+btn.dataset.i, 1);
+      renderTaskTagChips();
+      document.getElementById('m-tag-input').focus();
+    };
+  });
+}
+
+function addTaskTag(raw){
+  const tag = normalizeTag(raw);
+  if(!tag) return;
+  if(selectedTaskTags.some(x=>tagKey(x) === tagKey(tag))) return;
+  // Reaproveita a grafia que o projeto já usa ("marketing" vira "Marketing").
+  const existente = tagsForModalScope().find(x=>tagKey(x) === tagKey(tag));
+  selectedTaskTags.push(existente || tag);
+  renderTaskTagChips();
+}
+
+function commitTagInput(){
+  const input = document.getElementById('m-tag-input');
+  if(!input || !input.value.trim()) return;
+  addTaskTag(input.value);
+  input.value = '';
+}
+
+function tagInputKeydown(e){
+  const input = e.target;
+  if(e.key === 'Enter' || e.key === ',' || (e.key === 'Tab' && input.value.trim())){
+    e.preventDefault();
+    commitTagInput();
+    filterTagSuggestions();
+  } else if(e.key === 'Backspace' && !input.value && selectedTaskTags.length){
+    selectedTaskTags.pop();
+    renderTaskTagChips();
+    filterTagSuggestions();
+  } else if(e.key === 'Escape'){
+    hideTagSuggestions();
+  }
+}
+
+function filterTagSuggestions(){
+  const input = document.getElementById('m-tag-input');
+  const wrap = document.getElementById('tag-suggestions');
+  if(!input || !wrap || input.disabled) return;
+  const q = tagKey(input.value);
+  const usadas = new Set(selectedTaskTags.map(tagKey));
+  const existentes = tagsForModalScope();
+  const matches = existentes.filter(tag=>!usadas.has(tagKey(tag)) && (!q || tagKey(tag).includes(q))).slice(0, 8);
+  const nova = q && !existentes.some(tag=>tagKey(tag) === q) && !usadas.has(q);
+  if(!matches.length && !nova){ hideTagSuggestions(); return; }
+  wrap.innerHTML = matches.map(tag=>`<div class="client-suggestion-item tag-suggestion-item" role="option" tabindex="-1" data-tag="${esc(tag)}"><span class="tag-chip" style="${tagStyle(tag)}">${esc(tag)}</span></div>`).join('')
+    + (nova ? `<div class="client-suggestion-item tag-suggestion-item" role="option" tabindex="-1" data-tag="${esc(normalizeTag(input.value))}">Criar <span class="tag-chip" style="${tagStyle(input.value)}">${esc(normalizeTag(input.value))}</span></div>` : '');
+  wrap.querySelectorAll('.tag-suggestion-item').forEach(el=>{
+    el.onmousedown = (e)=>{
+      e.preventDefault();
+      addTaskTag(el.dataset.tag);
+      input.value = '';
+      filterTagSuggestions();
+    };
+  });
+  wrap.classList.add('open');
+}
+
+function hideTagSuggestions(){
+  const wrap = document.getElementById('tag-suggestions');
+  if(wrap){ wrap.classList.remove('open'); wrap.innerHTML = ''; }
+}
+
 function openModal(id, prefillDate, prefillProjectId){
   state.editingId = id || null;
   const modal = document.getElementById('modal');
@@ -4095,11 +4259,14 @@ function openModal(id, prefillDate, prefillProjectId){
     populateAssigneeSelect(t.project_id, t.assigned_to);
     selectedTaskColor = t.color_id || null;
     renderTaskColorSwatches();
+    selectedTaskTags = [...(t.tags || [])];
+    document.getElementById('m-tag-input').value = '';
+    renderTaskTagChips();
     document.getElementById('m-notes').value = t.notes || '';
     const isMine = t.owner_id === session.user.id;
     const canEdit = isMine || (t.project_id && canEditProject(t.project_id));
     delBtn.style.display = canEdit ? '' : 'none';
-    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn').forEach(el=>{el.disabled = !canEdit;});
+    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn, #modal .tag-chip-remove').forEach(el=>{el.disabled = !canEdit;});
     setupGcalToggle(t, canEdit);
     commentsField.style.display = '';
     currentCommentTaskId = id;
@@ -4117,9 +4284,12 @@ function openModal(id, prefillDate, prefillProjectId){
     populateAssigneeSelect(prefillProjectId, null);
     selectedTaskColor = null;
     renderTaskColorSwatches();
+    selectedTaskTags = [];
+    document.getElementById('m-tag-input').value = '';
+    renderTaskTagChips();
     document.getElementById('m-notes').value = '';
     delBtn.style.display = 'none';
-    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn').forEach(el=>{el.disabled = false;});
+    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn, #modal .tag-chip-remove').forEach(el=>{el.disabled = false;});
     setupGcalToggle(null, true);
     commentsField.style.display = 'none';
     currentCommentTaskId = null;
@@ -4266,6 +4436,7 @@ async function saveTask(){
     ? gcalInput.checked
     : (existingTask ? wantsGoogle(existingTask) : true);
   const droppedFromGcal = !wantsGcal && existingTask && wantsGoogle(existingTask);
+  commitTagInput();
   const data = {
     title,
     client: document.getElementById('m-client').value.trim(),
@@ -4280,6 +4451,7 @@ async function saveTask(){
     assigned_to: document.getElementById('m-assignee').value || null,
     completed_at: resolveCompletedAt(newStatus, existingTask ? existingTask.status : null, existingTask ? existingTask.completed_at : null)
   };
+  if(selectedTaskTags.length || (existingTask && existingTask.tags && existingTask.tags.length)) data.tags = [...selectedTaskTags];
   const isNew = !state.editingId;
   let savedTask = null;
   if(state.editingId){
