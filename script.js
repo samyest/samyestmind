@@ -965,6 +965,8 @@ async function checkAuth(){
     await generateRoutineInstances();
     await loadProjects();
     await loadIgnoredEvents();
+    setupDesafioNav();
+    await loadDesafio();
     setupRealtime();
     startRoutineCheckLoop();
     startAlarmChecker();
@@ -1670,6 +1672,7 @@ async function refreshAll(kind, silent){
     if(!kind || kind === 'projects'){
       await loadProjects();
     }
+    if(!kind) await loadDesafio();
     safeRerender();
     if(!silent) showToast('Atualizado');
   }catch(e){}
@@ -3123,6 +3126,7 @@ function render(){
   else if(state.view === 'table') m.innerHTML = renderTable();
   else if(state.view === 'project') m.innerHTML = renderProjectPage();
   else if(state.view === 'projects') m.innerHTML = renderProjectsList();
+  else if(state.view === 'desafio') m.innerHTML = isDesafioOwner() ? renderDesafio() : renderDashboard();
 
   m.classList.toggle('no-entrance', sameView || skipEntranceOnce);
   skipEntranceOnce = false;
@@ -4357,6 +4361,426 @@ window.addEventListener('beforeunload', (e)=>{
     e.returnValue = '';
   }
 });
+
+// ============================================================================
+//  Desafio 88 dias — aba pessoal, visível só para a conta dona do desafio.
+//  As tabelas também barram outras contas no RLS (supabase/desafio.sql).
+// ============================================================================
+
+const DESAFIO_EMAIL = 'samirahmadpour@gmail.com';
+const DESAFIO_INICIO = '2026-10-05';
+const DESAFIO_FIM = '2026-12-31';
+const DESAFIO_METAS = {pesoInicial: 73, pesoMeta: 77, dinheiro: 2000, clientes: 3, vagas: 30};
+const DESAFIO_ITENS = [
+  {key:'academia', label:'Academia', hint:'direto do trabalho', dias:[1,3,4,5]},
+  {key:'proteina', label:'140g de proteína', hint:'proteína em toda refeição', dias:[0,1,2,3,4,5,6]},
+  {key:'agua', label:'3L de água', hint:'garrafa de 1L zerada 3x', dias:[0,1,2,3,4,5,6]},
+  {key:'creatina', label:'Creatina', hint:'3–5g', dias:[0,1,2,3,4,5,6]},
+  {key:'dev', label:'Bloco de dev / freela', hint:'1h focada, celular virado', dias:[2,5,6]},
+  {key:'cs', label:'CS só depois do bloco', hint:'jogo é recompensa', dias:[2,5,6]}
+];
+const DESAFIO_STATUS_VAGA = [
+  {key:'enviada', label:'Enviada'},
+  {key:'entrevista', label:'Entrevista'},
+  {key:'proposta', label:'Proposta'},
+  {key:'recusada', label:'Recusada'}
+];
+
+state.desafio = {days: {}, entries: [], loaded: false};
+
+function isDesafioOwner(){
+  return !!(session && session.user && (session.user.email || '').toLowerCase() === DESAFIO_EMAIL);
+}
+
+function setupDesafioNav(){
+  const dono = isDesafioOwner();
+  const grupo = document.getElementById('desafio-nav-group');
+  const mob = document.getElementById('desafio-btn-mobile');
+  if(grupo) grupo.hidden = !dono;
+  if(mob) mob.hidden = !dono;
+}
+
+function goDesafio(){
+  if(!isDesafioOwner()) return;
+  flushNotesIfPending();
+  state.selecting = false;
+  state.selected.clear();
+  state.view = 'desafio';
+  render();
+  window.scrollTo(0,0);
+}
+
+async function loadDesafio(){
+  if(!isDesafioOwner()) return;
+  const [dias, lanc] = await Promise.all([
+    sb.from('challenge_days').select('day, checks').gte('day', DESAFIO_INICIO).lte('day', DESAFIO_FIM),
+    sb.from('challenge_entries').select('*').order('date', {ascending: true}).order('created_at', {ascending: true})
+  ]);
+  if(dias.error || lanc.error){
+    state.desafio.loaded = false;
+    state.desafio.error = true;
+    return;
+  }
+  state.desafio.days = {};
+  (dias.data || []).forEach(r=>{ state.desafio.days[r.day] = new Set(r.checks || []); });
+  state.desafio.entries = (lanc.data || []).map(r=>({
+    id: r.id,
+    kind: r.kind,
+    date: r.date,
+    label: r.label || '',
+    value: r.value === null ? null : Number(r.value),
+    status: r.status || ''
+  }));
+  state.desafio.loaded = true;
+  state.desafio.error = false;
+}
+
+function desafioIso(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function desafioDate(iso){
+  const [y,m,d] = iso.split('-').map(Number);
+  return new Date(y, m-1, d);
+}
+
+function desafioAddDays(iso, n){
+  const d = desafioDate(iso);
+  d.setDate(d.getDate() + n);
+  return desafioIso(d);
+}
+
+function desafioFmt(iso){
+  const [, m, d] = iso.split('-');
+  return `${d}/${m}`;
+}
+
+function desafioDinheiro(v){
+  return Number(v || 0).toLocaleString('pt-BR', {style:'currency', currency:'BRL', maximumFractionDigits:0});
+}
+
+function desafioItensDoDia(iso){
+  const dow = desafioDate(iso).getDay();
+  return DESAFIO_ITENS.filter(i=>i.dias.includes(dow));
+}
+
+function desafioPctDia(iso){
+  const itens = desafioItensDoDia(iso);
+  if(!itens.length) return 0;
+  const marcados = state.desafio.days[iso] || new Set();
+  const feitos = itens.filter(i=>marcados.has(i.key)).length;
+  return feitos / itens.length;
+}
+
+function desafioSequencia(){
+  const hoje = todayIso();
+  let iso = desafioPctDia(hoje) === 1 ? hoje : desafioAddDays(hoje, -1);
+  let n = 0;
+  while(iso >= DESAFIO_INICIO && desafioPctDia(iso) === 1){
+    n++;
+    iso = desafioAddDays(iso, -1);
+  }
+  return n;
+}
+
+function desafioDiaAtual(){
+  const hoje = todayIso();
+  const total = Math.round((desafioDate(DESAFIO_FIM) - desafioDate(DESAFIO_INICIO)) / 86400000) + 1;
+  if(hoje < DESAFIO_INICIO) return {dia: 0, total, faltam: total};
+  if(hoje > DESAFIO_FIM) return {dia: total, total, faltam: 0};
+  const dia = Math.round((desafioDate(hoje) - desafioDate(DESAFIO_INICIO)) / 86400000) + 1;
+  return {dia, total, faltam: total - dia};
+}
+
+function desafioDoTipo(kind){
+  return state.desafio.entries.filter(e=>e.kind === kind);
+}
+
+async function toggleDesafioItem(key){
+  const iso = todayIso();
+  const atual = new Set(state.desafio.days[iso] || []);
+  if(atual.has(key)) atual.delete(key); else atual.add(key);
+  const anterior = state.desafio.days[iso];
+  state.desafio.days[iso] = atual;
+  skipEntranceOnce = true;
+  render();
+  const {error} = await sb.from('challenge_days').upsert({
+    user_id: session.user.id,
+    day: iso,
+    checks: [...atual],
+    updated_at: new Date().toISOString()
+  }, {onConflict: 'user_id,day'});
+  if(error){
+    state.desafio.days[iso] = anterior;
+    skipEntranceOnce = true;
+    render();
+    showToast('Não deu pra salvar o checklist', 'erro');
+    return;
+  }
+  if(desafioPctDia(iso) === 1 && atual.has(key)) showToast('Dia completo 💪');
+}
+
+async function addDesafioEntry(kind){
+  const linha = {user_id: session.user.id, kind, date: todayIso()};
+  if(kind === 'peso'){
+    const el = document.getElementById('desafio-peso');
+    const v = parseFloat(String(el.value).replace(',', '.'));
+    if(!v || v < 30 || v > 200){ showToast('Coloca um peso válido', 'erro'); el.focus(); return; }
+    linha.value = v;
+  } else if(kind === 'freela'){
+    const cli = document.getElementById('desafio-freela-cliente');
+    const val = document.getElementById('desafio-freela-valor');
+    const v = parseFloat(String(val.value).replace(/\./g, '').replace(',', '.'));
+    if(!cli.value.trim()){ showToast('Coloca o nome do cliente', 'erro'); cli.focus(); return; }
+    if(!v || v <= 0){ showToast('Coloca o valor recebido', 'erro'); val.focus(); return; }
+    linha.label = cli.value.trim();
+    linha.value = v;
+  } else if(kind === 'vaga'){
+    const emp = document.getElementById('desafio-vaga');
+    if(!emp.value.trim()){ showToast('Coloca a empresa ou a vaga', 'erro'); emp.focus(); return; }
+    linha.label = emp.value.trim();
+    linha.status = 'enviada';
+  }
+  const {data, error} = await sb.from('challenge_entries').insert(linha).select().single();
+  if(error){ showToast('Não deu pra salvar', 'erro'); return; }
+  state.desafio.entries.push({
+    id: data.id, kind: data.kind, date: data.date, label: data.label || '',
+    value: data.value === null ? null : Number(data.value), status: data.status || ''
+  });
+  ['desafio-peso','desafio-freela-cliente','desafio-freela-valor','desafio-vaga'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el && (kind === 'peso' ? id === 'desafio-peso' : kind === 'vaga' ? id === 'desafio-vaga' : id.startsWith('desafio-freela'))) el.value = '';
+  });
+  skipEntranceOnce = true;
+  render();
+  showToast(kind === 'peso' ? 'Peso registrado' : kind === 'freela' ? 'Freela lançado' : 'Vaga adicionada');
+}
+
+async function setDesafioVagaStatus(id, status){
+  const e = state.desafio.entries.find(x=>x.id === id);
+  if(!e) return;
+  const anterior = e.status;
+  e.status = status;
+  skipEntranceOnce = true;
+  render();
+  const {error} = await sb.from('challenge_entries').update({status}).eq('id', id);
+  if(error){
+    e.status = anterior;
+    skipEntranceOnce = true;
+    render();
+    showToast('Não deu pra mudar o status', 'erro');
+  }
+}
+
+async function deleteDesafioEntry(id){
+  const idx = state.desafio.entries.findIndex(x=>x.id === id);
+  if(idx < 0) return;
+  const [removido] = state.desafio.entries.splice(idx, 1);
+  skipEntranceOnce = true;
+  render();
+  const {error} = await sb.from('challenge_entries').delete().eq('id', id);
+  if(error){
+    state.desafio.entries.splice(idx, 0, removido);
+    skipEntranceOnce = true;
+    render();
+    showToast('Não deu pra apagar', 'erro');
+  }
+}
+
+function desafioOnEnter(e, kind){
+  if(e.key === 'Enter'){ e.preventDefault(); addDesafioEntry(kind); }
+}
+
+function renderDesafioBarra(pct){
+  const p = Math.max(0, Math.min(1, pct));
+  return `<div class="desafio-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(p*100)}"><span style="width:${(p*100).toFixed(1)}%"></span></div>`;
+}
+
+function renderDesafioMapa(){
+  const hoje = todayIso();
+  const semanas = [];
+  let iso = DESAFIO_INICIO;
+  while(iso <= DESAFIO_FIM){
+    const semana = [];
+    for(let i=0;i<7;i++){
+      const dentro = iso <= DESAFIO_FIM;
+      const futuro = iso > hoje;
+      const pct = dentro && !futuro ? desafioPctDia(iso) : 0;
+      const nivel = !dentro ? 'fora' : futuro ? 'futuro' : pct === 1 ? 'n4' : pct >= 0.66 ? 'n3' : pct >= 0.33 ? 'n2' : pct > 0 ? 'n1' : 'n0';
+      const titulo = dentro ? `${desafioFmt(iso)} — ${futuro ? 'ainda não chegou' : Math.round(pct*100) + '%'}` : '';
+      semana.push(`<span class="desafio-cell ${nivel}${iso === hoje ? ' hoje' : ''}" title="${titulo}"></span>`);
+      iso = desafioAddDays(iso, 1);
+    }
+    semanas.push(`<div class="desafio-week">${semana.join('')}</div>`);
+  }
+  return `
+    <div class="desafio-map-wrap">
+      <div class="desafio-map-days" aria-hidden="true"><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span><span>D</span></div>
+      <div class="desafio-map">${semanas.join('')}</div>
+    </div>`;
+}
+
+function renderDesafioGraficoPeso(pesos){
+  if(pesos.length < 2) return '';
+  const w = 300, h = 80, pad = 6;
+  const valores = pesos.map(p=>p.value);
+  const min = Math.min(DESAFIO_METAS.pesoInicial, ...valores) - 0.5;
+  const max = Math.max(DESAFIO_METAS.pesoMeta, ...valores) + 0.5;
+  const x = i => pad + (i * (w - pad*2)) / (pesos.length - 1);
+  const y = v => h - pad - ((v - min) * (h - pad*2)) / (max - min);
+  const pontos = pesos.map((p,i)=>`${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
+  const yMeta = y(DESAFIO_METAS.pesoMeta).toFixed(1);
+  return `
+    <svg class="desafio-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Evolução do peso">
+      <line x1="${pad}" x2="${w-pad}" y1="${yMeta}" y2="${yMeta}" class="desafio-chart-meta"/>
+      <polyline points="${pontos}" class="desafio-chart-line"/>
+      ${pesos.map((p,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="2.6" class="desafio-chart-dot"><title>${desafioFmt(p.date)} — ${p.value}kg</title></circle>`).join('')}
+    </svg>`;
+}
+
+function renderDesafio(){
+  if(!state.desafio.loaded){
+    return `
+      <div class="view-header"><div><div class="eyebrow">Desafio 88 dias</div><h1>Desafio</h1></div></div>
+      <div class="glass panel"><div class="empty"><strong>${state.desafio.error ? 'Não deu pra carregar o desafio.' : 'Carregando…'}</strong>${state.desafio.error ? 'Confere se o supabase/desafio.sql já foi rodado no Supabase.' : ''}</div></div>`;
+  }
+
+  const hoje = todayIso();
+  const {dia, total, faltam} = desafioDiaAtual();
+  const seq = desafioSequencia();
+  const itensHoje = desafioItensDoDia(hoje);
+  const marcadosHoje = state.desafio.days[hoje] || new Set();
+  const feitosHoje = itensHoje.filter(i=>marcadosHoje.has(i.key)).length;
+
+  const pesos = desafioDoTipo('peso');
+  const pesoAtual = pesos.length ? pesos[pesos.length-1].value : DESAFIO_METAS.pesoInicial;
+  const ganho = pesoAtual - DESAFIO_METAS.pesoInicial;
+  const pctPeso = ganho / (DESAFIO_METAS.pesoMeta - DESAFIO_METAS.pesoInicial);
+
+  const freelas = desafioDoTipo('freela');
+  const totalFreela = freelas.reduce((s,f)=>s + (f.value || 0), 0);
+  const clientes = new Set(freelas.map(f=>f.label.trim().toLowerCase())).size;
+
+  const vagas = desafioDoTipo('vaga');
+  const entrevistas = vagas.filter(v=>v.status === 'entrevista' || v.status === 'proposta').length;
+
+  const diasFeitos = Object.keys(state.desafio.days).filter(d=>d <= hoje && desafioPctDia(d) === 1).length;
+
+  const btnApagar = (id)=>`<button class="desafio-del" onclick="deleteDesafioEntry('${id}')" title="Apagar" aria-label="Apagar">×</button>`;
+
+  return `
+    <div class="view-header">
+      <div>
+        <div class="eyebrow">Desafio · ${desafioFmt(DESAFIO_INICIO)} → ${desafioFmt(DESAFIO_FIM)}</div>
+        <h1>${dia === 0 ? 'Começa amanhã' : `Dia ${dia} de ${total}`}</h1>
+      </div>
+      <div class="desafio-hero-hint">${faltam > 0 ? `faltam <strong>${faltam}</strong> dias` : 'desafio encerrado'}</div>
+    </div>
+
+    <div class="status-row">
+      <div class="status-item"><div class="lbl">Sequência</div><div class="val">${seq} ${seq===1?'dia':'dias'}</div></div>
+      <div class="status-item"><div class="lbl">Dias 100%</div><div class="val">${diasFeitos}</div></div>
+      <div class="status-item"><div class="lbl">Peso</div><div class="val">${String(pesoAtual).replace('.', ',')}kg</div></div>
+      <div class="status-item"><div class="lbl">Freela</div><div class="val">${desafioDinheiro(totalFreela)}</div></div>
+      <div class="status-item"><div class="lbl">Vagas</div><div class="val">${vagas.length}</div></div>
+    </div>
+
+    <div class="dash-grid">
+      <div style="display:flex;flex-direction:column;gap:22px;">
+        <div class="glass panel">
+          <div class="panel-head">
+            <div class="panel-title">✅ Checklist de hoje</div>
+            <div class="panel-hint">${feitosHoje}/${itensHoje.length} feitos</div>
+          </div>
+          ${renderDesafioBarra(itensHoje.length ? feitosHoje / itensHoje.length : 0)}
+          <div class="desafio-checks">
+            ${itensHoje.map(i=>{
+              const ok = marcadosHoje.has(i.key);
+              return `<button class="desafio-check ${ok?'ok':''}" onclick="toggleDesafioItem('${i.key}')" aria-pressed="${ok}">
+                <span class="desafio-box" aria-hidden="true">${ok ? '✓' : ''}</span>
+                <span class="desafio-check-txt"><span>${esc(i.label)}</span><small>${esc(i.hint)}</small></span>
+              </button>`;
+            }).join('')}
+          </div>
+        </div>
+
+        <div class="glass panel">
+          <div class="panel-head">
+            <div class="panel-title">💰 Dinheiro extra</div>
+            <div class="panel-hint">${clientes}/${DESAFIO_METAS.clientes} clientes</div>
+          </div>
+          <div class="desafio-meta-line"><strong>${desafioDinheiro(totalFreela)}</strong><span>de ${desafioDinheiro(DESAFIO_METAS.dinheiro)}</span></div>
+          ${renderDesafioBarra(totalFreela / DESAFIO_METAS.dinheiro)}
+          <div class="desafio-form">
+            <input class="input" id="desafio-freela-cliente" placeholder="Cliente" autocomplete="off" onkeydown="desafioOnEnter(event,'freela')">
+            <input class="input desafio-input-sm" id="desafio-freela-valor" placeholder="R$" inputmode="decimal" autocomplete="off" onkeydown="desafioOnEnter(event,'freela')">
+            <button class="btn-primary" onclick="addDesafioEntry('freela')">Lançar</button>
+          </div>
+          ${freelas.length ? `<div class="desafio-list">${[...freelas].reverse().map(f=>`
+            <div class="desafio-row">
+              <span class="desafio-row-date">${desafioFmt(f.date)}</span>
+              <span class="desafio-row-label">${esc(f.label)}</span>
+              <span class="desafio-row-val">${desafioDinheiro(f.value)}</span>
+              ${btnApagar(f.id)}
+            </div>`).join('')}</div>` : `<div class="desafio-empty">Primeiro cliente até 31/10.</div>`}
+        </div>
+
+        <div class="glass panel">
+          <div class="panel-head">
+            <div class="panel-title">💻 Vagas de dev</div>
+            <div class="panel-hint">${entrevistas} em entrevista ou proposta</div>
+          </div>
+          <div class="desafio-meta-line"><strong>${vagas.length}</strong><span>de ${DESAFIO_METAS.vagas} candidaturas</span></div>
+          ${renderDesafioBarra(vagas.length / DESAFIO_METAS.vagas)}
+          <div class="desafio-form">
+            <input class="input" id="desafio-vaga" placeholder="Empresa — vaga" autocomplete="off" onkeydown="desafioOnEnter(event,'vaga')">
+            <button class="btn-primary" onclick="addDesafioEntry('vaga')">Adicionar</button>
+          </div>
+          ${vagas.length ? `<div class="desafio-list">${[...vagas].reverse().map(v=>`
+            <div class="desafio-row">
+              <span class="desafio-row-date">${desafioFmt(v.date)}</span>
+              <span class="desafio-row-label">${esc(v.label)}</span>
+              <select class="select desafio-status" data-status="${esc(v.status)}" onchange="setDesafioVagaStatus('${v.id}', this.value)" aria-label="Status da vaga">
+                ${DESAFIO_STATUS_VAGA.map(s=>`<option value="${s.key}" ${s.key===v.status?'selected':''}>${s.label}</option>`).join('')}
+              </select>
+              ${btnApagar(v.id)}
+            </div>`).join('')}</div>` : `<div class="desafio-empty">15 candidaturas até o fim de novembro.</div>`}
+        </div>
+      </div>
+
+      <div class="side-col">
+        <div class="glass panel">
+          <div class="panel-head">
+            <div class="panel-title">💪 Peso</div>
+            <div class="panel-hint">meta ${DESAFIO_METAS.pesoMeta}kg</div>
+          </div>
+          <div class="desafio-meta-line"><strong>${ganho >= 0 ? '+' : ''}${ganho.toFixed(1).replace('.', ',')}kg</strong><span>desde ${DESAFIO_METAS.pesoInicial}kg</span></div>
+          ${renderDesafioBarra(pctPeso)}
+          ${renderDesafioGraficoPeso(pesos)}
+          <div class="desafio-form">
+            <input class="input" id="desafio-peso" placeholder="Peso de hoje (kg)" inputmode="decimal" autocomplete="off" onkeydown="desafioOnEnter(event,'peso')">
+            <button class="btn-primary" onclick="addDesafioEntry('peso')">Registrar</button>
+          </div>
+          ${pesos.length ? `<div class="desafio-list">${[...pesos].reverse().slice(0,5).map(p=>`
+            <div class="desafio-row">
+              <span class="desafio-row-date">${desafioFmt(p.date)}</span>
+              <span class="desafio-row-label">${String(p.value).replace('.', ',')}kg</span>
+              ${btnApagar(p.id)}
+            </div>`).join('')}</div>` : `<div class="desafio-empty">Pesa de manhã, em jejum, toda semana.</div>`}
+        </div>
+
+        <div class="glass panel">
+          <div class="panel-head">
+            <div class="panel-title">🗓️ Os 88 dias</div>
+            <div class="panel-hint">cada quadrado é um dia</div>
+          </div>
+          ${renderDesafioMapa()}
+          <div class="desafio-legend"><span>menos</span><span class="desafio-cell n0"></span><span class="desafio-cell n1"></span><span class="desafio-cell n2"></span><span class="desafio-cell n3"></span><span class="desafio-cell n4"></span><span>100%</span></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 watchModalFocus();
 checkAuth();
