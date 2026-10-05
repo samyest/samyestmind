@@ -4570,14 +4570,14 @@ const DESAFIO_FIM = '2026-12-31';
 const DESAFIO_METAS = {pesoInicial: 73, pesoMeta: 77, dinheiro: 2000, clientes: 3, vagas: 30, kcal: 2800, proteina: 140};
 const TODOS_OS_DIAS = [0,1,2,3,4,5,6];
 const DESAFIO_ITENS = [
-  {key:'academia', label:'Academia', hint:'direto do trabalho — passar em casa é desistir', dias:[1,3,4,5]},
-  {key:'pesar', label:'Pesar em jejum', hint:'marca sozinho ao registrar o peso', dias:[1]},
-  {key:'proteina', label:'140g de proteína', hint:'marca sozinho pelo que você registra', dias:TODOS_OS_DIAS},
-  {key:'agua', label:'3L de água', hint:'4L em dia de treino', dias:TODOS_OS_DIAS},
-  {key:'creatina', label:'Creatina 3–5g', hint:'pós-treino ou no almoço', dias:TODOS_OS_DIAS},
-  {key:'dev', label:'Bloco de dev / freela', hint:'1h focada, celular virado', dias:[2,5,6]},
+  {key:'academia', label:'Academia', hint:'direto do trabalho', dias:[1,3,4,5]},
+  {key:'pesar', label:'Pesar em jejum', hint:'registre em Progresso', dias:[1], auto:true},
+  {key:'proteina', label:'140g de proteína', hint:'conta pela comida registrada', dias:TODOS_OS_DIAS, auto:true},
+  {key:'agua', label:'3L de água', hint:'4L se treinar', dias:TODOS_OS_DIAS},
+  {key:'creatina', label:'Creatina 3–5g', hint:'pós-treino ou almoço', dias:TODOS_OS_DIAS},
+  {key:'dev', label:'1h de curso ou freela', hint:'celular longe', dias:[2,5,6]},
   {key:'cs', label:'CS só depois do bloco', hint:'jogo é recompensa', dias:[2,5,6]},
-  {key:'revisao', label:'Revisar a semana', hint:'15 min: o que foi bem, o que ajustar', dias:[0]}
+  {key:'revisao', label:'Revisar a semana', hint:'15 min', dias:[0]}
 ];
 const DESAFIO_STATUS_VAGA = [
   {key:'enviada', label:'Enviada'},
@@ -4598,13 +4598,34 @@ const DESAFIO_METAS_PADRAO = [
   {label:'GitHub com README e prints do samyest.mind e do CS2 hub', date:'2026-10-19'},
   {label:'Oferecer o freela pra 10 lojas ou contatos', date:'2026-10-26'},
   {label:'Fechar o 1º cliente de freela', date:'2026-10-31'},
-  {label:'Começar React: 3x por semana, 1h', date:'2026-11-08'},
   {label:'15 candidaturas de dev enviadas', date:'2026-11-30'},
-  {label:'Projeto refeito em React e no ar', date:'2026-11-30'},
   {label:'Chegar a 75kg', date:'2026-11-30'},
   {label:'Fechar o 3º cliente de freela', date:'2026-12-31'},
   {label:'Chegar a 77kg e tirar a foto de antes e depois', date:'2026-12-31'}
 ];
+
+// Módulos do curso, na ordem dele. value = 1 marca a meta como estudo, pra
+// ela aparecer na trilha do curso e não na lista de prazos.
+const DESAFIO_SEED_ESTUDOS = '__seed_estudos_v1';
+const DESAFIO_ESTUDOS = [
+  {label:'Fundamentos da Programação Web e Setup', date:'2026-10-04', feita:true},
+  {label:'Git e GitHub', date:'2026-10-04', feita:true},
+  {label:'Fundamentos do HTML e do CSS', date:'2026-10-11'},
+  {label:'Usando Inteligência Artificial no Aprendizado', date:'2026-10-15'},
+  {label:'Avançando no HTML e CSS', date:'2026-10-25'},
+  {label:'JavaScript', date:'2026-11-15'},
+  {label:'TypeScript', date:'2026-11-29'},
+  {label:'Iniciando no Node.js', date:'2026-12-13'},
+  {label:'API REST com Node.js', date:'2026-12-31'},
+  {label:'Node.js com Containers', date:'2027-01-17'},
+  {label:'Bônus: API do Refund 2.0', date:'2027-01-24'},
+  {label:'Iniciando no React', date:'2027-02-07'},
+  {label:'Avançando no React', date:'2027-02-28'},
+  {label:'HelpDesk', date:'2027-03-21'},
+  {label:'Certificado final', date:'2027-03-31'}
+];
+// O curso já cobre o React; as metas genéricas de React do plano saem.
+const DESAFIO_METAS_SUBSTITUIDAS = ['Começar React: 3x por semana, 1h', 'Projeto refeito em React e no ar'];
 
 const DESAFIO_REFEICOES = [
   {nome:'Café da manhã', texto:'2 pães + 3 fatias de peito de peru + 2 fatias de queijo + 1 copo de leite semi desnatado + 1 banana'},
@@ -4615,7 +4636,18 @@ const DESAFIO_REFEICOES = [
   {nome:'Jantar leve', texto:'1 copo de leite com nescau'}
 ];
 
-state.desafio = {days: {}, entries: [], loaded: false, comidaTexto: '', comidaPreview: null, cadastro: null, todasMetas: false, precisaSql: false};
+function desafioAbaSalva(){
+  try{ return localStorage.getItem('desafioAba') || 'hoje'; }catch(e){ return 'hoje'; }
+}
+
+state.desafio = {days: {}, entries: [], loaded: false, comidaTexto: '', comidaPreview: null, cadastro: null, todasMetas: false, novaMeta: false, precisaSql: false, aba: desafioAbaSalva()};
+
+function setDesafioAba(aba){
+  state.desafio.aba = aba;
+  try{ localStorage.setItem('desafioAba', aba); }catch(e){}
+  render();
+  window.scrollTo(0,0);
+}
 
 function isDesafioOwner(){
   return !!(session && session.user && (session.user.email || '').toLowerCase() === DESAFIO_EMAIL);
@@ -4668,6 +4700,7 @@ async function loadDesafio(){
   state.desafio.loaded = true;
   state.desafio.error = false;
   await seedDesafioMetas();
+  await seedDesafioEstudos();
 }
 
 async function seedDesafioMetas(){
@@ -4678,6 +4711,21 @@ async function seedDesafioMetas(){
   if(error){ state.desafio.precisaSql = true; return; }
   state.desafio.precisaSql = false;
   (data || []).forEach(r=>state.desafio.entries.push(desafioLinha(r)));
+}
+
+async function seedDesafioEstudos(){
+  if(state.desafio.precisaSql) return;
+  if(state.desafio.entries.some(e=>e.kind === 'meta' && e.label === DESAFIO_SEED_ESTUDOS)) return;
+  const linhas = DESAFIO_ESTUDOS.map(m=>({user_id: session.user.id, kind:'meta', label:m.label, date:m.date, value:1, status: m.feita ? 'feita' : 'aberta'}));
+  linhas.push({user_id: session.user.id, kind:'meta', label:DESAFIO_SEED_ESTUDOS, date:DESAFIO_INICIO, status:'marca'});
+  const {data, error} = await sb.from('challenge_entries').insert(linhas).select();
+  if(error) return;
+  (data || []).forEach(r=>state.desafio.entries.push(desafioLinha(r)));
+  const sobras = state.desafio.entries.filter(e=>e.kind === 'meta' && e.status !== 'feita' && DESAFIO_METAS_SUBSTITUIDAS.includes(e.label));
+  if(sobras.length){
+    const {error: errDel} = await sb.from('challenge_entries').delete().in('id', sobras.map(e=>e.id));
+    if(!errDel) state.desafio.entries = state.desafio.entries.filter(e=>!sobras.includes(e));
+  }
 }
 
 function desafioIso(d){
@@ -4758,7 +4806,12 @@ function desafioDoTipo(kind){
 }
 
 function desafioMetas(){
-  return desafioDoTipo('meta').filter(m=>m.label !== DESAFIO_SEED_MARK);
+  return desafioDoTipo('meta').filter(m=>m.status !== 'marca' && m.value !== 1);
+}
+
+function desafioEstudos(){
+  return desafioDoTipo('meta').filter(m=>m.status !== 'marca' && m.value === 1)
+    .sort((a, b)=>a.date.localeCompare(b.date) || DESAFIO_ESTUDOS.findIndex(x=>x.label === a.label) - DESAFIO_ESTUDOS.findIndex(x=>x.label === b.label));
 }
 
 function desafioRerender(){
@@ -4846,6 +4899,7 @@ async function addDesafioEntry(kind){
   }
   const e = await inserirDesafio(linha);
   if(!e){ showToast(kind === 'meta' ? 'Falta rodar o supabase/desafio_v2.sql' : 'Não deu pra salvar', 'erro'); return; }
+  if(kind === 'meta') state.desafio.novaMeta = false;
   desafioRerender();
   showToast({peso:'Peso registrado', freela:'Freela lançado', vaga:'Vaga adicionada', meta:'Meta criada'}[kind]);
   if(kind === 'peso') desafioMarcarSozinho('pesar');
@@ -5268,7 +5322,7 @@ function renderDesafioComida(){
   return `
     <div class="glass panel">
       <div class="panel-head">
-        <div class="panel-title">🍽️ O que você comeu hoje</div>
+        <div class="panel-title">Comida</div>
         <div class="panel-hint">estimativa</div>
       </div>
       <div class="desafio-macros">
@@ -5294,197 +5348,240 @@ function renderDesafioComida(){
           <span class="desafio-row-label">${esc(c.label)}</span>
           <span class="desafio-row-val">${desafioNum(c.value)} kcal · ${desafioNum(c.protein, 1)}g</span>
           ${btnApagar(c.id)}
-        </div>`).join('')}</div>` : (p ? '' : `<div class="desafio-empty">Escreve do jeito que falaria: “2 pães com peito de peru e queijo”, “a la minuta”, “200g de frango”.</div>`)}
+        </div>`).join('')}</div>` : (p ? '' : `<div class="desafio-empty">Escreva como falaria: “a la minuta”, “3 ovos e 1 banana”.</div>`)}
+    </div>`;
+}
+
+function renderDesafioMetaLinha(m){
+  const ok = m.status === 'feita';
+  const prazo = desafioPrazo(m.date);
+  return `
+    <div class="desafio-meta-item ${ok ? 'ok' : ''}">
+      <button class="desafio-meta-check" onclick="toggleDesafioMeta('${m.id}')" aria-pressed="${ok}" aria-label="${ok ? 'Reabrir' : 'Concluir'}: ${esc(m.label)}"><span class="desafio-box" aria-hidden="true">${ok ? '✓' : ''}</span></button>
+      <span class="desafio-meta-txt">${esc(m.label)}</span>
+      ${ok ? '' : `<span class="desafio-prazo ${prazo.cls}">${prazo.txt}</span>`}
+      <button class="desafio-del" onclick="deleteDesafioEntry('${m.id}')" title="Apagar" aria-label="Apagar meta">×</button>
     </div>`;
 }
 
 function renderDesafioMetas(){
   const metas = desafioMetas();
+  const hoje = todayIso();
   const abertas = metas.filter(m=>m.status !== 'feita').sort((a, b)=>a.date.localeCompare(b.date));
   const feitas = metas.filter(m=>m.status === 'feita');
-  const visiveis = state.desafio.todasMetas ? abertas : abertas.slice(0, 6);
-  const linha = (m)=>{
-    const ok = m.status === 'feita';
-    const prazo = desafioPrazo(m.date);
-    return `
-      <div class="desafio-meta-item ${ok ? 'ok' : ''}">
-        <button class="desafio-meta-check" onclick="toggleDesafioMeta('${m.id}')" aria-pressed="${ok}" aria-label="${ok ? 'Reabrir' : 'Concluir'} meta"><span class="desafio-box" aria-hidden="true">${ok ? '✓' : ''}</span></button>
-        <span class="desafio-meta-txt">${esc(m.label)}</span>
-        ${ok ? '' : `<span class="desafio-prazo ${prazo.cls}">${prazo.txt}</span>`}
-        <button class="desafio-del" onclick="deleteDesafioEntry('${m.id}')" title="Apagar" aria-label="Apagar meta">×</button>
-      </div>`;
-  };
+  const semana = abertas.filter(m=>desafioDiff(hoje, m.date) < 7);
+  const depois = abertas.filter(m=>desafioDiff(hoje, m.date) >= 7);
+  const depoisVisiveis = state.desafio.todasMetas ? depois : depois.slice(0, 4);
   return `
     <div class="glass panel">
       <div class="panel-head">
-        <div class="panel-title">🎯 Metas</div>
-        <div class="panel-hint">${feitas.length}/${metas.length} concluídas</div>
+        <div class="panel-title">Metas</div>
+        <div class="panel-hint">${feitas.length} de ${metas.length} concluídas</div>
       </div>
-      ${metas.length ? renderDesafioBarra(feitas.length / metas.length) : ''}
-      <div class="desafio-metas">
-        ${visiveis.map(linha).join('') || (metas.length ? '<div class="desafio-empty">Tudo concluído. Cria a próxima.</div>' : '')}
+      <div class="desafio-grupo">
+        <div class="desafio-grupo-titulo">Esta semana</div>
+        ${semana.map(renderDesafioMetaLinha).join('') || '<div class="desafio-empty">Nada com prazo nos próximos 7 dias.</div>'}
       </div>
-      ${abertas.length > 6 ? `<button class="desafio-mais" onclick="state.desafio.todasMetas=!state.desafio.todasMetas;desafioRerender()">${state.desafio.todasMetas ? 'Mostrar menos' : `Ver todas (${abertas.length})`}</button>` : ''}
+      ${depois.length ? `
+      <div class="desafio-grupo">
+        <div class="desafio-grupo-titulo">Mais pra frente</div>
+        ${depoisVisiveis.map(renderDesafioMetaLinha).join('')}
+        ${depois.length > 4 ? `<button class="desafio-mais" onclick="state.desafio.todasMetas=!state.desafio.todasMetas;desafioRerender()">${state.desafio.todasMetas ? 'Mostrar menos' : `Ver mais ${depois.length - 4}`}</button>` : ''}
+      </div>` : ''}
+      ${state.desafio.novaMeta ? `
       <div class="desafio-form desafio-form-meta">
-        <input class="input" id="desafio-meta" placeholder="Nova meta" autocomplete="off" onkeydown="desafioOnEnter(event,'meta')">
-        <input class="input desafio-input-data" type="date" id="desafio-meta-prazo" value="${desafioAddDays(todayIso(), 7)}" aria-label="Prazo">
+        <input class="input" id="desafio-meta" placeholder="O que você quer conquistar?" autocomplete="off" onkeydown="desafioOnEnter(event,'meta')">
+        <input class="input desafio-input-data" type="date" id="desafio-meta-prazo" value="${desafioAddDays(hoje, 7)}" aria-label="Prazo">
         <button class="btn-primary" onclick="addDesafioEntry('meta')">Criar</button>
+      </div>` : `<button class="desafio-add" onclick="state.desafio.novaMeta=true;desafioRerender();setTimeout(()=>document.getElementById('desafio-meta').focus(),30)">+ Nova meta</button>`}
+      ${feitas.length ? `<details class="desafio-feitas"><summary>Concluídas (${feitas.length})</summary>${feitas.map(renderDesafioMetaLinha).join('')}</details>` : ''}
+    </div>`;
+}
+
+function renderDesafioEstudos(){
+  const estudos = desafioEstudos();
+  if(!estudos.length) return '';
+  const feitos = estudos.filter(m=>m.status === 'feita').length;
+  const atual = estudos.find(m=>m.status !== 'feita');
+  return `
+    <div class="glass panel">
+      <div class="panel-head">
+        <div class="panel-title">Formação dev</div>
+        <div class="panel-hint">${feitos} de ${estudos.length} módulos</div>
       </div>
-      ${feitas.length ? `<details class="desafio-feitas"><summary>Concluídas (${feitas.length})</summary>${feitas.map(linha).join('')}</details>` : ''}
+      ${renderDesafioBarra(feitos / estudos.length)}
+      <ol class="desafio-trilha">
+        ${estudos.map(m=>{
+          const ok = m.status === 'feita';
+          const agora = atual && m.id === atual.id;
+          const prazo = desafioPrazo(m.date);
+          return `
+            <li class="desafio-modulo ${ok ? 'ok' : ''} ${agora ? 'agora' : ''}">
+              <button class="desafio-meta-check" onclick="toggleDesafioMeta('${m.id}')" aria-pressed="${ok}" aria-label="${ok ? 'Reabrir' : 'Concluir'}: ${esc(m.label)}"><span class="desafio-box" aria-hidden="true">${ok ? '✓' : ''}</span></button>
+              <span class="desafio-modulo-nome">${esc(m.label)}</span>
+              ${ok ? '' : `<span class="desafio-prazo ${agora ? prazo.cls || 'perto' : ''}">${agora ? `agora · ${prazo.txt}` : desafioFmt(m.date)}</span>`}
+            </li>`;
+        }).join('')}
+      </ol>
+    </div>`;
+}
+
+function renderDesafioHoje(){
+  const hoje = todayIso();
+  const itensHoje = desafioItensDoDia(hoje);
+  const marcados = state.desafio.days[hoje] || new Set();
+  const feitos = itensHoje.filter(i=>marcados.has(i.key)).length;
+  const nomeDia = DIAS_LONGOS[desafioDate(hoje).getDay()];
+  return `
+    <div class="desafio-hoje">
+      <div class="glass panel">
+        <div class="panel-head">
+          <div class="panel-title">${nomeDia}</div>
+          <div class="panel-hint">${feitos} de ${itensHoje.length}</div>
+        </div>
+        ${renderDesafioBarra(itensHoje.length ? feitos / itensHoje.length : 0)}
+        <ul class="desafio-checks">
+          ${itensHoje.map(i=>{
+            const ok = marcados.has(i.key);
+            return `<li><button class="desafio-check ${ok ? 'ok' : ''}" onclick="toggleDesafioItem('${i.key}')" aria-pressed="${ok}">
+              <span class="desafio-box" aria-hidden="true">${ok ? '✓' : ''}</span>
+              <span class="desafio-check-txt">${esc(i.label)}</span>
+              <small>${i.auto ? '<span class="desafio-auto">auto</span>' : ''}${esc(i.hint)}</small>
+            </button></li>`;
+          }).join('')}
+        </ul>
+        ${feitos === itensHoje.length && itensHoje.length ? '<div class="desafio-dia-ok">Dia completo. Amanhã tem mais.</div>' : ''}
+      </div>
+      ${renderDesafioComida()}
+    </div>`;
+}
+
+function renderDesafioProgresso(){
+  const pesos = desafioDoTipo('peso');
+  const pesoAtual = pesos.length ? pesos[pesos.length-1].value : DESAFIO_METAS.pesoInicial;
+  const ganho = pesoAtual - DESAFIO_METAS.pesoInicial;
+  const freelas = desafioDoTipo('freela');
+  const totalFreela = freelas.reduce((s,f)=>s + (f.value || 0), 0);
+  const clientes = new Set(freelas.map(f=>f.label.trim().toLowerCase())).size;
+  const vagas = desafioDoTipo('vaga');
+  const entrevistas = vagas.filter(v=>v.status === 'entrevista' || v.status === 'proposta').length;
+  const hoje = todayIso();
+  const diasFeitos = Object.keys(state.desafio.days).filter(d=>d <= hoje && desafioPctDia(d) === 1).length;
+  const btnApagar = (id)=>`<button class="desafio-del" onclick="deleteDesafioEntry('${id}')" title="Apagar" aria-label="Apagar">×</button>`;
+
+  return `
+    <div class="desafio-progresso">
+      <div class="glass panel">
+        <div class="panel-head">
+          <div class="panel-title">Peso</div>
+          <div class="panel-hint">meta ${DESAFIO_METAS.pesoMeta}kg</div>
+        </div>
+        <div class="desafio-meta-line"><strong>${desafioNum(pesoAtual, 1)}kg</strong><span>${ganho >= 0 ? '+' : ''}${desafioNum(ganho, 1)}kg desde o início</span></div>
+        ${renderDesafioBarra(ganho / (DESAFIO_METAS.pesoMeta - DESAFIO_METAS.pesoInicial))}
+        ${renderDesafioGraficoPeso(pesos)}
+        <div class="desafio-form">
+          <input class="input" id="desafio-peso" placeholder="Peso de hoje (kg)" inputmode="decimal" autocomplete="off" onkeydown="desafioOnEnter(event,'peso')">
+          <button class="btn-primary" onclick="addDesafioEntry('peso')">Registrar</button>
+        </div>
+        ${pesos.length ? `<div class="desafio-list">${[...pesos].reverse().slice(0,3).map(p=>`
+          <div class="desafio-row">
+            <span class="desafio-row-date">${desafioFmt(p.date)}</span>
+            <span class="desafio-row-label">${desafioNum(p.value, 1)}kg</span>
+            ${btnApagar(p.id)}
+          </div>`).join('')}</div>` : `<div class="desafio-empty">Toda segunda, de manhã, em jejum.</div>`}
+      </div>
+
+      <div class="glass panel">
+        <div class="panel-head">
+          <div class="panel-title">Os 88 dias</div>
+          <div class="panel-hint">${diasFeitos} ${diasFeitos === 1 ? 'dia completo' : 'dias completos'}</div>
+        </div>
+        ${renderDesafioMapa()}
+        <div class="desafio-legend"><span>menos</span><span class="desafio-cell n0"></span><span class="desafio-cell n1"></span><span class="desafio-cell n2"></span><span class="desafio-cell n3"></span><span class="desafio-cell n4"></span><span>100%</span></div>
+      </div>
+
+      <div class="glass panel">
+        <div class="panel-head">
+          <div class="panel-title">Dinheiro extra</div>
+          <div class="panel-hint">${clientes} de ${DESAFIO_METAS.clientes} clientes</div>
+        </div>
+        <div class="desafio-meta-line"><strong>${desafioDinheiro(totalFreela)}</strong><span>de ${desafioDinheiro(DESAFIO_METAS.dinheiro)}</span></div>
+        ${renderDesafioBarra(totalFreela / DESAFIO_METAS.dinheiro)}
+        <div class="desafio-form">
+          <input class="input" id="desafio-freela-cliente" placeholder="Cliente" autocomplete="off" onkeydown="desafioOnEnter(event,'freela')">
+          <input class="input desafio-input-sm" id="desafio-freela-valor" placeholder="R$" inputmode="decimal" autocomplete="off" onkeydown="desafioOnEnter(event,'freela')">
+          <button class="btn-primary" onclick="addDesafioEntry('freela')">Lançar</button>
+        </div>
+        ${freelas.length ? `<div class="desafio-list">${[...freelas].reverse().map(f=>`
+          <div class="desafio-row">
+            <span class="desafio-row-date">${desafioFmt(f.date)}</span>
+            <span class="desafio-row-label">${esc(f.label)}</span>
+            <span class="desafio-row-val">${desafioDinheiro(f.value)}</span>
+            ${btnApagar(f.id)}
+          </div>`).join('')}</div>` : `<div class="desafio-empty">Primeiro cliente até 31/10.</div>`}
+      </div>
+
+      <div class="glass panel">
+        <div class="panel-head">
+          <div class="panel-title">Vagas de dev</div>
+          <div class="panel-hint">${entrevistas} em entrevista</div>
+        </div>
+        <div class="desafio-meta-line"><strong>${vagas.length}</strong><span>de ${DESAFIO_METAS.vagas} candidaturas</span></div>
+        ${renderDesafioBarra(vagas.length / DESAFIO_METAS.vagas)}
+        <div class="desafio-form">
+          <input class="input" id="desafio-vaga" placeholder="Empresa — vaga" autocomplete="off" onkeydown="desafioOnEnter(event,'vaga')">
+          <button class="btn-primary" onclick="addDesafioEntry('vaga')">Adicionar</button>
+        </div>
+        ${vagas.length ? `<div class="desafio-list">${[...vagas].reverse().map(v=>`
+          <div class="desafio-row">
+            <span class="desafio-row-date">${desafioFmt(v.date)}</span>
+            <span class="desafio-row-label">${esc(v.label)}</span>
+            <select class="select desafio-status" data-status="${esc(v.status)}" onchange="setDesafioVagaStatus('${v.id}', this.value)" aria-label="Status da vaga">
+              ${DESAFIO_STATUS_VAGA.map(s=>`<option value="${s.key}" ${s.key===v.status?'selected':''}>${s.label}</option>`).join('')}
+            </select>
+            ${btnApagar(v.id)}
+          </div>`).join('')}</div>` : `<div class="desafio-empty">15 candidaturas até o fim de novembro.</div>`}
+      </div>
     </div>`;
 }
 
 function renderDesafio(){
   if(!state.desafio.loaded){
     return `
-      <div class="view-header"><div><div class="eyebrow">Desafio 88 dias</div><h1>Desafio</h1></div></div>
+      <div class="view-header"><div><h1>Desafio</h1></div></div>
       <div class="glass panel"><div class="empty"><strong>${state.desafio.error ? 'Não deu pra carregar o desafio.' : 'Carregando…'}</strong>${state.desafio.error ? 'Confere se o supabase/desafio.sql já foi rodado no Supabase.' : ''}</div></div>`;
   }
 
-  const hoje = todayIso();
   const {dia, total, faltam} = desafioDiaAtual();
   const seq = desafioSequencia();
-  const itensHoje = desafioItensDoDia(hoje);
-  const marcadosHoje = state.desafio.days[hoje] || new Set();
-  const feitosHoje = itensHoje.filter(i=>marcadosHoje.has(i.key)).length;
-
-  const pesos = desafioDoTipo('peso');
-  const pesoAtual = pesos.length ? pesos[pesos.length-1].value : DESAFIO_METAS.pesoInicial;
-  const ganho = pesoAtual - DESAFIO_METAS.pesoInicial;
-  const pctPeso = ganho / (DESAFIO_METAS.pesoMeta - DESAFIO_METAS.pesoInicial);
-
-  const freelas = desafioDoTipo('freela');
-  const totalFreela = freelas.reduce((s,f)=>s + (f.value || 0), 0);
-  const clientes = new Set(freelas.map(f=>f.label.trim().toLowerCase())).size;
-
-  const vagas = desafioDoTipo('vaga');
-  const entrevistas = vagas.filter(v=>v.status === 'entrevista' || v.status === 'proposta').length;
-
-  const diasFeitos = Object.keys(state.desafio.days).filter(d=>d <= hoje && desafioPctDia(d) === 1).length;
   const proxima = desafioMetas().filter(m=>m.status !== 'feita').sort((a, b)=>a.date.localeCompare(b.date))[0];
-
-  const btnApagar = (id)=>`<button class="desafio-del" onclick="deleteDesafioEntry('${id}')" title="Apagar" aria-label="Apagar">×</button>`;
+  const aba = ['hoje','metas','progresso'].includes(state.desafio.aba) ? state.desafio.aba : 'hoje';
+  const abas = [
+    {key:'hoje', label:'Hoje'},
+    {key:'metas', label:'Metas'},
+    {key:'progresso', label:'Progresso'}
+  ];
+  const corpo = aba === 'metas'
+    ? `<div class="desafio-metas-aba">${renderDesafioMetas()}${renderDesafioEstudos()}</div>`
+    : aba === 'progresso' ? renderDesafioProgresso() : renderDesafioHoje();
 
   return `
-    <div class="view-header">
-      <div>
-        <div class="eyebrow">Desafio · ${desafioFmt(DESAFIO_INICIO)} → ${desafioFmt(DESAFIO_FIM)}</div>
-        <h1>${dia === 0 ? 'Começa amanhã' : `Dia ${dia} de ${total}`}</h1>
-      </div>
-      <div class="desafio-hero-hint">
-        ${faltam > 0 ? `faltam <strong>${faltam}</strong> dias` : 'desafio encerrado'}
-        ${proxima ? `<div class="desafio-hero-next">próxima meta: <span>${esc(proxima.label)}</span> · ${desafioPrazo(proxima.date).txt}</div>` : ''}
-      </div>
+    <div class="desafio-topo">
+      <h1>${dia === 0 ? 'Começa amanhã' : `Dia ${dia} de ${total}`}</h1>
+      <p class="desafio-resumo">
+        ${faltam > 0 ? `faltam ${faltam} dias` : 'desafio encerrado'}
+        <span aria-hidden="true">·</span> sequência de ${seq} ${seq === 1 ? 'dia' : 'dias'}
+      </p>
+      ${proxima ? `<button class="desafio-proxima" onclick="setDesafioAba('metas')"><span class="desafio-proxima-rotulo">Próxima meta</span><span class="desafio-proxima-txt">${esc(proxima.label)}</span><span class="desafio-prazo ${desafioPrazo(proxima.date).cls}">${desafioPrazo(proxima.date).txt}</span></button>` : ''}
     </div>
 
     ${renderDesafioAvisoSql()}
 
-    <div class="status-row">
-      <div class="status-item"><div class="lbl">Sequência</div><div class="val">${seq} ${seq===1?'dia':'dias'}</div></div>
-      <div class="status-item"><div class="lbl">Dias 100%</div><div class="val">${diasFeitos}</div></div>
-      <div class="status-item"><div class="lbl">Peso</div><div class="val">${desafioNum(pesoAtual, 1)}kg</div></div>
-      <div class="status-item"><div class="lbl">Freela</div><div class="val">${desafioDinheiro(totalFreela)}</div></div>
-      <div class="status-item"><div class="lbl">Vagas</div><div class="val">${vagas.length}</div></div>
+    <div class="desafio-abas" role="tablist" aria-label="Seções do desafio">
+      ${abas.map(a=>`<button role="tab" aria-selected="${a.key === aba}" class="desafio-aba ${a.key === aba ? 'ativa' : ''}" onclick="setDesafioAba('${a.key}')">${a.label}</button>`).join('')}
     </div>
 
-    <div class="dash-grid">
-      <div style="display:flex;flex-direction:column;gap:22px;">
-        <div class="glass panel">
-          <div class="panel-head">
-            <div class="panel-title">✅ Checklist de hoje</div>
-            <div class="panel-hint">${feitosHoje}/${itensHoje.length} feitos</div>
-          </div>
-          ${renderDesafioBarra(itensHoje.length ? feitosHoje / itensHoje.length : 0)}
-          <div class="desafio-checks">
-            ${itensHoje.map(i=>{
-              const ok = marcadosHoje.has(i.key);
-              return `<button class="desafio-check ${ok?'ok':''}" onclick="toggleDesafioItem('${i.key}')" aria-pressed="${ok}">
-                <span class="desafio-box" aria-hidden="true">${ok ? '✓' : ''}</span>
-                <span class="desafio-check-txt"><span>${esc(i.label)}</span><small>${esc(i.hint)}</small></span>
-              </button>`;
-            }).join('')}
-          </div>
-        </div>
-
-        ${renderDesafioComida()}
-
-        <div class="glass panel">
-          <div class="panel-head">
-            <div class="panel-title">💰 Dinheiro extra</div>
-            <div class="panel-hint">${clientes}/${DESAFIO_METAS.clientes} clientes</div>
-          </div>
-          <div class="desafio-meta-line"><strong>${desafioDinheiro(totalFreela)}</strong><span>de ${desafioDinheiro(DESAFIO_METAS.dinheiro)}</span></div>
-          ${renderDesafioBarra(totalFreela / DESAFIO_METAS.dinheiro)}
-          <div class="desafio-form">
-            <input class="input" id="desafio-freela-cliente" placeholder="Cliente" autocomplete="off" onkeydown="desafioOnEnter(event,'freela')">
-            <input class="input desafio-input-sm" id="desafio-freela-valor" placeholder="R$" inputmode="decimal" autocomplete="off" onkeydown="desafioOnEnter(event,'freela')">
-            <button class="btn-primary" onclick="addDesafioEntry('freela')">Lançar</button>
-          </div>
-          ${freelas.length ? `<div class="desafio-list">${[...freelas].reverse().map(f=>`
-            <div class="desafio-row">
-              <span class="desafio-row-date">${desafioFmt(f.date)}</span>
-              <span class="desafio-row-label">${esc(f.label)}</span>
-              <span class="desafio-row-val">${desafioDinheiro(f.value)}</span>
-              ${btnApagar(f.id)}
-            </div>`).join('')}</div>` : `<div class="desafio-empty">Primeiro cliente até 31/10.</div>`}
-        </div>
-
-        <div class="glass panel">
-          <div class="panel-head">
-            <div class="panel-title">💻 Vagas de dev</div>
-            <div class="panel-hint">${entrevistas} em entrevista ou proposta</div>
-          </div>
-          <div class="desafio-meta-line"><strong>${vagas.length}</strong><span>de ${DESAFIO_METAS.vagas} candidaturas</span></div>
-          ${renderDesafioBarra(vagas.length / DESAFIO_METAS.vagas)}
-          <div class="desafio-form">
-            <input class="input" id="desafio-vaga" placeholder="Empresa — vaga" autocomplete="off" onkeydown="desafioOnEnter(event,'vaga')">
-            <button class="btn-primary" onclick="addDesafioEntry('vaga')">Adicionar</button>
-          </div>
-          ${vagas.length ? `<div class="desafio-list">${[...vagas].reverse().map(v=>`
-            <div class="desafio-row">
-              <span class="desafio-row-date">${desafioFmt(v.date)}</span>
-              <span class="desafio-row-label">${esc(v.label)}</span>
-              <select class="select desafio-status" data-status="${esc(v.status)}" onchange="setDesafioVagaStatus('${v.id}', this.value)" aria-label="Status da vaga">
-                ${DESAFIO_STATUS_VAGA.map(s=>`<option value="${s.key}" ${s.key===v.status?'selected':''}>${s.label}</option>`).join('')}
-              </select>
-              ${btnApagar(v.id)}
-            </div>`).join('')}</div>` : `<div class="desafio-empty">15 candidaturas até o fim de novembro.</div>`}
-        </div>
-      </div>
-
-      <div class="side-col">
-        ${renderDesafioMetas()}
-
-        <div class="glass panel">
-          <div class="panel-head">
-            <div class="panel-title">💪 Peso</div>
-            <div class="panel-hint">meta ${DESAFIO_METAS.pesoMeta}kg</div>
-          </div>
-          <div class="desafio-meta-line"><strong>${ganho >= 0 ? '+' : ''}${desafioNum(ganho, 1)}kg</strong><span>desde ${DESAFIO_METAS.pesoInicial}kg</span></div>
-          ${renderDesafioBarra(pctPeso)}
-          ${renderDesafioGraficoPeso(pesos)}
-          <div class="desafio-form">
-            <input class="input" id="desafio-peso" placeholder="Peso de hoje (kg)" inputmode="decimal" autocomplete="off" onkeydown="desafioOnEnter(event,'peso')">
-            <button class="btn-primary" onclick="addDesafioEntry('peso')">Registrar</button>
-          </div>
-          ${pesos.length ? `<div class="desafio-list">${[...pesos].reverse().slice(0,5).map(p=>`
-            <div class="desafio-row">
-              <span class="desafio-row-date">${desafioFmt(p.date)}</span>
-              <span class="desafio-row-label">${desafioNum(p.value, 1)}kg</span>
-              ${btnApagar(p.id)}
-            </div>`).join('')}</div>` : `<div class="desafio-empty">Toda segunda, de manhã, em jejum.</div>`}
-        </div>
-
-        <div class="glass panel">
-          <div class="panel-head">
-            <div class="panel-title">🗓️ Os 88 dias</div>
-            <div class="panel-hint">cada quadrado é um dia</div>
-          </div>
-          ${renderDesafioMapa()}
-          <div class="desafio-legend"><span>menos</span><span class="desafio-cell n0"></span><span class="desafio-cell n1"></span><span class="desafio-cell n2"></span><span class="desafio-cell n3"></span><span class="desafio-cell n4"></span><span>100%</span></div>
-        </div>
-      </div>
-    </div>
+    <div role="tabpanel">${corpo}</div>
   `;
 }
 

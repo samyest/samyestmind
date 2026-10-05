@@ -2755,14 +2755,6 @@
   /* Desafio 88 dias ---------------------------------------------------------- */
   #desafio-nav-group[hidden], #desafio-btn-mobile[hidden]{display:none !important;}
 
-  .desafio-hero-hint{
-    font-family:'JetBrains Mono',monospace;
-    font-size:11px;
-    letter-spacing:0.08em;
-    text-transform:uppercase;
-    color:var(--text-muted);
-  }
-  .desafio-hero-hint strong{color:var(--accent);font-weight:600;}
 
   .desafio-bar{
     height:6px;
@@ -2779,25 +2771,21 @@
     transition:width .35s ease;
   }
 
-  .desafio-checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+  .desafio-checks{list-style:none;display:flex;flex-direction:column;margin-top:4px;}
+  .desafio-checks li + li{border-top:1px solid var(--line);}
   .desafio-check{
+    width:100%;
     display:flex;
     align-items:center;
     gap:12px;
-    padding:12px 14px;
-    border-radius:12px;
-    background:var(--glass-strong);
-    border:1px solid var(--line);
+    padding:12px 4px;
     text-align:left;
     color:var(--text);
-    transition:background-color .15s ease, border-color .15s ease, transform .1s ease;
+    border-radius:10px;
+    transition:background-color .15s ease;
   }
-  .desafio-check:hover{background:var(--glass-hover);}
-  .desafio-check:active{transform:scale(0.98);}
-  .desafio-check.ok{
-    border-color:color-mix(in srgb, var(--done) 55%, transparent);
-    background:color-mix(in srgb, var(--done) 14%, var(--glass-strong));
-  }
+  .desafio-check:hover{background:var(--glass-strong);}
+  .desafio-check:active .desafio-box{transform:scale(0.9);}
   .desafio-box{
     width:22px;height:22px;
     flex-shrink:0;
@@ -2807,12 +2795,23 @@
     font-size:13px;
     font-weight:700;
     color:var(--accent-text);
+    transition:background-color .2s cubic-bezier(.2,.8,.2,1), border-color .2s ease, transform .12s ease;
   }
   .desafio-check.ok .desafio-box{background:var(--done);border-color:var(--done);}
-  .desafio-check-txt{display:flex;flex-direction:column;gap:2px;min-width:0;}
-  .desafio-check-txt span{font-size:13.5px;font-weight:500;color:var(--text-strong);}
-  .desafio-check-txt small{font-size:11.5px;color:var(--text-muted);}
-  .desafio-check.ok .desafio-check-txt span{text-decoration:line-through;text-decoration-color:var(--text-soft);}
+  .desafio-check-txt{flex:1;min-width:0;font-size:14px;font-weight:500;color:var(--text-strong);}
+  .desafio-check small{font-size:12px;color:var(--text-muted);text-align:right;display:flex;align-items:center;gap:6px;}
+  .desafio-check.ok .desafio-check-txt{color:var(--text-muted);text-decoration:line-through;text-decoration-color:var(--text-soft);}
+  .desafio-auto{
+    font-size:10px;
+    font-weight:600;
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+    padding:1px 6px;
+    border-radius:20px;
+    color:var(--accent);
+    background:color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .desafio-dia-ok{margin-top:12px;font-size:13px;color:var(--done);font-weight:500;}
 
   .desafio-meta-line{display:flex;align-items:baseline;gap:8px;}
   .desafio-meta-line strong{
@@ -2890,8 +2889,6 @@
     .desafio-checks{grid-template-columns:1fr;}
     .desafio-form{flex-wrap:wrap;}
     .desafio-input-sm{max-width:none;flex:1;}
-    .desafio-hero-hint{text-align:left;width:100%;}
-    .desafio-hero-next{justify-content:flex-start;margin-left:0;max-width:100%;}
     .desafio-row{flex-wrap:wrap;row-gap:6px;}
     .desafio-row-label{flex:1 1 150px;white-space:normal;}
   }
@@ -2968,17 +2965,6 @@
   .tag-suggestion-item .tag-chip{font-size:12px;}
 
   /* Desafio — metas, comida e avisos ---------------------------------------- */
-  .desafio-hero-hint{text-align:right;}
-  .desafio-hero-next{
-    margin-top:6px;
-    font-family:'Inter',sans-serif;
-    font-size:12px;
-    letter-spacing:0;
-    text-transform:none;
-    color:var(--text-muted);
-  }
-  .desafio-hero-next{display:flex;justify-content:flex-end;gap:4px;max-width:520px;margin-left:auto;white-space:nowrap;}
-  .desafio-hero-next span{color:var(--text-strong);font-weight:500;overflow:hidden;text-overflow:ellipsis;min-width:0;}
 
   .desafio-aviso{
     margin:-12px 0 24px;
@@ -3088,10 +3074,117 @@
   .desafio-feitas[open] summary{margin-bottom:4px;}
 
   @media (max-width:900px){
-    .desafio-hero-hint{text-align:left;}
     .desafio-macros{grid-template-columns:1fr;gap:6px;}
     .desafio-cadastro{flex-wrap:wrap;}
     .desafio-cadastro .input{flex:1 1 120px;}
     .desafio-input-data{max-width:none;flex:1;}
     .desafio-preview-item{flex-direction:column;gap:2px;}
+  }
+
+  /* Desafio — topo, abas e layout de cada aba -------------------------------- */
+  .desafio-topo{margin-bottom:22px;}
+  .desafio-topo h1{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:400;
+    font-size:38px;
+    letter-spacing:-0.025em;
+    line-height:1.05;
+    color:var(--text-strong);
+  }
+  .desafio-resumo{margin-top:8px;font-size:13.5px;color:var(--text-muted);display:flex;gap:8px;flex-wrap:wrap;}
+  .desafio-proxima{
+    margin-top:16px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    max-width:100%;
+    padding:12px 16px;
+    border-radius:14px;
+    text-align:left;
+    background:var(--glass);
+    border:1px solid var(--glass-border-soft);
+    box-shadow:var(--shadow-soft);
+    transition:background-color .15s ease, transform .15s ease;
+  }
+  .desafio-proxima:hover{background:var(--glass-strong);transform:translateY(-1px);}
+  .desafio-proxima-rotulo{font-size:12px;color:var(--text-muted);white-space:nowrap;}
+  .desafio-proxima-txt{font-size:14px;font-weight:500;color:var(--text-strong);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+  .desafio-abas{
+    display:inline-flex;
+    gap:2px;
+    padding:4px;
+    margin-bottom:22px;
+    border-radius:14px;
+    background:var(--glass);
+    border:1px solid var(--glass-border-soft);
+  }
+  .desafio-aba{
+    padding:8px 18px;
+    border-radius:10px;
+    font-size:13.5px;
+    font-weight:500;
+    color:var(--text-muted);
+    transition:background-color .18s ease, color .18s ease, box-shadow .18s ease;
+  }
+  .desafio-aba:hover{color:var(--text);}
+  .desafio-aba.ativa{background:var(--glass-hover);color:var(--text-strong);box-shadow:var(--shadow-soft);}
+
+  .desafio-hoje{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:22px;align-items:start;}
+  .desafio-metas-aba{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:22px;align-items:start;}
+  .desafio-progresso{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;align-items:start;}
+
+  .desafio-grupo + .desafio-grupo{margin-top:18px;}
+  .desafio-grupo-titulo{font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px;}
+  .desafio-add{
+    margin-top:14px;
+    padding:8px 0;
+    font-size:13px;
+    font-weight:500;
+    color:var(--accent);
+  }
+  .desafio-add:hover{text-decoration:underline;text-underline-offset:3px;}
+
+  .desafio-trilha{list-style:none;display:flex;flex-direction:column;margin-top:6px;}
+  .desafio-modulo{
+    position:relative;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:8px 4px;
+    font-size:13px;
+    color:var(--text-muted);
+  }
+  .desafio-modulo + .desafio-modulo::before{
+    content:'';
+    position:absolute;
+    left:14px;
+    top:-8px;
+    height:16px;
+    width:1.5px;
+    background:var(--line-strong);
+  }
+  .desafio-modulo-nome{flex:1;min-width:0;}
+  .desafio-modulo.ok .desafio-modulo-nome{color:var(--text-soft);}
+  .desafio-modulo.ok .desafio-box{background:var(--done);border-color:var(--done);}
+  .desafio-modulo.agora{
+    margin:4px 0;
+    padding:12px 10px;
+    border-radius:12px;
+    background:color-mix(in srgb, var(--accent) 9%, var(--glass-strong));
+  }
+  .desafio-modulo.agora .desafio-modulo-nome{font-size:14px;font-weight:600;color:var(--text-strong);}
+  .desafio-modulo.agora .desafio-box{border-color:var(--accent);}
+
+  @media (max-width:1180px){
+    .desafio-hoje, .desafio-metas-aba, .desafio-progresso{grid-template-columns:1fr;}
+  }
+  @media (max-width:900px){
+    .desafio-topo h1{font-size:28px;}
+    .desafio-abas{display:flex;width:100%;}
+    .desafio-aba{flex:1;padding:9px 6px;}
+    .desafio-proxima{flex-wrap:wrap;gap:4px 10px;width:100%;}
+    .desafio-proxima-txt{white-space:normal;flex-basis:100%;order:2;}
+    .desafio-proxima .desafio-prazo{order:1;margin-left:auto;}
+    .desafio-check small{display:none;}
   }
