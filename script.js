@@ -4536,20 +4536,24 @@ window.addEventListener('beforeunload', (e)=>{
 
 // ============================================================================
 //  Desafio 88 dias — aba pessoal, visível só para a conta dona do desafio.
-//  As tabelas também barram outras contas no RLS (supabase/desafio.sql).
+//  As tabelas também barram outras contas no RLS (supabase/desafio.sql e
+//  supabase/desafio_v2.sql).
 // ============================================================================
 
 const DESAFIO_EMAIL = 'samirahmadpour@gmail.com';
 const DESAFIO_INICIO = '2026-10-05';
 const DESAFIO_FIM = '2026-12-31';
-const DESAFIO_METAS = {pesoInicial: 73, pesoMeta: 77, dinheiro: 2000, clientes: 3, vagas: 30};
+const DESAFIO_METAS = {pesoInicial: 73, pesoMeta: 77, dinheiro: 2000, clientes: 3, vagas: 30, kcal: 2800, proteina: 140};
+const TODOS_OS_DIAS = [0,1,2,3,4,5,6];
 const DESAFIO_ITENS = [
-  {key:'academia', label:'Academia', hint:'direto do trabalho', dias:[1,3,4,5]},
-  {key:'proteina', label:'140g de proteína', hint:'proteína em toda refeição', dias:[0,1,2,3,4,5,6]},
-  {key:'agua', label:'3L de água', hint:'garrafa de 1L zerada 3x', dias:[0,1,2,3,4,5,6]},
-  {key:'creatina', label:'Creatina', hint:'3–5g', dias:[0,1,2,3,4,5,6]},
+  {key:'academia', label:'Academia', hint:'direto do trabalho — passar em casa é desistir', dias:[1,3,4,5]},
+  {key:'pesar', label:'Pesar em jejum', hint:'marca sozinho ao registrar o peso', dias:[1]},
+  {key:'proteina', label:'140g de proteína', hint:'marca sozinho pelo que você registra', dias:TODOS_OS_DIAS},
+  {key:'agua', label:'3L de água', hint:'4L em dia de treino', dias:TODOS_OS_DIAS},
+  {key:'creatina', label:'Creatina 3–5g', hint:'pós-treino ou no almoço', dias:TODOS_OS_DIAS},
   {key:'dev', label:'Bloco de dev / freela', hint:'1h focada, celular virado', dias:[2,5,6]},
-  {key:'cs', label:'CS só depois do bloco', hint:'jogo é recompensa', dias:[2,5,6]}
+  {key:'cs', label:'CS só depois do bloco', hint:'jogo é recompensa', dias:[2,5,6]},
+  {key:'revisao', label:'Revisar a semana', hint:'15 min: o que foi bem, o que ajustar', dias:[0]}
 ];
 const DESAFIO_STATUS_VAGA = [
   {key:'enviada', label:'Enviada'},
@@ -4558,7 +4562,36 @@ const DESAFIO_STATUS_VAGA = [
   {key:'recusada', label:'Recusada'}
 ];
 
-state.desafio = {days: {}, entries: [], loaded: false};
+// Metas que entram uma única vez no banco; depois disso são linhas comuns,
+// que dá pra concluir, apagar ou somar com outras.
+const DESAFIO_SEED_MARK = '__seed_v1';
+const DESAFIO_METAS_PADRAO = [
+  {label:'Revisar o roteiro do kick off: pauta, próximos passos, o que pedir ao cliente', date:'2026-10-07'},
+  {label:'Ensaiar o onboarding em voz alta 2x (mais confiante, menos frio)', date:'2026-10-08'},
+  {label:'Teste de onboarding 🎤', date:'2026-10-09'},
+  {label:'LinkedIn com o título "Desenvolvedor Front-end"', date:'2026-10-12'},
+  {label:'Montar a oferta de freela Nuvemshop com preço fechado', date:'2026-10-16'},
+  {label:'GitHub com README e prints do samyest.mind e do CS2 hub', date:'2026-10-19'},
+  {label:'Oferecer o freela pra 10 lojas ou contatos', date:'2026-10-26'},
+  {label:'Fechar o 1º cliente de freela', date:'2026-10-31'},
+  {label:'Começar React: 3x por semana, 1h', date:'2026-11-08'},
+  {label:'15 candidaturas de dev enviadas', date:'2026-11-30'},
+  {label:'Projeto refeito em React e no ar', date:'2026-11-30'},
+  {label:'Chegar a 75kg', date:'2026-11-30'},
+  {label:'Fechar o 3º cliente de freela', date:'2026-12-31'},
+  {label:'Chegar a 77kg e tirar a foto de antes e depois', date:'2026-12-31'}
+];
+
+const DESAFIO_REFEICOES = [
+  {nome:'Café da manhã', texto:'2 pães + 3 fatias de peito de peru + 2 fatias de queijo + 1 copo de leite semi desnatado + 1 banana'},
+  {nome:'Almoço', texto:'a la minuta'},
+  {nome:'Lanche', texto:'1 maçã + 2 iogurtes grego light'},
+  {nome:'Pré-treino', texto:'50g de sucrilhos + 1 copo de leite semi desnatado'},
+  {nome:'Pós-treino', texto:'3 ovos'},
+  {nome:'Jantar leve', texto:'1 copo de leite com nescau'}
+];
+
+state.desafio = {days: {}, entries: [], loaded: false, comidaTexto: '', comidaPreview: null, cadastro: null, todasMetas: false, precisaSql: false};
 
 function isDesafioOwner(){
   return !!(session && session.user && (session.user.email || '').toLowerCase() === DESAFIO_EMAIL);
@@ -4582,6 +4615,18 @@ function goDesafio(){
   window.scrollTo(0,0);
 }
 
+function desafioLinha(r){
+  return {
+    id: r.id,
+    kind: r.kind,
+    date: r.date,
+    label: r.label || '',
+    value: r.value === null || r.value === undefined ? null : Number(r.value),
+    protein: r.protein === null || r.protein === undefined ? null : Number(r.protein),
+    status: r.status || ''
+  };
+}
+
 async function loadDesafio(){
   if(!isDesafioOwner()) return;
   const [dias, lanc] = await Promise.all([
@@ -4595,16 +4640,20 @@ async function loadDesafio(){
   }
   state.desafio.days = {};
   (dias.data || []).forEach(r=>{ state.desafio.days[r.day] = new Set(r.checks || []); });
-  state.desafio.entries = (lanc.data || []).map(r=>({
-    id: r.id,
-    kind: r.kind,
-    date: r.date,
-    label: r.label || '',
-    value: r.value === null ? null : Number(r.value),
-    status: r.status || ''
-  }));
+  state.desafio.entries = (lanc.data || []).map(desafioLinha);
   state.desafio.loaded = true;
   state.desafio.error = false;
+  await seedDesafioMetas();
+}
+
+async function seedDesafioMetas(){
+  if(state.desafio.entries.some(e=>e.kind === 'meta' && e.label === DESAFIO_SEED_MARK)) return;
+  const linhas = DESAFIO_METAS_PADRAO.map(m=>({user_id: session.user.id, kind:'meta', label:m.label, date:m.date, status:'aberta'}));
+  linhas.push({user_id: session.user.id, kind:'meta', label:DESAFIO_SEED_MARK, date:DESAFIO_INICIO, status:'marca'});
+  const {data, error} = await sb.from('challenge_entries').insert(linhas).select();
+  if(error){ state.desafio.precisaSql = true; return; }
+  state.desafio.precisaSql = false;
+  (data || []).forEach(r=>state.desafio.entries.push(desafioLinha(r)));
 }
 
 function desafioIso(d){
@@ -4622,13 +4671,30 @@ function desafioAddDays(iso, n){
   return desafioIso(d);
 }
 
+function desafioDiff(a, b){
+  return Math.round((desafioDate(b) - desafioDate(a)) / 86400000);
+}
+
 function desafioFmt(iso){
   const [, m, d] = iso.split('-');
   return `${d}/${m}`;
 }
 
+function desafioPrazo(iso){
+  const n = desafioDiff(todayIso(), iso);
+  if(n < 0) return {txt: n === -1 ? 'era ontem' : `atrasada ${-n} dias`, cls:'atrasada'};
+  if(n === 0) return {txt:'hoje', cls:'perto'};
+  if(n === 1) return {txt:'amanhã', cls:'perto'};
+  if(n < 7) return {txt:`${DIAS_LONGOS[desafioDate(iso).getDay()].toLowerCase()} · ${n} dias`, cls:'perto'};
+  return {txt: desafioFmt(iso), cls:''};
+}
+
 function desafioDinheiro(v){
   return Number(v || 0).toLocaleString('pt-BR', {style:'currency', currency:'BRL', maximumFractionDigits:0});
+}
+
+function desafioNum(v, casas){
+  return Number(v || 0).toLocaleString('pt-BR', {maximumFractionDigits: casas || 0});
 }
 
 function desafioItensDoDia(iso){
@@ -4640,8 +4706,7 @@ function desafioPctDia(iso){
   const itens = desafioItensDoDia(iso);
   if(!itens.length) return 0;
   const marcados = state.desafio.days[iso] || new Set();
-  const feitos = itens.filter(i=>marcados.has(i.key)).length;
-  return feitos / itens.length;
+  return itens.filter(i=>marcados.has(i.key)).length / itens.length;
 }
 
 function desafioSequencia(){
@@ -4657,15 +4722,33 @@ function desafioSequencia(){
 
 function desafioDiaAtual(){
   const hoje = todayIso();
-  const total = Math.round((desafioDate(DESAFIO_FIM) - desafioDate(DESAFIO_INICIO)) / 86400000) + 1;
+  const total = desafioDiff(DESAFIO_INICIO, DESAFIO_FIM) + 1;
   if(hoje < DESAFIO_INICIO) return {dia: 0, total, faltam: total};
   if(hoje > DESAFIO_FIM) return {dia: total, total, faltam: 0};
-  const dia = Math.round((desafioDate(hoje) - desafioDate(DESAFIO_INICIO)) / 86400000) + 1;
+  const dia = desafioDiff(DESAFIO_INICIO, hoje) + 1;
   return {dia, total, faltam: total - dia};
 }
 
 function desafioDoTipo(kind){
   return state.desafio.entries.filter(e=>e.kind === kind);
+}
+
+function desafioMetas(){
+  return desafioDoTipo('meta').filter(m=>m.label !== DESAFIO_SEED_MARK);
+}
+
+function desafioRerender(){
+  skipEntranceOnce = true;
+  render();
+}
+
+async function salvarDesafioDia(iso){
+  return sb.from('challenge_days').upsert({
+    user_id: session.user.id,
+    day: iso,
+    checks: [...(state.desafio.days[iso] || [])],
+    updated_at: new Date().toISOString()
+  }, {onConflict: 'user_id,day'});
 }
 
 async function toggleDesafioItem(key){
@@ -4674,26 +4757,43 @@ async function toggleDesafioItem(key){
   if(atual.has(key)) atual.delete(key); else atual.add(key);
   const anterior = state.desafio.days[iso];
   state.desafio.days[iso] = atual;
-  skipEntranceOnce = true;
-  render();
-  const {error} = await sb.from('challenge_days').upsert({
-    user_id: session.user.id,
-    day: iso,
-    checks: [...atual],
-    updated_at: new Date().toISOString()
-  }, {onConflict: 'user_id,day'});
+  desafioRerender();
+  const {error} = await salvarDesafioDia(iso);
   if(error){
     state.desafio.days[iso] = anterior;
-    skipEntranceOnce = true;
-    render();
+    desafioRerender();
     showToast('Não deu pra salvar o checklist', 'erro');
     return;
   }
   if(desafioPctDia(iso) === 1 && atual.has(key)) showToast('Dia completo 💪');
 }
 
+// Itens que o próprio app consegue confirmar (peso registrado, proteína
+// batida) se marcam sozinhos; desmarcar continua sendo manual.
+async function desafioMarcarSozinho(key){
+  const iso = todayIso();
+  if(!desafioItensDoDia(iso).some(i=>i.key === key)) return;
+  const atual = new Set(state.desafio.days[iso] || []);
+  if(atual.has(key)) return;
+  atual.add(key);
+  state.desafio.days[iso] = atual;
+  const {error} = await salvarDesafioDia(iso);
+  if(!error) desafioRerender();
+}
+
+async function inserirDesafio(linha){
+  const {data, error} = await sb.from('challenge_entries').insert({user_id: session.user.id, ...linha}).select().single();
+  if(error){
+    if(['meta','comida','alimento'].includes(linha.kind)) state.desafio.precisaSql = true;
+    return null;
+  }
+  const e = desafioLinha(data);
+  state.desafio.entries.push(e);
+  return e;
+}
+
 async function addDesafioEntry(kind){
-  const linha = {user_id: session.user.id, kind, date: todayIso()};
+  const linha = {kind, date: todayIso()};
   if(kind === 'peso'){
     const el = document.getElementById('desafio-peso');
     const v = parseFloat(String(el.value).replace(',', '.'));
@@ -4712,20 +4812,19 @@ async function addDesafioEntry(kind){
     if(!emp.value.trim()){ showToast('Coloca a empresa ou a vaga', 'erro'); emp.focus(); return; }
     linha.label = emp.value.trim();
     linha.status = 'enviada';
+  } else if(kind === 'meta'){
+    const txt = document.getElementById('desafio-meta');
+    const prazo = document.getElementById('desafio-meta-prazo');
+    if(!txt.value.trim()){ showToast('Escreve a meta', 'erro'); txt.focus(); return; }
+    linha.label = txt.value.trim();
+    linha.date = prazo.value || desafioAddDays(todayIso(), 7);
+    linha.status = 'aberta';
   }
-  const {data, error} = await sb.from('challenge_entries').insert(linha).select().single();
-  if(error){ showToast('Não deu pra salvar', 'erro'); return; }
-  state.desafio.entries.push({
-    id: data.id, kind: data.kind, date: data.date, label: data.label || '',
-    value: data.value === null ? null : Number(data.value), status: data.status || ''
-  });
-  ['desafio-peso','desafio-freela-cliente','desafio-freela-valor','desafio-vaga'].forEach(id=>{
-    const el = document.getElementById(id);
-    if(el && (kind === 'peso' ? id === 'desafio-peso' : kind === 'vaga' ? id === 'desafio-vaga' : id.startsWith('desafio-freela'))) el.value = '';
-  });
-  skipEntranceOnce = true;
-  render();
-  showToast(kind === 'peso' ? 'Peso registrado' : kind === 'freela' ? 'Freela lançado' : 'Vaga adicionada');
+  const e = await inserirDesafio(linha);
+  if(!e){ showToast(kind === 'meta' ? 'Falta rodar o supabase/desafio_v2.sql' : 'Não deu pra salvar', 'erro'); return; }
+  desafioRerender();
+  showToast({peso:'Peso registrado', freela:'Freela lançado', vaga:'Vaga adicionada', meta:'Meta criada'}[kind]);
+  if(kind === 'peso') desafioMarcarSozinho('pesar');
 }
 
 async function setDesafioVagaStatus(id, status){
@@ -4733,28 +4832,40 @@ async function setDesafioVagaStatus(id, status){
   if(!e) return;
   const anterior = e.status;
   e.status = status;
-  skipEntranceOnce = true;
-  render();
+  desafioRerender();
   const {error} = await sb.from('challenge_entries').update({status}).eq('id', id);
   if(error){
     e.status = anterior;
-    skipEntranceOnce = true;
-    render();
+    desafioRerender();
     showToast('Não deu pra mudar o status', 'erro');
   }
+}
+
+async function toggleDesafioMeta(id){
+  const e = state.desafio.entries.find(x=>x.id === id);
+  if(!e) return;
+  const anterior = e.status;
+  e.status = e.status === 'feita' ? 'aberta' : 'feita';
+  desafioRerender();
+  const {error} = await sb.from('challenge_entries').update({status: e.status}).eq('id', id);
+  if(error){
+    e.status = anterior;
+    desafioRerender();
+    showToast('Não deu pra salvar a meta', 'erro');
+    return;
+  }
+  if(e.status === 'feita') showToast('Meta concluída 🎯');
 }
 
 async function deleteDesafioEntry(id){
   const idx = state.desafio.entries.findIndex(x=>x.id === id);
   if(idx < 0) return;
   const [removido] = state.desafio.entries.splice(idx, 1);
-  skipEntranceOnce = true;
-  render();
+  desafioRerender();
   const {error} = await sb.from('challenge_entries').delete().eq('id', id);
   if(error){
     state.desafio.entries.splice(idx, 0, removido);
-    skipEntranceOnce = true;
-    render();
+    desafioRerender();
     showToast('Não deu pra apagar', 'erro');
   }
 }
@@ -4762,6 +4873,290 @@ async function deleteDesafioEntry(id){
 function desafioOnEnter(e, kind){
   if(e.key === 'Enter'){ e.preventDefault(); addDesafioEntry(kind); }
 }
+
+/* ---------- Comida: texto livre -> estimativa de calorias e proteína ---------- */
+// Valores por porção, arredondados de tabelas de composição (TACO) e de
+// rótulos comuns. É estimativa: serve pra acompanhar a média do dia, não pra
+// contar grama por grama.
+
+const ALIMENTOS_BASE = [
+  {nome:'Kit pão', a:['kit pao'], p:'kit', g:100, kcal:250, prot:14},
+  {nome:'Pão francês', a:['pao frances','paozinho','pao de sal','pao'], p:'unidade', g:50, kcal:150, prot:4},
+  {nome:'Pão de forma', a:['pao de forma','pao integral','pao de forma integral'], p:'fatia', g:25, kcal:62, prot:2.3},
+  {nome:'Torrada', a:['torrada'], p:'unidade', g:10, kcal:40, prot:1.1},
+  {nome:'Peito de peru', a:['peito de peru','peru','blanquet'], p:'fatia', g:15, kcal:16, prot:2.7},
+  {nome:'Presunto', a:['presunto'], p:'fatia', g:15, kcal:14, prot:2.1},
+  {nome:'Queijo mussarela', a:['queijo','mussarela','mucarela','queijo mussarela'], p:'fatia', g:20, kcal:66, prot:4.4},
+  {nome:'Queijo prato', a:['queijo prato'], p:'fatia', g:20, kcal:72, prot:4.6},
+  {nome:'Requeijão', a:['requeijao'], p:'colher', g:30, kcal:77, prot:2.9},
+  {nome:'Manteiga', a:['manteiga','margarina'], p:'colher', g:10, kcal:72, prot:0},
+  {nome:'Ovo', a:['ovo','ovo cozido','ovo mexido'], p:'unidade', g:50, kcal:72, prot:6.5},
+  {nome:'Ovo frito', a:['ovo frito'], p:'unidade', g:50, kcal:90, prot:6.5},
+  {nome:'Omelete', a:['omelete','omelete de 2 ovo'], p:'unidade (2 ovos)', g:130, kcal:200, prot:13},
+  {nome:'Leite semidesnatado', a:['leite','leite semi','semi desnatado','semidesnatado','leite semi desnatado','leite semidesnatado'], p:'copo', g:200, kcal:92, prot:6.4},
+  {nome:'Leite integral', a:['leite integral'], p:'copo', g:200, kcal:122, prot:6.4},
+  {nome:'Leite desnatado', a:['leite desnatado','desnatado'], p:'copo', g:200, kcal:70, prot:6.8},
+  {nome:'Leite sem lactose', a:['leite sem lactose','sem lactose','zero lactose'], p:'copo', g:200, kcal:100, prot:6.2},
+  {nome:'Iogurte grego light', a:['iogurte grego light','grego light','iogurte light'], p:'pote', g:90, kcal:74, prot:5.4},
+  {nome:'Iogurte grego', a:['iogurte grego','grego','iogurte grego tradicional'], p:'pote', g:100, kcal:115, prot:5.5},
+  {nome:'Iogurte natural', a:['iogurte','iogurte natural'], p:'pote', g:170, kcal:100, prot:6.8},
+  {nome:'Banana', a:['banana'], p:'unidade', g:80, kcal:78, prot:1},
+  {nome:'Maçã', a:['maca'], p:'unidade', g:130, kcal:73, prot:0.4},
+  {nome:'Laranja', a:['laranja'], p:'unidade', g:140, kcal:52, prot:1.1},
+  {nome:'Mamão', a:['mamao'], p:'fatia', g:150, kcal:60, prot:0.7},
+  {nome:'Manga', a:['manga'], p:'unidade', g:150, kcal:96, prot:0.6},
+  {nome:'Uva', a:['uva'], p:'porção', g:100, kcal:69, prot:0.7},
+  {nome:'Morango', a:['morango'], p:'porção', g:100, kcal:30, prot:0.9},
+  {nome:'Abacate', a:['abacate'], p:'porção', g:100, kcal:96, prot:1.2},
+  {nome:'Sucrilhos', a:['sucrilho','sucrilho tigrao','tigrao','cereal','flocos de milho','corn flake'], p:'tigela', g:50, kcal:190, prot:2},
+  {nome:'Aveia', a:['aveia'], p:'colher', g:15, kcal:59, prot:2.1},
+  {nome:'Granola', a:['granola'], p:'porção', g:30, kcal:126, prot:2.7},
+  {nome:'Nescau', a:['nescau','achocolatado','toddy'], p:'porção (2 colheres)', g:20, kcal:76, prot:0.9, u:{colher:10}},
+  {nome:'Açúcar', a:['acucar'], p:'colher', g:10, kcal:39, prot:0},
+  {nome:'Café', a:['cafe','cafezinho'], p:'xícara', g:50, kcal:2, prot:0.1},
+  {nome:'Arroz', a:['arroz','arroz branco'], p:'porção', g:150, kcal:192, prot:3.8, u:{colher:25, escumadeira:90}},
+  {nome:'Arroz integral', a:['arroz integral'], p:'porção', g:150, kcal:186, prot:3.9, u:{colher:25, escumadeira:90}},
+  {nome:'Feijão', a:['feijao','feijao preto','feijao carioca'], p:'concha', g:140, kcal:106, prot:6.7},
+  {nome:'Frango grelhado', a:['frango','frango grelhado','peito de frango','file de frango','frango cozido','frango desfiado'], p:'filé', g:120, kcal:191, prot:38},
+  {nome:'Frango assado', a:['frango assado','galeto'], p:'pedaço', g:150, kcal:260, prot:40},
+  {nome:'Frango à milanesa', a:['frango frito','frango a milanesa','file a milanesa','milanesa'], p:'filé', g:130, kcal:325, prot:30},
+  {nome:'Bife', a:['bife','carne','carne grelhada','alcatra','contra file','contrafile','patinho','file mignon','bife acebolado'], p:'bife', g:120, kcal:276, prot:37},
+  {nome:'Carne moída', a:['carne moida','guisado'], p:'porção', g:100, kcal:212, prot:26},
+  {nome:'Carne de panela', a:['carne de panela','carne cozida','picadinho'], p:'porção', g:150, kcal:330, prot:40},
+  {nome:'Churrasco', a:['churrasco','picanha'], p:'porção', g:150, kcal:435, prot:37},
+  {nome:'Costela', a:['costela'], p:'porção', g:150, kcal:525, prot:30},
+  {nome:'Linguiça', a:['linguica','salsichao'], p:'unidade', g:60, kcal:180, prot:9.6},
+  {nome:'Salsicha', a:['salsicha','cachorro quente'], p:'unidade', g:50, kcal:125, prot:6.5},
+  {nome:'Porco', a:['lombo','carne de porco','porco','bisteca'], p:'porção', g:120, kcal:252, prot:36},
+  {nome:'Peixe', a:['peixe','tilapia','file de peixe','merluza'], p:'filé', g:120, kcal:154, prot:31},
+  {nome:'Atum', a:['atum'], p:'lata', g:120, kcal:132, prot:29},
+  {nome:'Sardinha', a:['sardinha'], p:'lata', g:90, kcal:180, prot:21},
+  {nome:'Salada', a:['salada','alface','tomate'], p:'porção', g:100, kcal:15, prot:1},
+  {nome:'Brócolis', a:['brocoli'], p:'porção', g:100, kcal:25, prot:2.1},
+  {nome:'Batata frita', a:['batata frita','frita','batatinha'], p:'porção', g:100, kcal:300, prot:4},
+  {nome:'Batata', a:['batata','batata cozida'], p:'porção', g:150, kcal:78, prot:1.8},
+  {nome:'Purê', a:['pure','pure de batata'], p:'porção', g:150, kcal:150, prot:3},
+  {nome:'Batata doce', a:['batata doce'], p:'porção', g:150, kcal:116, prot:0.9},
+  {nome:'Aipim', a:['aipim','mandioca','macaxeira'], p:'porção', g:150, kcal:188, prot:0.9},
+  {nome:'Macarrão', a:['macarrao','massa','espaguete'], p:'prato', g:200, kcal:316, prot:11.6},
+  {nome:'Miojo', a:['miojo','lamen','nissin'], p:'pacote', g:80, kcal:380, prot:8},
+  {nome:'Lasanha', a:['lasanha'], p:'pedaço', g:250, kcal:375, prot:20},
+  {nome:'Pizza', a:['pizza'], p:'fatia', g:110, kcal:297, prot:12},
+  {nome:'Hambúrguer', a:['hamburguer','x burguer','x salada','burguer'], p:'unidade', g:200, kcal:520, prot:25},
+  {nome:'Xis', a:['xis'], p:'unidade', g:300, kcal:750, prot:38},
+  {nome:'Pastel', a:['pastel'], p:'unidade', g:100, kcal:300, prot:7},
+  {nome:'Coxinha', a:['coxinha'], p:'unidade', g:100, kcal:280, prot:9},
+  {nome:'Pão de queijo', a:['pao de queijo'], p:'unidade', g:40, kcal:145, prot:2},
+  {nome:'Tapioca', a:['tapioca'], p:'unidade', g:70, kcal:240, prot:0.3},
+  {nome:'Cuscuz', a:['cuscuz'], p:'porção', g:150, kcal:170, prot:3.3},
+  {nome:'Whey', a:['whey','whey protein','proteina em po'], p:'scoop', g:30, kcal:120, prot:24},
+  {nome:'Creatina', a:['creatina'], p:'dose', g:5, kcal:0, prot:0},
+  {nome:'Barra de proteína', a:['barra de proteina','barrinha de proteina'], p:'unidade', g:45, kcal:180, prot:15},
+  {nome:'Barra de cereal', a:['barra de cereal','barrinha'], p:'unidade', g:25, kcal:90, prot:1.2},
+  {nome:'Suco de laranja', a:['suco de laranja'], p:'copo', g:200, kcal:90, prot:1.4},
+  {nome:'Suco', a:['suco'], p:'copo', g:200, kcal:90, prot:0.5},
+  {nome:'Refrigerante', a:['refrigerante','refri','coca','coca cola','guarana'], p:'lata', g:350, kcal:147, prot:0, u:{copo:200}},
+  {nome:'Refrigerante zero', a:['coca zero','refri zero','refrigerante zero'], p:'lata', g:350, kcal:1, prot:0, u:{copo:200}},
+  {nome:'Cerveja', a:['cerveja'], p:'lata', g:350, kcal:147, prot:1.1, u:{copo:200}},
+  {nome:'Chocolate', a:['chocolate','bombom'], p:'porção', g:25, kcal:135, prot:1.8},
+  {nome:'Biscoito', a:['biscoito','bolacha','cookie'], p:'porção', g:30, kcal:140, prot:2},
+  {nome:'Amendoim', a:['amendoim','castanha','mix de castanha'], p:'punhado', g:30, kcal:174, prot:8},
+  {nome:'Pasta de amendoim', a:['pasta de amendoim'], p:'colher', g:15, kcal:89, prot:3.8},
+  {nome:'Açaí', a:['acai'], p:'tigela', g:300, kcal:330, prot:3},
+  {nome:'Bolo', a:['bolo'], p:'fatia', g:60, kcal:200, prot:3},
+  {nome:'Sorvete', a:['sorvete'], p:'bola', g:60, kcal:125, prot:2.3},
+  {nome:'À la minuta', a:['a la minuta','alaminuta','ala minuta','la minuta'], p:'prato', g:550, kcal:850, prot:50},
+  {nome:'À la minuta de frango', a:['a la minuta de frango','alaminuta de frango','ala minuta de frango'], p:'prato', g:550, kcal:800, prot:55},
+  {nome:'Prato feito', a:['prato feito','pf','marmita','marmitex'], p:'prato', g:500, kcal:800, prot:40}
+];
+
+const UNIDADES_GENERICAS = {
+  copo:200, xicara:240, colher:15, colherzinha:5, concha:140, fatia:20, lata:350, pote:100,
+  scoop:30, medida:30, dose:30, tigela:300, prato:350, punhado:30, pedaco:100, file:120,
+  escumadeira:90, pacote:100, barra:30, bola:60, garrafa:500, caixinha:200, cacho:100
+};
+const UNIDADES_PORCAO = ['unidade','un','und','porcao','kit'];
+const NUMEROS_ESCRITOS = {um:1, uma:1, dois:2, duas:2, tres:3, quatro:4, cinco:5, seis:6, sete:7, oito:8, nove:9, dez:10, meio:0.5, meia:0.5, metade:0.5};
+const PALAVRAS_DE_REFEICAO = ['cafe da manha','almocei','almoco','jantei','jantar','janta','lanche da tarde','lanche','ceia','pre treino','pos treino','comi','tomei','bebi','hoje'];
+const SINGULAR_INTOCAVEL = new Set(['xis','tres','mais','gas','pires','lapis','depois','pois','seis','dois']);
+
+function textoComida(s){
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/(\d),(\d)/g, '$1.$2')
+    .replace(/(\d)([a-z])/g, '$1 $2')
+    .replace(/[^a-z0-9.\/,+;\n ]/g, ' ')
+    .replace(/[ ]+/g, ' ').trim();
+}
+
+function singularPalavra(w){
+  if(w.length <= 3 || SINGULAR_INTOCAVEL.has(w) || /\d/.test(w)) return w;
+  if(/(oes|aes)$/.test(w)) return w.slice(0, -3) + 'ao';
+  if(/eis$/.test(w)) return w.slice(0, -3) + 'el';
+  if(/ais$/.test(w)) return w.slice(0, -3) + 'al';
+  if(/res$/.test(w)) return w.slice(0, -2);
+  if(/ns$/.test(w)) return w.slice(0, -2) + 'm';
+  if(/s$/.test(w)) return w.slice(0, -1);
+  return w;
+}
+
+function singularFrase(s){
+  return s.split(' ').map(singularPalavra).join(' ');
+}
+
+function alimentosConhecidos(){
+  const proprios = desafioDoTipo('alimento').map(e=>({
+    nome: e.label,
+    a: [singularFrase(textoComida(e.label))],
+    p: 'porção', g: 100,
+    kcal: e.value || 0, prot: e.protein || 0,
+    proprio: true
+  }));
+  const base = ALIMENTOS_BASE.map(f=>({...f, a: f.a.map(x=>singularFrase(textoComida(x)))}));
+  return [...proprios, ...base];
+}
+
+function acharAlimento(seg, lista){
+  let melhor = null, tam = 0;
+  for(const f of lista){
+    for(const alias of f.a){
+      if(alias.length <= tam) continue;
+      const re = new RegExp(`(^|[^a-z])${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z])`);
+      if(re.test(seg)){ melhor = f; tam = alias.length; }
+    }
+  }
+  return melhor;
+}
+
+function lerQuantidade(seg){
+  const tokens = seg.split(' ');
+  let n = null, unidade = null;
+  for(let i = 0; i < tokens.length; i++){
+    const t = tokens[i];
+    let v = null;
+    if(/^\d+(\.\d+)?$/.test(t)) v = parseFloat(t);
+    else if(/^\d+\/\d+$/.test(t)){ const [a, b] = t.split('/').map(Number); v = b ? a / b : null; }
+    else if(t in NUMEROS_ESCRITOS) v = NUMEROS_ESCRITOS[t];
+    if(v !== null){
+      n = v;
+      const prox = singularPalavra(tokens[i+1] || '');
+      if(['g','gr','grama','ml','kg','l','litro','quilo'].includes(prox) || prox in UNIDADES_GENERICAS || UNIDADES_PORCAO.includes(prox)) unidade = prox;
+      break;
+    }
+  }
+  if(!unidade){
+    const achada = tokens.map(singularPalavra).find(t=>(t in UNIDADES_GENERICAS && t !== 'file') || t === 'unidade');
+    if(achada) unidade = achada;
+  }
+  return {n: n === null ? 1 : n, unidade};
+}
+
+function pluralUnidade(u, n){
+  if(n <= 1 || u.includes('(')) return u;
+  if(u.endsWith('ão')) return u.slice(0, -2) + 'ões';
+  if(/[rz]$/.test(u)) return u + 'es';
+  return u + 's';
+}
+
+function calcularItem(seg, lista){
+  const limpo = singularFrase(seg);
+  const comida = acharAlimento(limpo, lista);
+  if(!comida) return null;
+  const {n, unidade} = lerQuantidade(seg);
+  let fator = n;
+  let desc = `${desafioNum(n, 2)} ${pluralUnidade(comida.p, n)}`;
+  if(['g','gr','grama','ml'].includes(unidade)){ fator = n / comida.g; desc = `${desafioNum(n)}${unidade === 'ml' ? 'ml' : 'g'}`; }
+  else if(['kg','l','litro','quilo'].includes(unidade)){ fator = (n * 1000) / comida.g; desc = `${desafioNum(n, 2)}${unidade === 'kg' || unidade === 'quilo' ? 'kg' : 'L'}`; }
+  else if(unidade && !UNIDADES_PORCAO.includes(unidade) && singularPalavra(textoComida(comida.p)) !== unidade){
+    const gramas = (comida.u && comida.u[unidade]) || UNIDADES_GENERICAS[unidade];
+    if(gramas){ fator = (n * gramas) / comida.g; desc = `${desafioNum(n, 2)} ${pluralUnidade(unidade, n)}`; }
+  }
+  return {nome: comida.nome, desc, kcal: comida.kcal * fator, prot: comida.prot * fator};
+}
+
+function calcularComida(texto){
+  const bruto = String(texto || '');
+  let t = textoComida(bruto.includes(':') ? bruto.split(':').pop() : bruto);
+  PALAVRAS_DE_REFEICAO.forEach(w=>{ t = t.replace(new RegExp(`(^|[^a-z])${w}($|[^a-z])`, 'g'), ' '); });
+  const lista = alimentosConhecidos();
+  const partes = t.split(/\s*(?:[+,;\n]|\be\b|\bcom\b|\bmais\b)\s*/).map(s=>s.trim()).filter(Boolean);
+  const itens = [], desconhecidos = [];
+  partes.forEach(seg=>{
+    if(!/[a-z]/.test(seg)) return;
+    const item = calcularItem(seg, lista);
+    if(item) itens.push(item); else desconhecidos.push(seg);
+  });
+  const kcal = itens.reduce((s, i)=>s + i.kcal, 0);
+  const prot = itens.reduce((s, i)=>s + i.prot, 0);
+  return {texto, itens, desconhecidos, kcal, prot};
+}
+
+function desafioComidaInput(el){
+  state.desafio.comidaTexto = el.value;
+}
+
+function desafioCalcularComida(){
+  const el = document.getElementById('desafio-comida');
+  const texto = el ? el.value.trim() : state.desafio.comidaTexto.trim();
+  state.desafio.comidaTexto = texto;
+  state.desafio.cadastro = null;
+  if(!texto){ state.desafio.comidaPreview = null; desafioRerender(); return; }
+  state.desafio.comidaPreview = calcularComida(texto);
+  desafioRerender();
+}
+
+function desafioUsarRefeicao(i){
+  const r = DESAFIO_REFEICOES[i];
+  if(!r) return;
+  state.desafio.comidaTexto = r.texto;
+  state.desafio.cadastro = null;
+  state.desafio.comidaPreview = calcularComida(r.texto);
+  desafioRerender();
+}
+
+function desafioComidaKeydown(e){
+  if(e.key !== 'Enter') return;
+  e.preventDefault();
+  const p = state.desafio.comidaPreview;
+  if(p && p.texto === e.target.value.trim() && p.itens.length) addDesafioComida();
+  else desafioCalcularComida();
+}
+
+async function addDesafioComida(){
+  const p = state.desafio.comidaPreview;
+  if(!p || !p.itens.length){ showToast('Não reconheci nenhum alimento', 'erro'); return; }
+  const e = await inserirDesafio({kind:'comida', date: todayIso(), label: p.texto.slice(0, 160), value: Math.round(p.kcal), protein: Math.round(p.prot * 10) / 10});
+  if(!e){ showToast('Falta rodar o supabase/desafio_v2.sql', 'erro'); return; }
+  state.desafio.comidaTexto = '';
+  state.desafio.comidaPreview = null;
+  state.desafio.cadastro = null;
+  desafioRerender();
+  showToast(`+${desafioNum(e.value)} kcal · ${desafioNum(e.protein, 1)}g de proteína`);
+  const protHoje = desafioDoTipo('comida').filter(c=>c.date === todayIso()).reduce((s, c)=>s + (c.protein || 0), 0);
+  if(protHoje >= DESAFIO_METAS.proteina) desafioMarcarSozinho('proteina');
+}
+
+function desafioAbrirCadastro(seg){
+  const nome = seg.replace(/\b\d+(\.\d+)?\b/g, ' ').replace(/\b(g|gr|ml|de|da|do)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  state.desafio.cadastro = nome || seg;
+  desafioRerender();
+  setTimeout(()=>{ const el = document.getElementById('desafio-alim-kcal'); if(el) el.focus(); }, 30);
+}
+
+async function salvarAlimentoProprio(){
+  const nome = document.getElementById('desafio-alim-nome').value.trim();
+  const kcal = parseFloat(String(document.getElementById('desafio-alim-kcal').value).replace(',', '.'));
+  const prot = parseFloat(String(document.getElementById('desafio-alim-prot').value).replace(',', '.'));
+  if(!nome){ showToast('Coloca o nome do alimento', 'erro'); return; }
+  if(isNaN(kcal) || kcal < 0){ showToast('Coloca as calorias de uma porção', 'erro'); return; }
+  const e = await inserirDesafio({kind:'alimento', date: todayIso(), label: nome, value: kcal, protein: isNaN(prot) ? 0 : prot});
+  if(!e){ showToast('Falta rodar o supabase/desafio_v2.sql', 'erro'); return; }
+  state.desafio.cadastro = null;
+  if(state.desafio.comidaTexto) state.desafio.comidaPreview = calcularComida(state.desafio.comidaTexto);
+  desafioRerender();
+  showToast(`${nome} cadastrado`);
+}
+
+/* ---------- Render ---------- */
 
 function renderDesafioBarra(pct){
   const p = Math.max(0, Math.min(1, pct));
@@ -4810,6 +5205,111 @@ function renderDesafioGraficoPeso(pesos){
     </svg>`;
 }
 
+function renderDesafioAvisoSql(){
+  if(!state.desafio.precisaSql) return '';
+  return `<div class="desafio-aviso">Metas e comida precisam do <strong>supabase/desafio_v2.sql</strong>. Roda ele no SQL Editor do Supabase e atualiza a página.</div>`;
+}
+
+function renderDesafioComida(){
+  const hoje = todayIso();
+  const comidas = desafioDoTipo('comida').filter(c=>c.date === hoje);
+  const kcal = comidas.reduce((s, c)=>s + (c.value || 0), 0);
+  const prot = comidas.reduce((s, c)=>s + (c.protein || 0), 0);
+  const p = state.desafio.comidaPreview;
+  const btnApagar = (id)=>`<button class="desafio-del" onclick="deleteDesafioEntry('${id}')" title="Apagar" aria-label="Apagar">×</button>`;
+
+  let preview = '';
+  if(p){
+    preview = `
+      <div class="desafio-preview">
+        ${p.itens.length ? `
+          <div class="desafio-preview-total"><strong>≈ ${desafioNum(p.kcal)} kcal</strong><span>${desafioNum(p.prot, 1)}g de proteína</span></div>
+          <div class="desafio-preview-itens">${p.itens.map(i=>`
+            <div class="desafio-preview-item"><span>${esc(i.nome)} <small>${esc(i.desc)}</small></span><span>${desafioNum(i.kcal)} kcal · ${desafioNum(i.prot, 1)}g</span></div>`).join('')}
+          </div>` : ''}
+        ${p.desconhecidos.map(seg=>`
+          <div class="desafio-desconhecido">Não reconheci <strong>“${esc(seg)}”</strong><button class="btn-format" onclick="desafioAbrirCadastro(this.dataset.seg)" data-seg="${esc(seg)}">Cadastrar</button></div>`).join('')}
+        ${state.desafio.cadastro !== null ? `
+          <div class="desafio-cadastro">
+            <input class="input" id="desafio-alim-nome" value="${esc(state.desafio.cadastro)}" placeholder="Nome" autocomplete="off">
+            <input class="input" id="desafio-alim-kcal" placeholder="kcal por porção" inputmode="decimal" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();salvarAlimentoProprio();}">
+            <input class="input" id="desafio-alim-prot" placeholder="proteína (g)" inputmode="decimal" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();salvarAlimentoProprio();}">
+            <button class="btn-primary" onclick="salvarAlimentoProprio()">Salvar</button>
+          </div>
+          <div class="desafio-empty">Olha no rótulo ou no app do mercado. Na próxima vez ele já reconhece.</div>` : ''}
+        ${p.itens.length ? `<div class="desafio-preview-acoes"><button class="btn-secondary" onclick="state.desafio.comidaPreview=null;state.desafio.comidaTexto='';desafioRerender()">Limpar</button><button class="btn-primary" onclick="addDesafioComida()">Adicionar ao dia</button></div>` : ''}
+      </div>`;
+  }
+
+  return `
+    <div class="glass panel">
+      <div class="panel-head">
+        <div class="panel-title">🍽️ O que você comeu hoje</div>
+        <div class="panel-hint">estimativa</div>
+      </div>
+      <div class="desafio-macros">
+        <div>
+          <div class="desafio-meta-line"><strong>${desafioNum(prot)}g</strong><span>de ${DESAFIO_METAS.proteina}g de proteína</span></div>
+          ${renderDesafioBarra(prot / DESAFIO_METAS.proteina)}
+        </div>
+        <div>
+          <div class="desafio-meta-line"><strong>${desafioNum(kcal)}</strong><span>de ${desafioNum(DESAFIO_METAS.kcal)} kcal</span></div>
+          ${renderDesafioBarra(kcal / DESAFIO_METAS.kcal)}
+        </div>
+      </div>
+      <div class="desafio-form">
+        <input class="input" id="desafio-comida" value="${esc(state.desafio.comidaTexto)}" placeholder="Ex: 3 ovos + 1 copo de leite + 1 banana" autocomplete="off" oninput="desafioComidaInput(this)" onkeydown="desafioComidaKeydown(event)">
+        <button class="btn-primary" onclick="desafioCalcularComida()">Calcular</button>
+      </div>
+      <div class="desafio-refeicoes" role="group" aria-label="Refeições do plano">
+        ${DESAFIO_REFEICOES.map((r, i)=>`<button type="button" class="desafio-refeicao" onclick="desafioUsarRefeicao(${i})">${esc(r.nome)}</button>`).join('')}
+      </div>
+      ${preview}
+      ${comidas.length ? `<div class="desafio-list">${[...comidas].reverse().map(c=>`
+        <div class="desafio-row">
+          <span class="desafio-row-label">${esc(c.label)}</span>
+          <span class="desafio-row-val">${desafioNum(c.value)} kcal · ${desafioNum(c.protein, 1)}g</span>
+          ${btnApagar(c.id)}
+        </div>`).join('')}</div>` : (p ? '' : `<div class="desafio-empty">Escreve do jeito que falaria: “2 pães com peito de peru e queijo”, “a la minuta”, “200g de frango”.</div>`)}
+    </div>`;
+}
+
+function renderDesafioMetas(){
+  const metas = desafioMetas();
+  const abertas = metas.filter(m=>m.status !== 'feita').sort((a, b)=>a.date.localeCompare(b.date));
+  const feitas = metas.filter(m=>m.status === 'feita');
+  const visiveis = state.desafio.todasMetas ? abertas : abertas.slice(0, 6);
+  const linha = (m)=>{
+    const ok = m.status === 'feita';
+    const prazo = desafioPrazo(m.date);
+    return `
+      <div class="desafio-meta-item ${ok ? 'ok' : ''}">
+        <button class="desafio-meta-check" onclick="toggleDesafioMeta('${m.id}')" aria-pressed="${ok}" aria-label="${ok ? 'Reabrir' : 'Concluir'} meta"><span class="desafio-box" aria-hidden="true">${ok ? '✓' : ''}</span></button>
+        <span class="desafio-meta-txt">${esc(m.label)}</span>
+        ${ok ? '' : `<span class="desafio-prazo ${prazo.cls}">${prazo.txt}</span>`}
+        <button class="desafio-del" onclick="deleteDesafioEntry('${m.id}')" title="Apagar" aria-label="Apagar meta">×</button>
+      </div>`;
+  };
+  return `
+    <div class="glass panel">
+      <div class="panel-head">
+        <div class="panel-title">🎯 Metas</div>
+        <div class="panel-hint">${feitas.length}/${metas.length} concluídas</div>
+      </div>
+      ${metas.length ? renderDesafioBarra(feitas.length / metas.length) : ''}
+      <div class="desafio-metas">
+        ${visiveis.map(linha).join('') || (metas.length ? '<div class="desafio-empty">Tudo concluído. Cria a próxima.</div>' : '')}
+      </div>
+      ${abertas.length > 6 ? `<button class="desafio-mais" onclick="state.desafio.todasMetas=!state.desafio.todasMetas;desafioRerender()">${state.desafio.todasMetas ? 'Mostrar menos' : `Ver todas (${abertas.length})`}</button>` : ''}
+      <div class="desafio-form desafio-form-meta">
+        <input class="input" id="desafio-meta" placeholder="Nova meta" autocomplete="off" onkeydown="desafioOnEnter(event,'meta')">
+        <input class="input desafio-input-data" type="date" id="desafio-meta-prazo" value="${desafioAddDays(todayIso(), 7)}" aria-label="Prazo">
+        <button class="btn-primary" onclick="addDesafioEntry('meta')">Criar</button>
+      </div>
+      ${feitas.length ? `<details class="desafio-feitas"><summary>Concluídas (${feitas.length})</summary>${feitas.map(linha).join('')}</details>` : ''}
+    </div>`;
+}
+
 function renderDesafio(){
   if(!state.desafio.loaded){
     return `
@@ -4837,6 +5337,7 @@ function renderDesafio(){
   const entrevistas = vagas.filter(v=>v.status === 'entrevista' || v.status === 'proposta').length;
 
   const diasFeitos = Object.keys(state.desafio.days).filter(d=>d <= hoje && desafioPctDia(d) === 1).length;
+  const proxima = desafioMetas().filter(m=>m.status !== 'feita').sort((a, b)=>a.date.localeCompare(b.date))[0];
 
   const btnApagar = (id)=>`<button class="desafio-del" onclick="deleteDesafioEntry('${id}')" title="Apagar" aria-label="Apagar">×</button>`;
 
@@ -4846,13 +5347,18 @@ function renderDesafio(){
         <div class="eyebrow">Desafio · ${desafioFmt(DESAFIO_INICIO)} → ${desafioFmt(DESAFIO_FIM)}</div>
         <h1>${dia === 0 ? 'Começa amanhã' : `Dia ${dia} de ${total}`}</h1>
       </div>
-      <div class="desafio-hero-hint">${faltam > 0 ? `faltam <strong>${faltam}</strong> dias` : 'desafio encerrado'}</div>
+      <div class="desafio-hero-hint">
+        ${faltam > 0 ? `faltam <strong>${faltam}</strong> dias` : 'desafio encerrado'}
+        ${proxima ? `<div class="desafio-hero-next">próxima meta: <span>${esc(proxima.label)}</span> · ${desafioPrazo(proxima.date).txt}</div>` : ''}
+      </div>
     </div>
+
+    ${renderDesafioAvisoSql()}
 
     <div class="status-row">
       <div class="status-item"><div class="lbl">Sequência</div><div class="val">${seq} ${seq===1?'dia':'dias'}</div></div>
       <div class="status-item"><div class="lbl">Dias 100%</div><div class="val">${diasFeitos}</div></div>
-      <div class="status-item"><div class="lbl">Peso</div><div class="val">${String(pesoAtual).replace('.', ',')}kg</div></div>
+      <div class="status-item"><div class="lbl">Peso</div><div class="val">${desafioNum(pesoAtual, 1)}kg</div></div>
       <div class="status-item"><div class="lbl">Freela</div><div class="val">${desafioDinheiro(totalFreela)}</div></div>
       <div class="status-item"><div class="lbl">Vagas</div><div class="val">${vagas.length}</div></div>
     </div>
@@ -4875,6 +5381,8 @@ function renderDesafio(){
             }).join('')}
           </div>
         </div>
+
+        ${renderDesafioComida()}
 
         <div class="glass panel">
           <div class="panel-head">
@@ -4921,12 +5429,14 @@ function renderDesafio(){
       </div>
 
       <div class="side-col">
+        ${renderDesafioMetas()}
+
         <div class="glass panel">
           <div class="panel-head">
             <div class="panel-title">💪 Peso</div>
             <div class="panel-hint">meta ${DESAFIO_METAS.pesoMeta}kg</div>
           </div>
-          <div class="desafio-meta-line"><strong>${ganho >= 0 ? '+' : ''}${ganho.toFixed(1).replace('.', ',')}kg</strong><span>desde ${DESAFIO_METAS.pesoInicial}kg</span></div>
+          <div class="desafio-meta-line"><strong>${ganho >= 0 ? '+' : ''}${desafioNum(ganho, 1)}kg</strong><span>desde ${DESAFIO_METAS.pesoInicial}kg</span></div>
           ${renderDesafioBarra(pctPeso)}
           ${renderDesafioGraficoPeso(pesos)}
           <div class="desafio-form">
@@ -4936,9 +5446,9 @@ function renderDesafio(){
           ${pesos.length ? `<div class="desafio-list">${[...pesos].reverse().slice(0,5).map(p=>`
             <div class="desafio-row">
               <span class="desafio-row-date">${desafioFmt(p.date)}</span>
-              <span class="desafio-row-label">${String(p.value).replace('.', ',')}kg</span>
+              <span class="desafio-row-label">${desafioNum(p.value, 1)}kg</span>
               ${btnApagar(p.id)}
-            </div>`).join('')}</div>` : `<div class="desafio-empty">Pesa de manhã, em jejum, toda semana.</div>`}
+            </div>`).join('')}</div>` : `<div class="desafio-empty">Toda segunda, de manhã, em jejum.</div>`}
         </div>
 
         <div class="glass panel">

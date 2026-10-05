@@ -2890,7 +2890,8 @@
     .desafio-checks{grid-template-columns:1fr;}
     .desafio-form{flex-wrap:wrap;}
     .desafio-input-sm{max-width:none;flex:1;}
-    .desafio-hero-hint{display:none;}
+    .desafio-hero-hint{text-align:left;width:100%;}
+    .desafio-hero-next{justify-content:flex-start;margin-left:0;max-width:100%;}
     .desafio-row{flex-wrap:wrap;row-gap:6px;}
     .desafio-row-label{flex:1 1 150px;white-space:normal;}
   }
@@ -2965,3 +2966,132 @@
   .tag-input-field:disabled{cursor:not-allowed;}
   .tag-suggestion-item{display:flex;align-items:center;gap:8px;}
   .tag-suggestion-item .tag-chip{font-size:12px;}
+
+  /* Desafio — metas, comida e avisos ---------------------------------------- */
+  .desafio-hero-hint{text-align:right;}
+  .desafio-hero-next{
+    margin-top:6px;
+    font-family:'Inter',sans-serif;
+    font-size:12px;
+    letter-spacing:0;
+    text-transform:none;
+    color:var(--text-muted);
+  }
+  .desafio-hero-next{display:flex;justify-content:flex-end;gap:4px;max-width:520px;margin-left:auto;white-space:nowrap;}
+  .desafio-hero-next span{color:var(--text-strong);font-weight:500;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+
+  .desafio-aviso{
+    margin:-12px 0 24px;
+    padding:12px 16px;
+    border-radius:12px;
+    font-size:13px;
+    color:var(--text);
+    background:color-mix(in srgb, var(--waiting) 16%, var(--glass-strong));
+    border:1px solid color-mix(in srgb, var(--waiting) 45%, transparent);
+  }
+
+  .desafio-macros{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-bottom:2px;}
+  .desafio-refeicoes{display:flex;flex-wrap:wrap;gap:6px;margin:-2px 0 12px;}
+  .desafio-refeicao{
+    padding:6px 12px;
+    border-radius:20px;
+    font-size:12px;
+    color:var(--text-muted);
+    background:var(--glass);
+    border:1px solid var(--line);
+    transition:background-color .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .desafio-refeicao:hover{color:var(--text);background:var(--glass-strong);border-color:var(--line-strong);}
+
+  .desafio-preview{
+    margin:0 0 12px;
+    padding:14px 16px;
+    border-radius:14px;
+    background:var(--glass-strong);
+    border:1px solid var(--line);
+  }
+  .desafio-preview-total{display:flex;align-items:baseline;gap:10px;margin-bottom:8px;}
+  .desafio-preview-total strong{font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:20px;color:var(--text-strong);}
+  .desafio-preview-total span{font-size:13px;color:var(--done);font-weight:500;}
+  .desafio-preview-itens{display:flex;flex-direction:column;}
+  .desafio-preview-item{
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    padding:6px 0;
+    border-top:1px solid var(--line);
+    font-size:12.5px;
+    color:var(--text);
+  }
+  .desafio-preview-item small{color:var(--text-muted);margin-left:4px;}
+  .desafio-preview-item span:last-child{white-space:nowrap;color:var(--text-muted);}
+  .desafio-preview-acoes{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;}
+  .desafio-desconhecido{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    margin-top:8px;
+    font-size:12.5px;
+    color:var(--text-muted);
+  }
+  .desafio-desconhecido strong{color:var(--text);font-weight:500;}
+  .desafio-cadastro{display:flex;gap:8px;margin-top:10px;}
+  .desafio-cadastro .input{min-width:0;}
+  .desafio-cadastro .btn-primary{flex-shrink:0;}
+
+  .desafio-metas{display:flex;flex-direction:column;}
+  .desafio-meta-item{
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+    padding:9px 2px;
+    border-top:1px solid var(--line);
+    font-size:13px;
+    color:var(--text);
+  }
+  .desafio-metas .desafio-meta-item:first-child{border-top:none;}
+  .desafio-meta-check{flex-shrink:0;border-radius:7px;}
+  .desafio-meta-check .desafio-box{width:20px;height:20px;font-size:12px;}
+  .desafio-meta-item.ok .desafio-box{background:var(--done);border-color:var(--done);}
+  .desafio-meta-txt{flex:1;min-width:0;line-height:1.45;padding-top:1px;}
+  .desafio-meta-item.ok .desafio-meta-txt{color:var(--text-muted);text-decoration:line-through;text-decoration-color:var(--text-soft);}
+  .desafio-prazo{
+    flex-shrink:0;
+    margin-top:1px;
+    padding:2px 8px;
+    border-radius:20px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:10.5px;
+    color:var(--text-muted);
+    background:var(--glass);
+    white-space:nowrap;
+  }
+  .desafio-prazo.perto{color:var(--accent);background:color-mix(in srgb, var(--accent) 12%, transparent);font-weight:600;}
+  .desafio-prazo.atrasada{color:var(--danger);background:color-mix(in srgb, var(--danger) 12%, transparent);font-weight:600;}
+  .desafio-mais{
+    margin:6px 0 4px;
+    font-size:12px;
+    color:var(--accent);
+    font-weight:500;
+  }
+  .desafio-mais:hover{text-decoration:underline;}
+  .desafio-form-meta{margin-top:12px;}
+  .desafio-input-data{max-width:150px;}
+  .desafio-feitas{margin-top:6px;}
+  .desafio-feitas summary{
+    cursor:pointer;
+    font-size:12px;
+    color:var(--text-muted);
+    padding:4px 0;
+  }
+  .desafio-feitas[open] summary{margin-bottom:4px;}
+
+  @media (max-width:900px){
+    .desafio-hero-hint{text-align:left;}
+    .desafio-macros{grid-template-columns:1fr;gap:6px;}
+    .desafio-cadastro{flex-wrap:wrap;}
+    .desafio-cadastro .input{flex:1 1 120px;}
+    .desafio-input-data{max-width:none;flex:1;}
+    .desafio-preview-item{flex-direction:column;gap:2px;}
+  }
