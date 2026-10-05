@@ -960,13 +960,13 @@ async function checkAuth(){
     document.getElementById('user-email').textContent = email;
     document.getElementById('user-name-display').textContent = state.myName;
     renderMyAvatar('user-avatar', state.myName);
-    await loadTasks();
-    await loadRoutines();
-    await generateRoutineInstances();
-    await loadProjects();
-    await loadIgnoredEvents();
+    // A barra lateral aparece completa já no primeiro desenho: o Desafio só
+    // depende do e-mail, e os projetos vêm da última visita até o banco responder.
     setupDesafioNav();
-    await loadDesafio();
+    restoreProjectsCache();
+    // Em paralelo: uma consulta não precisa esperar a outra terminar.
+    await Promise.all([loadTasks(), loadRoutines(), loadProjects(), loadIgnoredEvents(), loadDesafio()]);
+    await generateRoutineInstances();
     setupRealtime();
     startRoutineCheckLoop();
     startAlarmChecker();
@@ -1666,13 +1666,11 @@ async function refreshAll(kind, silent){
   const btns = document.querySelectorAll('.refresh-btn');
   btns.forEach(b=>b.classList.add('spinning'));
   try{
-    if(!kind || kind === 'tasks'){
-      await loadTasks();
-    }
-    if(!kind || kind === 'projects'){
-      await loadProjects();
-    }
-    if(!kind) await loadDesafio();
+    const cargas = [];
+    if(!kind || kind === 'tasks') cargas.push(loadTasks());
+    if(!kind || kind === 'projects') cargas.push(loadProjects());
+    if(!kind) cargas.push(loadDesafio());
+    await Promise.all(cargas);
     safeRerender();
     if(!silent) showToast('Atualizado');
   }catch(e){}
@@ -1826,6 +1824,7 @@ async function logout(){
   stopAlarmChecker();
   stopGoogleSyncLoop();
   stopRoutineCheckLoop();
+  try{ const k = projectsCacheKey(); if(k) localStorage.removeItem(k); }catch(e){}
   await sb.auth.signOut();
   location.reload();
 }
@@ -2119,12 +2118,36 @@ async function deleteTaskRemote(id){
   return true;
 }
 
+function projectsCacheKey(){
+  return session && session.user ? `projectsCache:${session.user.id}` : null;
+}
+
+function restoreProjectsCache(){
+  const key = projectsCacheKey();
+  if(!key || state.projects.length) return;
+  try{
+    const salvo = JSON.parse(localStorage.getItem(key) || 'null');
+    if(Array.isArray(salvo)){
+      state.projects = salvo;
+      renderSidebarProjects();
+    }
+  }catch(e){}
+}
+
+function saveProjectsCache(){
+  const key = projectsCacheKey();
+  if(!key) return;
+  try{ localStorage.setItem(key, JSON.stringify(state.projects)); }catch(e){}
+}
+
 async function loadProjects(){
   const myEmail = session.user.email;
 
-  const {data: owned} = await sb.from('projects').select('*').eq('owner_id', session.user.id);
-  const {data: memberOf} = await sb.from('project_members').select('project_id, projects(*)').eq('user_id', session.user.id).eq('status', 'accepted');
-  const {data: pending} = await sb.from('project_members').select('*, projects(name)').eq('invited_email', myEmail).eq('status', 'pending');
+  const [{data: owned}, {data: memberOf}, {data: pending}] = await Promise.all([
+    sb.from('projects').select('*').eq('owner_id', session.user.id),
+    sb.from('project_members').select('project_id, projects(*)').eq('user_id', session.user.id).eq('status', 'accepted'),
+    sb.from('project_members').select('*, projects(name)').eq('invited_email', myEmail).eq('status', 'pending')
+  ]);
 
   const projectMap = {};
   (owned || []).forEach(p=>{projectMap[p.id] = {...p, myRole: 'owner', members: []};});
@@ -2159,6 +2182,7 @@ async function loadProjects(){
 
   state.projects = Object.values(projectMap);
   state.pendingInvites = pending || [];
+  saveProjectsCache();
   updatePendingInvitesBadge();
 }
 
