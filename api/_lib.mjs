@@ -97,10 +97,13 @@ function adminHeaders(){
   };
 }
 
+// null = o usuário não tem credencial. Falha ao consultar NÃO é "sem
+// credencial": devolver null aqui fazia o app concluir que a conta foi
+// desconectada e parar o sync por causa de uma instabilidade do Supabase.
 export async function getCredential(userId){
   const url = `${env('SUPABASE_URL')}/rest/v1/google_credentials?user_id=eq.${encodeURIComponent(userId)}&select=*`;
   const res = await fetch(url, {headers: adminHeaders()});
-  if(!res.ok) return null;
+  if(!res.ok) throw new Error(`Falha ao ler credencial: ${res.status} ${await res.text()}`);
   const rows = await res.json();
   return rows[0] || null;
 }
@@ -119,13 +122,22 @@ export async function saveCredential(userId, patch){
 
 export async function deleteCredential(userId){
   const url = `${env('SUPABASE_URL')}/rest/v1/google_credentials?user_id=eq.${encodeURIComponent(userId)}`;
-  await fetch(url, {method: 'DELETE', headers: adminHeaders()});
+  const res = await fetch(url, {method: 'DELETE', headers: adminHeaders()});
+  // Sem esta checagem o disconnect respondia ok com a credencial ainda no
+  // banco, e a conexão "voltava sozinha" no próximo carregamento.
+  if(!res.ok) throw new Error(`Falha ao apagar credencial: ${res.status} ${await res.text()}`);
 }
 
 /* ---------- Google ---------- */
 
+// Falha passageira ao renovar o token (rede, cota, instabilidade do Google).
+// As rotas respondem 503 para o app tentar de novo depois, em vez de
+// {connected:false}, que o app trata como conta desconectada.
+export class TransientError extends Error {}
+
 // Access tokens duram ~1h; o refresh token guardado gera novos indefinidamente,
 // que é o que mantém a conexão viva sem o usuário reconectar.
+// null = não há conexão (nunca houve, ou o Google revogou o refresh token).
 export async function freshAccessToken(userId){
   const cred = await getCredential(userId);
   if(!cred) return null;
@@ -133,16 +145,21 @@ export async function freshAccessToken(userId){
   const stillValid = cred.access_token && cred.expires_at && new Date(cred.expires_at).getTime() - 60000 > Date.now();
   if(stillValid) return cred.access_token;
 
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: new URLSearchParams({
-      client_id: env('GOOGLE_CLIENT_ID'),
-      client_secret: env('GOOGLE_CLIENT_SECRET'),
-      refresh_token: cred.refresh_token,
-      grant_type: 'refresh_token'
-    })
-  });
+  let res;
+  try{
+    res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({
+        client_id: env('GOOGLE_CLIENT_ID'),
+        client_secret: env('GOOGLE_CLIENT_SECRET'),
+        refresh_token: cred.refresh_token,
+        grant_type: 'refresh_token'
+      })
+    });
+  }catch(e){
+    throw new TransientError(`Google token indisponível: ${e.message}`);
+  }
 
   if(!res.ok){
     // Só apaga a credencial quando o Google confirma que o refresh token
@@ -152,8 +169,11 @@ export async function freshAccessToken(userId){
     // usuário precisava reconectar bem mais que a cada 7 dias.
     let code = null;
     try{ code = (await res.json()).error; }catch(e){}
-    if(code === 'invalid_grant') await deleteCredential(userId);
-    return null;
+    if(code === 'invalid_grant'){
+      await deleteCredential(userId);
+      return null;
+    }
+    throw new TransientError(`Google recusou a renovação (${res.status} ${code || 'sem código'})`);
   }
 
   const tok = await res.json();
@@ -174,5 +194,29 @@ export function json(res, status, body){
 // crua do Supabase). O detalhe fica no log da função; o cliente recebe genérico.
 export function fail(res, e, tag){
   console.error(`[${tag}]`, e);
+  if(e instanceof TransientError){
+    res.setHeader('Retry-After', '60');
+    return json(res, 503, {error: 'Google indisponível no momento. Tentando de novo em instantes.', transient: true});
+  }
   json(res, 500, {error: 'Erro interno. Tente de novo em instantes.'});
+}
+
+// Cada rota aceita só os métodos que usa. As outras recebem 405 em vez de
+// executar o handler (um GET em /disconnect não deve desconectar nada).
+export function allowMethods(req, res, methods){
+  if(methods.includes(req.method)) return true;
+  res.setHeader('Allow', methods.join(', '));
+  json(res, 405, {error: 'método não permitido'});
+  return false;
+}
+
+// A Vercel entrega req.body já parseado quando o Content-Type é JSON, mas
+// cai em string (ou nada) em outros casos. Corpo inválido vira null, não 500.
+export function readJson(req){
+  if(req.body && typeof req.body === 'object') return req.body;
+  if(typeof req.body !== 'string' || !req.body) return {};
+  try{
+    const v = JSON.parse(req.body);
+    return v && typeof v === 'object' ? v : null;
+  }catch(e){ return null; }
 }

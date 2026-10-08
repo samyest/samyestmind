@@ -20,6 +20,11 @@ Rode `supabase/google_credentials.sql` no SQL Editor do Supabase. A tabela fica
 com RLS ligado e **sem policies**, então nada no navegador consegue ler os
 refresh tokens — só as funções em `api/`, que usam a service role key.
 
+Depois rode `supabase/tarefas_google_unicas.sql`: ele cria o índice que impede a
+mesma reunião de virar duas tarefas quando o app está aberto em mais de um
+aparelho. O passo 1 do arquivo lista duplicatas que já existam (o índice não é
+criado enquanto houver alguma).
+
 ### 2. Google Cloud Console
 
 1. Criar projeto em <https://console.cloud.google.com>
@@ -56,7 +61,9 @@ refresh tokens — só as funções em `api/`, que usam a service role key.
   contendo a identidade do usuário, para o callback não confiar no navegador
 - `api/google/callback` — troca o código pelos tokens e guarda o refresh token
 - `api/google/token` — devolve ao navegador um access token curto, renovando pelo
-  refresh token quando vence; também guarda o id do calendário e o sync token
+  refresh token quando vence; também guarda o id do calendário e o sync token. Se o Google
+  falhar de forma passageira ao renovar, responde 503 e o app tenta de novo depois,
+  sem dar a conta por desconectada
 - `api/google/disconnect` — revoga no Google e apaga a credencial
 
 O navegador nunca vê o refresh token; por isso a conexão sobrevive a recarregar a
@@ -67,7 +74,10 @@ página e dura até ser revogada.
 - O sync Google → app roda a cada 2 minutos **com o app aberto**. Sincronizar com o
   app fechado exigiria um cron job chamando a API.
 - Compromissos recorrentes viram **uma tarefa por ocorrência** (a busca expande a
-  recorrência). Uma daily de 90 dias cria 90 tarefas.
+  recorrência), mas só dentro dos **próximos 90 dias**: uma daily sem data de fim
+  vira umas 90 tarefas, um aniversário anual vira uma, e as ocorrências seguintes
+  entram conforme a janela anda (o app faz uma busca completa por dia). Sem esse
+  limite, cada aniversário da agenda virava ~30 tarefas, uma por ano até 2056.
 - Em projetos compartilhados, cada membro sincroniza no próprio calendário. O id do
   evento de tarefas de terceiros fica por dispositivo (localStorage), senão os
   membros sobrescreveriam o mapeamento uns dos outros.

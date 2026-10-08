@@ -319,6 +319,9 @@
     display:grid;
     grid-template-columns:var(--sidebar-w, 220px) minmax(0,1fr);
     height:100vh;
+    /* No iOS o 100vh conta a area atras da barra do Safari e o fim da tela
+       ficava escondido; dvh acompanha a barra. */
+    height:100dvh;
     position:relative;
     z-index:1;
     transition:grid-template-columns .22s ease;
@@ -2533,7 +2536,10 @@
 
   @media (max-width:900px){
     *{-webkit-tap-highlight-color:transparent;}
-    .app{grid-template-columns:minmax(0,1fr);}
+    /* Sem linhas explicitas, o grid de 100vh repartia a sobra entre a barra do
+       topo e o conteudo: numa tela curta (Projetos, Kanban vazio) a barra
+       crescia ate um terco da altura. */
+    .app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1fr;}
     aside{display:none;}
     .sidebar-toggle{display:none;}
     .mobile-topbar{display:flex;}

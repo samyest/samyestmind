@@ -1,6 +1,7 @@
-import {userFromRequest, getCredential, deleteCredential, json, fail} from '../_lib.mjs';
+import {userFromRequest, getCredential, deleteCredential, json, fail, allowMethods} from '../_lib.mjs';
 
 export default async function handler(req, res){
+  if(!allowMethods(req, res, ['POST'])) return;
   try{
     const user = await userFromRequest(req);
     if(!user) return json(res, 401, {error: 'não autenticado'});

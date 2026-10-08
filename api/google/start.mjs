@@ -1,9 +1,10 @@
-import {userFromRequest, signState, redirectUri, env, json, fail, GOOGLE_SCOPE} from '../_lib.mjs';
+import {userFromRequest, signState, redirectUri, env, json, fail, allowMethods, GOOGLE_SCOPE} from '../_lib.mjs';
 
 // Monta a URL de consentimento do Google. O cliente chama isto autenticado e
 // depois navega para a URL devolvida — a identidade vai no state assinado, então
 // o callback não precisa confiar em nada que volte do navegador.
 export default async function handler(req, res){
+  if(!allowMethods(req, res, ['GET'])) return;
   try{
     const user = await userFromRequest(req);
     if(!user) return json(res, 401, {error: 'não autenticado'});

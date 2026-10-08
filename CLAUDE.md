@@ -26,6 +26,14 @@ Sem framework e sem build step. Não existe `package.json`; nada é compilado.
   segunda convenção.
 - Mensagens de commit em português, descritivas e no presente, como as que já estão no
   histórico: "Corrige atalho N disparando dentro das notas do projeto".
+- O `supabase-js` é carregado do jsDelivr com **versão fixa e hash SRI** (`integrity`
+  no `index.html`). Nunca volte para `@2` solto: qualquer release nova entraria no
+  app no mesmo dia. Para atualizar, escolha uma versão publicada há pelo menos duas
+  semanas, troque o número na URL e recalcule o hash:
+  `curl -s https://cdn.jsdelivr.net/npm/@supabase/supabase-js@X.Y.Z/dist/umd/supabase.js | openssl dgst -sha384 -binary | openssl base64 -A`
+- HTML montado por template string: texto do usuário sempre por `esc()`, cor por
+  `corSegura()`, e colunas (pessoais ou de projeto) só depois de `normalizarColunas()`
+  — a chave delas vai crua para dentro de `onclick`.
 
 ## Skills deste repositório
 

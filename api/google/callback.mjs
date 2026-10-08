@@ -33,7 +33,12 @@ export default async function handler(req, res){
       })
     });
 
-    if(!tokenRes.ok) return back(res, origin, 'erro');
+    if(!tokenRes.ok){
+      // Sem log, um redirect_uri ou secret errado na Vercel vira só "erro" na
+      // tela e nenhuma pista no painel.
+      console.error('[google/callback] troca do código falhou', tokenRes.status, await tokenRes.text());
+      return back(res, origin, 'erro');
+    }
     const tok = await tokenRes.json();
     if(!tok.refresh_token) return back(res, origin, 'sem_refresh');
 
@@ -46,6 +51,7 @@ export default async function handler(req, res){
 
     back(res, origin, 'ok');
   }catch(e){
+    console.error('[google/callback]', e);
     back(res, origin, 'erro');
   }
 }

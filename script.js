@@ -29,13 +29,20 @@ function taskColor(t){
 
 const GCAL_ID = 'primary';
 const GCAL_PULL_INTERVAL = 2 * 60 * 1000;
+// Até onde a busca olha para a frente. Sem limite, todo compromisso
+// recorrente sem data de fim era expandido décadas adiante: cada aniversário
+// anual da agenda virava ~30 tarefas, uma por ano até 2056.
+const GCAL_HORIZONTE_DIAS = 90;
+// A busca incremental só traz o que mudou. Uma ocorrência que entra na janela
+// sem ter sido editada nunca chegaria por ela — uma busca completa por dia
+// (dentro da janela) é o que traz essas.
+const GCAL_COMPLETA_A_CADA = 24 * 60 * 60 * 1000;
 let googleConnected = false;
 let googleAccessToken = null;
 let googleTokenExpiry = 0;
 let gcalCalendarId = null;
 let gcalSyncToken = null;
 let gcalPullTimer = null;
-let gcalSyncing = false;
 let gcalConnectedAt = null;
 // Contas de teste do Google (não verificadas) têm o refresh token expirado pelo
 // próprio Google 7 dias após a conexão, não importa o que o app faça — ver README.
@@ -44,7 +51,17 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let session = null;
 let authMode = 'signin';
 
-const STORAGE_KEY = 'samyest-mind-tasks-v2';
+// O supabase-js renova o JWT sozinho a cada ~1h, mas `session` guardava o da
+// abertura da página. Passada uma hora, as chamadas a /api/google/* voltavam
+// 401 e o sync com o Google parava em silêncio — com a aba aberta o dia todo.
+sb.auth.onAuthStateChange((event, novaSessao)=>{
+  if(novaSessao) session = novaSessao;
+  // Saiu em outra aba (ou o refresh token morreu): esta aba não pode seguir
+  // mostrando dados de uma sessão que não existe mais.
+  if(event === 'SIGNED_OUT' && session && document.getElementById('app').style.display !== 'none'){
+    location.reload();
+  }
+});
 
 const THEMES = {
   bluegray: {
@@ -158,6 +175,10 @@ function applyTheme(name){
   r.setProperty('--line-strong', t.lineStrong || 'rgba(122, 142, 162, 0.22)');
   document.body.classList.toggle('theme-bg-photo', !!t.bgPhoto);
   document.documentElement.style.colorScheme = t.dark ? 'dark' : 'light';
+  // A barra do navegador no celular ficava sempre no azul-acinzentado do
+  // tema padrão, mesmo com o Grafite ou o Grêmio escuros na tela.
+  const metaCor = document.querySelector('meta[name="theme-color"]');
+  if(metaCor) metaCor.setAttribute('content', t.bg);
 }
 
 function toggleSidebar(){
@@ -273,22 +294,29 @@ async function saveRoutineModal(){
     time: document.getElementById('rt-time').value,
     weekdays
   };
+  // closeRoutineModal zera editingRoutineId: guardar antes, senão o toast
+  // dizia "Rotina criada" toda vez que se editava uma.
+  const editando = editingRoutineId;
   let ok;
-  if(editingRoutineId){
-    ok = await updateRoutineRemote(editingRoutineId, data);
-    const r = state.routines.find(x=>x.id===editingRoutineId);
+  if(editando){
+    ok = await updateRoutineRemote(editando, data);
+    const r = state.routines.find(x=>x.id===editando);
     const activeChecked = document.getElementById('rt-active').checked;
-    if(r && activeChecked !== r.active){
-      r.active = activeChecked;
-      await sb.from('routines').update({active: r.active}).eq('id', editingRoutineId);
+    if(ok && r && activeChecked !== r.active){
+      const {error} = await sb.from('routines').update({active: activeChecked}).eq('id', editando);
+      if(error){console.error(error);showToast('Não deu para pausar ou reativar a rotina. Tente de novo em instantes.', 'erro');ok = false;}
+      else r.active = activeChecked;
     }
+    // Incluir o dia de hoje (ou reativar) devia gerar a tarefa já, não só
+    // na próxima volta do ciclo de 30 minutos.
+    if(ok) await generateRoutineInstances();
   }else{
     ok = await createRoutine(data);
   }
   if(ok){
     closeRoutineModal();
     renderSettingsRoutinesList();
-    showToast(editingRoutineId ? 'Rotina atualizada' : 'Rotina criada');
+    showToast(editando ? 'Rotina atualizada' : 'Rotina criada');
   }
 }
 
@@ -380,7 +408,7 @@ function selectTheme(name){
 
 async function saveSettings(){
   const name = document.getElementById('s-name').value.trim();
-  if(!name){showToast('Escreva seu nome para continuar.', 'erro');document.getElementById('onboarding-name').focus();return;}
+  if(!name){showToast('Escreva seu nome para continuar.', 'erro');document.getElementById('s-name').focus();return;}
   const soundEnabled = document.getElementById('s-sound').checked;
   const hideDateOnDone = document.getElementById('s-hide-date-done').checked;
   localStorage.setItem('hideDateOnDone', hideDateOnDone ? '1' : '0');
@@ -424,16 +452,29 @@ let editingColumnKey = null;
 function getColumns(){
   return (state.columns && state.columns.length) ? state.columns : DEFAULT_COLUMNS;
 }
-function getColumn(key){
-  return getColumns().find(c=>c.key===key) || {key, name:key, color:'#9AAFC2', type:'active'};
-}
-function columnName(key){ return getColumn(key).name; }
-function columnColor(key){ return getColumn(key).color; }
-function columnType(key){ return getColumn(key).type; }
-function statusDotStyle(status){
-  const col = getColumn(status);
-  const cls = col.type === 'waiting' ? 'dot-hollow' : (col.type === 'done' ? 'dot-done' : '');
-  return {cls, style: `--col-color:${col.color}`};
+
+// Colunas vêm do banco e, num projeto compartilhado, qualquer editor escreve
+// nelas. A chave entra crua em onclick="...('${key}')" e em data-status em
+// vários templates: uma chave com aspas executava script no navegador de todos
+// os membros. Validar na carga fecha isso em todos os pontos de uso de uma vez.
+const CHAVE_COLUNA = /^[A-Za-z0-9_-]{1,64}$/;
+const TIPOS_COLUNA = ['active', 'waiting', 'done'];
+function normalizarColunas(lista){
+  if(!Array.isArray(lista)) return null;
+  const vistas = new Set();
+  const out = [];
+  lista.forEach(c=>{
+    if(!c || !CHAVE_COLUNA.test(String(c.key)) || vistas.has(c.key)) return;
+    vistas.add(c.key);
+    out.push({
+      key: c.key,
+      name: String(c.name == null || c.name === '' ? c.key : c.name).slice(0, 80),
+      color: corSegura(c.color),
+      type: TIPOS_COLUNA.includes(c.type) ? c.type : 'active',
+      hidden: !!c.hidden
+    });
+  });
+  return out.length ? out : null;
 }
 
 function getProjectColumns(project){
@@ -481,7 +522,7 @@ function renderColorSwatches(){
   `).join('') + `
     <label class="color-swatch-btn color-swatch-custom ${isCustom?'selected':''}" style="${isCustom ? `background:${corSegura(selectedColumnColor)};` : ''}" title="Escolher outra cor">
       ${isCustom ? '' : '<span>+</span>'}
-      <input type="color" value="${selectedColumnColor}" oninput="selectColumnColor(this.value)" style="opacity:0;position:absolute;inset:0;width:100%;height:100%;cursor:pointer;border:none;padding:0;">
+      <input type="color" value="${corSegura(selectedColumnColor)}" aria-label="Escolher outra cor" oninput="selectColumnColor(this.value)" style="opacity:0;position:absolute;inset:0;width:100%;height:100%;cursor:pointer;border:none;padding:0;">
     </label>
   `;
 }
@@ -502,8 +543,11 @@ function openStatusDetail(filterKey, label){
   if(filterKey === 'overdue'){
     list = personalTasks().filter(t=>taskColumnType(t)!=='done' && dateStatus(t.date)==='overdue');
   } else {
+    // Mesma regra da contagem no painel (statusVisivel); com t.status===key a
+    // lista podia vir vazia num card que mostrava 3.
     const key = filterKey.replace('col:', '');
-    list = personalTasks().filter(t=>t.status===key);
+    const cols = getColumns();
+    list = personalTasks().filter(t=>statusVisivel(t, cols)===key);
   }
   list = sortByDateThenPriority(list);
 
@@ -533,6 +577,7 @@ function openStatusDetail(filterKey, label){
         </div>`;
     }).join('');
   }
+  tornarClicaveisAcessiveis(body);
   document.getElementById('status-modal').classList.add('open');
 }
 
@@ -632,6 +677,7 @@ async function deleteColumn(){
     const fallback = cols.find(c=>c.key !== editingColumnKey);
     const toMove = state.tasks.filter(t=>t.project_id===editingColumnProjectId && t.status===editingColumnKey);
     for(const t of toMove){
+      t.completed_at = resolveCompletedAt(fallback.key, t.status, t.completed_at, cols);
       t.status = fallback.key;
       await updateTaskRemote(t.id, t);
     }
@@ -648,6 +694,7 @@ async function deleteColumn(){
   const fallback = cols.find(c=>c.key !== editingColumnKey);
   const toMove = state.tasks.filter(t=>!t.project_id && t.status===editingColumnKey);
   for(const t of toMove){
+    t.completed_at = resolveCompletedAt(fallback.key, t.status, t.completed_at, cols);
     t.status = fallback.key;
     await updateTaskRemote(t.id, t);
   }
@@ -683,8 +730,6 @@ function statusVisivel(t, cols){
   return cols.length ? cols[0].key : t.status;
 }
 
-const DEFAULT_CLIENTS = [];
-
 let state = {
   tasks: [],
   columns: null,
@@ -695,6 +740,7 @@ let state = {
   pendingInvites: [],
   routines: [],
   view: 'dashboard',
+  viewBeforeProject: null,
   currentProjectId: null,
   editingId: null,
   calDate: new Date(),
@@ -798,21 +844,37 @@ function canEditTask(t){
 
 async function bulkMove(status){
   if(!status) return;
-  const list = selectedTasks().filter(canEditTask);
-  if(list.length === 0){ showToast('Nada que você possa mover'); return; }
+  const editaveis = selectedTasks().filter(canEditTask);
+  // O "Mover para…" lista as colunas pessoais. Tarefa de projeto selecionada
+  // na coluna compartilhada recebia uma chave que não existe no quadro dela e
+  // caía na primeira coluna do projeto.
+  const list = editaveis.filter(t=>columnsForTask(t).some(c=>c.key===status));
+  const ficaram = editaveis.length - list.length;
+  if(list.length === 0){
+    showToast(ficaram ? 'Tarefas de projeto se movem pelo quadro do próprio projeto.' : 'Nada que você possa mover', ficaram ? 'erro' : undefined);
+    return;
+  }
 
+  let n = 0;
   for(const t of list){
     const prevStatus = t.status;
-    t.completed_at = resolveCompletedAt(status, prevStatus, t.completed_at);
+    const prevCompletedAt = t.completed_at;
+    t.completed_at = resolveCompletedAt(status, prevStatus, t.completed_at, columnsForTask(t));
     t.status = status;
-    const ok = await updateTaskRemote(t.id, t);
-    if(ok) await syncTaskToGoogle(t);
+    if(await updateTaskRemote(t.id, t)){
+      n++;
+      await syncTaskToGoogle(t);
+    }else{
+      t.status = prevStatus;
+      t.completed_at = prevCompletedAt;
+    }
   }
   state.selected.clear();
   state.selecting = false;
   skipEntranceOnce = true;
   render();
-  showToast(`${list.length} tarefa${list.length!==1?'s':''} movida${list.length!==1?'s':''}`);
+  const extra = ficaram ? ` · ${ficaram} de projeto ${ficaram!==1?'ficaram onde estavam':'ficou onde estava'}` : '';
+  showToast(`${n} tarefa${n!==1?'s':''} movida${n!==1?'s':''}${extra}`);
 }
 
 async function bulkDelete(){
@@ -897,9 +959,18 @@ function isHiddenFromKanban(t){
   return new Date(t.completed_at) < lastSunday();
 }
 
-function resolveCompletedAt(newStatus, oldStatus, currentValue){
-  const newType = columnType(newStatus);
-  const oldType = oldStatus ? columnType(oldStatus) : null;
+// cols = colunas do quadro da tarefa. Usar sempre as pessoais (como antes)
+// errava em tarefa de projeto: mover para o "Concluído" de um projeto cuja
+// chave não existia nas colunas pessoais não marcava completed_at, e o cartão
+// sumia do Kanban na hora (concluída sem data de conclusão = escondida).
+function tipoDaColuna(cols, key){
+  const c = cols.find(x=>x.key===key);
+  return c ? c.type : 'active';
+}
+function resolveCompletedAt(newStatus, oldStatus, currentValue, cols, oldCols){
+  const lista = cols || getColumns();
+  const newType = tipoDaColuna(lista, newStatus);
+  const oldType = oldStatus ? tipoDaColuna(oldCols || lista, oldStatus) : null;
   if(newType === 'done' && oldType !== 'done') return new Date().toISOString();
   if(newType !== 'done' && oldType === 'done') return null;
   return currentValue || null;
@@ -956,21 +1027,21 @@ async function checkAuth(){
     state.savedTheme = myProfile.theme || 'bluegray';
     state.soundEnabled = myProfile.sound_enabled !== false;
     applyTheme(state.savedTheme);
-    state.columns = myProfile.kanban_columns || JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
-    document.getElementById('user-email').textContent = email;
+    state.columns = normalizarColunas(myProfile.kanban_columns) || JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+    document.getElementById('user-email').textContent = email || '';
     document.getElementById('user-name-display').textContent = state.myName;
     renderMyAvatar('user-avatar', state.myName);
     // A barra lateral aparece completa já no primeiro desenho: o Desafio só
     // depende do e-mail, e os projetos vêm da última visita até o banco responder.
     setupDesafioNav();
     restoreProjectsCache();
-    // Em paralelo: uma consulta não precisa esperar a outra terminar.
-    await Promise.all([loadTasks(), loadRoutines(), loadProjects(), loadIgnoredEvents(), loadDesafio()]);
+    // Em paralelo: uma consulta não precisa esperar a outra terminar. Só gerar
+    // as rotinas precisa das tarefas e das rotinas já carregadas.
+    await Promise.all([loadTasks(), loadRoutines(), loadProjects(), loadIgnoredEvents(), loadDesafio(), loadGoogleSession()]);
     await generateRoutineInstances();
     setupRealtime();
     startRoutineCheckLoop();
     startAlarmChecker();
-    await loadGoogleSession();
     updateGoogleStatusUI();
     safeRerender();
     if(isGoogleConnected()){
@@ -1174,13 +1245,18 @@ async function gapi(path, options, retried){
     // Token vencido antes do previsto: pede um novo ao backend e tenta uma vez só.
     googleAccessToken = null;
     googleTokenExpiry = 0;
-    if(retried || !(await ensureGoogleToken())){
+    if(!retried && await ensureGoogleToken()) return gapi(path, options, true);
+    // Só desconecta quando o backend confirmou que a conexão acabou
+    // (googleConnected virou false) ou quando o token novo também foi
+    // recusado. Uma falha passageira do backend ao renovar (503) derrubava a
+    // conexão e pedia para reconectar à toa.
+    if(retried || !googleConnected){
       clearGoogleToken();
+      stopGoogleSyncLoop();
       updateGoogleStatusUI();
-      showToast('Conexão com o Google expirou — reconecte');
-      return null;
+      showToast('A conexão com o Google expirou. Reconecte em Configurações.', 'erro');
     }
-    return gapi(path, options, true);
+    return null;
   }
   if(res.status === 410) return {__gone: true};
   if(res.status === 404) return {__missing: true};
@@ -1210,9 +1286,17 @@ async function connectGoogleCalendar(){
 }
 
 async function disconnectGoogleCalendar(){
+  if(!await confirmar('As tarefas continuam aqui e os eventos já criados continuam na agenda — só para de sincronizar.', {title:'Desconectar o Google Calendar?', okLabel:'Desconectar'})) return;
+  // Antes o app se dava por desconectado mesmo com a requisição falhando, e a
+  // conexão voltava sozinha no próximo carregamento.
   try{
-    await fetch('/api/google/disconnect', {method: 'POST', headers: apiHeaders()});
-  }catch(e){}
+    const res = await fetch('/api/google/disconnect', {method: 'POST', headers: apiHeaders()});
+    if(!res.ok) throw new Error(`disconnect ${res.status}`);
+  }catch(e){
+    console.error(e);
+    showToast('Não deu para desconectar agora. Confira a conexão e tente de novo.', 'erro');
+    return;
+  }
   clearGoogleToken();
   stopGoogleSyncLoop();
   showToast('Google Calendar desconectado');
@@ -1234,7 +1318,7 @@ async function handleGoogleRedirect(){
     sem_refresh: 'O Google não devolveu acesso permanente. Remova o app em myaccount.google.com/permissions e conecte de novo.',
     erro: 'Erro ao conectar com o Google'
   };
-  showToast(msgs[status] || msgs.erro);
+  showToast(msgs[status] || msgs.erro, status === 'ok' ? undefined : 'erro');
 
   if(status === 'ok'){
     await loadGoogleSession();
@@ -1451,14 +1535,35 @@ function isTaskWorthyEvent(evt){
   return true;
 }
 
+function gcalHorizonteIso(){
+  return isoDateFromTimestamp(Date.now() + GCAL_HORIZONTE_DIAS * 86400000);
+}
+
+function gcalCompletaVencida(){
+  try{
+    const ultima = Number(localStorage.getItem(gcalKey('ultimaCompleta')) || 0);
+    return Date.now() - ultima > GCAL_COMPLETA_A_CADA;
+  }catch(e){ return false; }
+}
+
+function marcarGcalCompleta(){
+  try{ localStorage.setItem(gcalKey('ultimaCompleta'), String(Date.now())); }catch(e){}
+}
+
+// true = percorreu todas as páginas; false = parou no meio (sem conexão, erro).
 async function pullFromGoogle(opts){
   const full = opts && opts.full;
   const calId = await getSyncCalendarId();
-  if(!calId) return;
+  if(!calId) return false;
   const base = '/calendars/' + encodeURIComponent(calId) + '/events';
   const syncToken = full ? null : gcalSyncToken;
 
   const params = new URLSearchParams();
+  // O Google pede os mesmos parâmetros na busca incremental e na completa.
+  // A incremental ia sem singleEvents: uma série recorrente alterada chegava
+  // como o evento-mestre (uma tarefa só, com outro id) em vez de ocorrências.
+  params.set('singleEvents', 'true');
+  params.set('maxResults', '250');
   if(syncToken){
     params.set('syncToken', syncToken);
     params.set('showDeleted', 'true');
@@ -1467,10 +1572,11 @@ async function pullFromGoogle(opts){
     // varredura do histórico é o que despejava meses de eventos de uma vez.
     const from = new Date();
     from.setHours(0, 0, 0, 0);
+    const ate = new Date(from);
+    ate.setDate(ate.getDate() + GCAL_HORIZONTE_DIAS + 1);
     params.set('timeMin', from.toISOString());
-    params.set('singleEvents', 'true');
+    params.set('timeMax', ate.toISOString());
     params.set('showDeleted', 'false');
-    params.set('maxResults', '250');
   }
 
   let changed = false;
@@ -1490,7 +1596,7 @@ async function pullFromGoogle(opts){
       gcalSyncToken = null;
       return pullFromGoogle({full: true});
     }
-    if(!data) return;
+    if(!data) return false;
 
     for(const evt of (data.items || [])){
       if(await applyGoogleEvent(evt)) changed = true;
@@ -1510,6 +1616,7 @@ async function pullFromGoogle(opts){
     skipEntranceOnce = true;
     safeRerender();
   }
+  return true;
 }
 
 async function applyGoogleEvent(evt){
@@ -1539,7 +1646,10 @@ async function applyGoogleEvent(evt){
   const colorId = evt.colorId ? String(evt.colorId) : null;
 
   if(task){
-    if(!shouldSyncTask(task)) return false;
+    // Visualizador com tarefa atribuída recebe o evento na agenda, mas não
+    // pode alterar a tarefa: sem isto o app tentava a cada 2 min e mostrava
+    // "Não deu para atualizar" sem parar.
+    if(!shouldSyncTask(task) || !canEditTask(task)) return false;
     if(task.title === title && task.date === when.date && (task.time || '') === when.time
        && (task.color_id || null) === colorId) return false;
     const ok = await updateTaskRemote(task.id, {
@@ -1564,6 +1674,14 @@ async function applyGoogleEvent(evt){
   // completa — só ela evita a varredura de meses. Sem isto, um compromisso
   // antigo tocado no Google (cor, recorrência etc.) ressuscitava como tarefa.
   if(when.date < isoDateFromTimestamp(Date.now())) return false;
+  // A incremental não respeita o timeMax da completa: alterar uma série sem
+  // fim no Google devolvia todas as ocorrências dela. Fora da janela, a
+  // ocorrência espera; a busca completa diária traz quando ela entrar.
+  if(when.date > gcalHorizonteIso()) return false;
+  // O id do evento vai junto no insert. Gravado num segundo passo (como era),
+  // outro sync que corresse no meio não achava o vínculo e criava a tarefa de
+  // novo. Com o índice de supabase/tarefas_google_unicas.sql, o banco recusa a
+  // duplicata vinda de outro aparelho e o app só recarrega.
   const created = await createTaskRemote({
     title,
     client: '',
@@ -1573,22 +1691,43 @@ async function applyGoogleEvent(evt){
     time: when.time,
     color_id: colorId,
     from_google: true,
+    google_event_id: evt.id,
     notes: ''
-  });
+  }, {duplicataSilenciosa: true});
+  if(created === 'duplicata') return true;
   if(!created) return false;
   state.tasks.push(created);
-  await setEventId(created, evt.id);
   return true;
 }
 
-async function runGoogleSync(opts){
-  if(!isGoogleConnected() || gcalSyncing) return;
-  gcalSyncing = true;
-  try{
-    if(opts && opts.full) await syncAllTasksToGoogle();
-    await pullFromGoogle(opts);
-  }catch(e){}
-  gcalSyncing = false;
+// Uma sincronização por vez, em fila. O ciclo de 2 min, o botão
+// "Sincronizar" e o sync completo da volta do OAuth corriam em paralelo: duas
+// buscas viam o mesmo evento novo ao mesmo tempo e criavam duas tarefas para
+// ele. E o sync completo do primeiro conectar era simplesmente descartado por
+// já haver outro rodando — as tarefas existentes nunca subiam para a agenda.
+//   opts.full → envia tudo e refaz a busca completa
+//   opts.push → envia tudo e busca só as mudanças
+// Devolve quantas tarefas foram enviadas.
+let gcalSyncFila = Promise.resolve();
+let gcalSyncNaFila = 0;
+function runGoogleSync(opts){
+  const o = opts || {};
+  const envia = !!(o.full || o.push);
+  // Uma busca simples pedida com outra já na fila não acrescenta nada.
+  if(!envia && gcalSyncNaFila > 0) return gcalSyncFila.then(()=>0);
+  gcalSyncNaFila++;
+  const passo = gcalSyncFila.then(async ()=>{
+    if(!isGoogleConnected()) return 0;
+    let enviadas = 0;
+    try{
+      if(envia) enviadas = await syncAllTasksToGoogle();
+      const completa = !!o.full || gcalCompletaVencida();
+      if(await pullFromGoogle({full: completa}) && completa) marcarGcalCompleta();
+    }catch(e){ console.error('[google sync]', e); }
+    return enviadas;
+  }).finally(()=>{ gcalSyncNaFila--; });
+  gcalSyncFila = passo.catch(()=>0);
+  return passo;
 }
 
 function startGoogleSyncLoop(){
@@ -1615,10 +1754,7 @@ async function syncCalendarNow(){
   skipEntranceOnce = true;
   render();
 
-  try{
-    await syncAllTasksToGoogle();
-    await pullFromGoogle();
-  }catch(e){}
+  await runGoogleSync({push: true});
 
   calSyncing = false;
   skipEntranceOnce = true;
@@ -1634,8 +1770,7 @@ async function forceFullGoogleSync(){
   if(!isGoogleConnected()) return;
   const btn = document.getElementById('google-cal-sync-btn');
   if(btn){ btn.disabled = true; btn.textContent = 'Sincronizando…'; }
-  const n = await syncAllTasksToGoogle();
-  await pullFromGoogle({full: true});
+  const n = await runGoogleSync({full: true});
   if(btn){ btn.disabled = false; btn.textContent = 'Sincronizar tudo agora'; }
   showToast(`${n} tarefa${n!==1?'s':''} enviada${n!==1?'s':''} ao Google`);
 }
@@ -1683,11 +1818,20 @@ let alarmCheckTimer = null;
 
 function startAlarmChecker(){
   if(alarmCheckTimer) return;
-  if(window.Notification && Notification.permission === 'default'){
-    try{ Notification.requestPermission(); }catch(e){}
-  }
+  // A permissão de notificação era pedida aqui, no carregamento, sem gesto do
+  // usuário: Safari e Firefox ignoram o pedido e o Chrome o esconde. Agora ela
+  // é pedida ao salvar a primeira tarefa com horário (pedirPermissaoNotificacao).
+  try{
+    const salvos = JSON.parse(sessionStorage.getItem('alarmesDisparados') || '[]');
+    if(Array.isArray(salvos)) salvos.forEach(k=>alarmedTaskKeys.add(k));
+  }catch(e){}
   checkAlarms();
   alarmCheckTimer = setInterval(checkAlarms, 20000);
+}
+
+function pedirPermissaoNotificacao(){
+  if(!window.Notification || Notification.permission !== 'default') return;
+  try{ Notification.requestPermission(); }catch(e){}
 }
 
 function stopAlarmChecker(){
@@ -1695,28 +1839,55 @@ function stopAlarmChecker(){
   stopAlarmSoundLoop();
 }
 
+// Disparava só se a checagem caísse exatamente no minuto marcado. Em aba de
+// fundo o navegador espaça os timers e o minuto podia passar batido. Agora
+// vale qualquer checagem até 2 minutos depois do horário.
+const JANELA_ALARME_MS = 2 * 60 * 1000;
+
 function checkAlarms(){
   if(!state.tasks || !state.tasks.length) return;
   const now = new Date();
-  const todayIso = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-  const nowHM = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const todayIso = isoDateFromTimestamp(now.getTime());
 
   personalTasks().forEach(t=>{
     if(!t.time || t.date !== todayIso) return;
     if(taskColumnType(t) === 'done') return;
-    if(t.time !== nowHM) return;
+    // Aceita "HH:MM" e "HH:MM:SS".
+    const [h, m] = String(t.time).split(':').map(Number);
+    if(!Number.isFinite(h) || !Number.isFinite(m)) return;
+    const alvo = new Date(now);
+    alvo.setHours(h, m, 0, 0);
+    const atraso = now - alvo;
+    if(atraso < 0 || atraso > JANELA_ALARME_MS) return;
     const key = `${t.id}_${t.date}_${t.time}`;
     if(alarmedTaskKeys.has(key)) return;
     alarmedTaskKeys.add(key);
+    // Sobrevive a recarregar a página dentro da janela, senão tocava de novo.
+    try{ sessionStorage.setItem('alarmesDisparados', JSON.stringify([...alarmedTaskKeys].slice(-200))); }catch(e){}
     fireAlarm(t);
   });
 }
 
 let alarmSoundInterval = null;
 
+// Um AudioContext só, reaproveitado. Criar um por bipe (8 por alarme, nunca
+// fechados) esbarrava no limite do navegador numa aba aberta o dia inteiro e o
+// alarme ficava mudo. Ele nasce no primeiro clique da página, porque o
+// navegador só deixa tocar som depois de um gesto do usuário.
+let alarmAudioCtx = null;
+function alarmContext(){
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if(!Ctx) return null;
+  if(!alarmAudioCtx || alarmAudioCtx.state === 'closed') alarmAudioCtx = new Ctx();
+  if(alarmAudioCtx.state === 'suspended') alarmAudioCtx.resume().catch(()=>{});
+  return alarmAudioCtx;
+}
+document.addEventListener('pointerdown', ()=>{ try{ alarmContext(); }catch(e){} }, {once: true, capture: true});
+
 function playAlarmSound(){
   try{
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = alarmContext();
+    if(!ctx) return;
     const notes = [880, 1108, 1318];
     notes.forEach((freq, i)=>{
       const osc = ctx.createOscillator();
@@ -1840,17 +2011,24 @@ function renderMyAvatar(elId, name){
   if(url){
     el.innerHTML = `<img src="${esc(url)}" alt="" width="96" height="96" decoding="async" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">`;
   } else {
-    el.textContent = name[0].toUpperCase();
+    el.textContent = (String(name || '?').trim()[0] || '?').toUpperCase();
   }
 }
 
+// A extensão vinha do nome do arquivo ("foto" sem ponto virava avatar.foto) e
+// cada formato novo deixava o arquivo antigo para trás no bucket.
+const EXT_IMAGEM = {'image/jpeg':'jpg', 'image/png':'png', 'image/webp':'webp', 'image/gif':'gif', 'image/avif':'avif'};
+
 async function uploadAvatar(fileInput){
   const file = fileInput.files[0];
+  // Limpa já: escolher o mesmo arquivo de novo (depois de um erro) não
+  // disparava o change.
+  fileInput.value = '';
   if(!file) return;
-  if(!file.type.startsWith('image/')){showToast('Esse arquivo não é uma imagem — escolha um JPG ou PNG.', 'erro');return;}
+  const ext = EXT_IMAGEM[file.type];
+  if(!ext){showToast('Formato não suportado — escolha um JPG, PNG ou WebP.', 'erro');return;}
   if(file.size > 4 * 1024 * 1024){showToast('Imagem acima de 4\u00a0MB. Reduza o tamanho e envie de novo.', 'erro');return;}
 
-  const ext = file.name.split('.').pop();
   const path = `${session.user.id}/avatar.${ext}`;
 
   const btn = document.getElementById('avatar-upload-label');
@@ -1879,7 +2057,7 @@ async function uploadAvatar(fileInput){
 
 function getUserName(){
   if(state.myName) return state.myName;
-  if(!session) return '';
+  if(!session || !session.user.email) return '';
   const emailPart = session.user.email.split('@')[0];
   const firstPart = emailPart.split(/[._-]/)[0];
   return firstPart.charAt(0).toUpperCase() + firstPart.slice(1);
@@ -1922,7 +2100,7 @@ async function loadTasks(){
   render();
 }
 
-async function createTaskRemote(data){
+async function createTaskRemote(data, opts){
   const linha = {
     user_id: session.user.id,
     title: data.title,
@@ -1938,13 +2116,18 @@ async function createTaskRemote(data){
     completed_at: data.completed_at || null,
     project_id: data.project_id || null,
     assigned_to: data.assigned_to || null,
-    routine_id: data.routine_id || null
+    routine_id: data.routine_id || null,
+    google_event_id: data.google_event_id || null
   };
   // Só manda a coluna quando a tarefa tem tag: assim criar tarefa continua
   // funcionando mesmo antes do supabase/task_tags.sql ser aplicado.
   if(data.tags && data.tags.length) linha.tags = data.tags;
   const {data: task, error} = await sb.from('tasks').insert(linha).select().single();
-  if(error){console.error(error);showToast('Não deu para criar a tarefa. Confira a conexão e tente de novo.', 'erro');return null;}
+  if(error){
+    // 23505 = violou o índice único (tarefa já criada por outro aparelho).
+    if(opts && opts.duplicataSilenciosa && error.code === '23505') return 'duplicata';
+    console.error(error);showToast('Não deu para criar a tarefa. Confira a conexão e tente de novo.', 'erro');return null;
+  }
   return {
     id: task.id,
     title: task.title,
@@ -1954,7 +2137,7 @@ async function createTaskRemote(data){
     date: task.date || '',
     time: task.time || '',
     notes: task.notes || '',
-    google_event_id: null,
+    google_event_id: task.google_event_id || null,
     color_id: task.color_id || null,
     sync_google: task.sync_google !== false,
     from_google: !!task.from_google,
@@ -2008,6 +2191,21 @@ async function generateRoutineInstances(){
     if(!r.weekdays.includes(dow)) continue;
     if(r.lastGeneratedDate === iso) continue;
 
+    // Reserva o dia no banco ANTES de criar a tarefa, e só se ninguém
+    // reservou ainda. Cada aba e cada aparelho tem sua própria cópia de
+    // lastGeneratedDate: com o app aberto no celular e no computador (ou uma
+    // aba esquecida desde ontem), cada um gerava a sua e a rotina duplicava.
+    const anterior = r.lastGeneratedDate;
+    const {data: reservada, error: errReserva} = await sb.from('routines')
+      .update({last_generated_date: iso})
+      .eq('id', r.id)
+      .or(`last_generated_date.is.null,last_generated_date.lt.${iso}`)
+      .select('id');
+    if(errReserva){ console.error(errReserva); continue; }
+    r.lastGeneratedDate = iso;
+    // Outra aba/aparelho chegou antes; a tarefa dela chega pelo realtime.
+    if(!reservada || reservada.length === 0) continue;
+
     const created = await createTaskRemote({
       title: r.title,
       client: r.client,
@@ -2022,10 +2220,12 @@ async function generateRoutineInstances(){
       state.tasks.push(created);
       await syncTaskToGoogle(created);
       changed = true;
+    }else{
+      // Devolve a reserva para a próxima checagem tentar de novo, em vez de
+      // perder a tarefa do dia por uma falha de rede.
+      await sb.from('routines').update({last_generated_date: anterior}).eq('id', r.id).eq('last_generated_date', iso);
+      r.lastGeneratedDate = anterior;
     }
-
-    await sb.from('routines').update({last_generated_date: iso}).eq('id', r.id);
-    r.lastGeneratedDate = iso;
   }
   if(changed){ skipEntranceOnce = true; safeRerender(); }
 }
@@ -2079,9 +2279,11 @@ async function updateRoutineRemote(id, data){
 async function toggleRoutineActive(id){
   const r = state.routines.find(x=>x.id===id);
   if(!r) return;
+  const {error} = await sb.from('routines').update({active: !r.active}).eq('id', id);
+  if(error){console.error(error);showToast('Não deu para pausar ou reativar a rotina. Tente de novo em instantes.', 'erro');return;}
   r.active = !r.active;
-  await sb.from('routines').update({active: r.active}).eq('id', id);
   renderSettingsRoutinesList();
+  if(r.active) await generateRoutineInstances();
 }
 
 async function deleteRoutineRemote(id){
@@ -2143,30 +2345,34 @@ function saveProjectsCache(){
 async function loadProjects(){
   const myEmail = session.user.email;
 
+  // As três consultas não dependem uma da outra; em fila custavam três idas e
+  // voltas a cada carregamento e a cada evento do realtime.
   const [{data: owned}, {data: memberOf}, {data: pending}] = await Promise.all([
     sb.from('projects').select('*').eq('owner_id', session.user.id),
     sb.from('project_members').select('project_id, projects(*)').eq('user_id', session.user.id).eq('status', 'accepted'),
-    sb.from('project_members').select('*, projects(name)').eq('invited_email', myEmail).eq('status', 'pending')
+    myEmail
+      ? sb.from('project_members').select('*, projects(name)').eq('invited_email', myEmail.toLowerCase()).eq('status', 'pending')
+      : Promise.resolve({data: []})
   ]);
 
   const projectMap = {};
-  (owned || []).forEach(p=>{projectMap[p.id] = {...p, myRole: 'owner', members: []};});
+  (owned || []).forEach(p=>{projectMap[p.id] = {...p, columns: normalizarColunas(p.columns), myRole: 'owner', members: []};});
   (memberOf || []).forEach(m=>{
     if(m.projects && !projectMap[m.project_id]){
-      projectMap[m.project_id] = {...m.projects, myRole: 'member', members: []};
+      projectMap[m.project_id] = {...m.projects, columns: normalizarColunas(m.projects.columns), myRole: 'member', members: []};
     }
   });
 
   const projectIds = Object.keys(projectMap);
   if(projectIds.length > 0){
+    const ownerIds = Object.values(projectMap).map(p=>p.owner_id).filter(Boolean);
     const {data: allMembers} = await sb.from('project_members').select('*').in('project_id', projectIds);
     (allMembers || []).forEach(m=>{
       if(projectMap[m.project_id]) projectMap[m.project_id].members.push(m);
     });
 
-    const profileIds = new Set();
+    const profileIds = new Set(ownerIds);
     Object.values(projectMap).forEach(p=>{
-      if(p.owner_id) profileIds.add(p.owner_id);
       p.members.forEach(m=>{if(m.user_id) profileIds.add(m.user_id);});
     });
     if(profileIds.size > 0){
@@ -2261,7 +2467,9 @@ async function inviteToProject(projectId){
   const emailInput = document.getElementById(`invite-email-${projectId}`);
   const roleSelect = document.getElementById(`invite-role-${projectId}`);
   const email = emailInput.value.trim().toLowerCase();
-  if(!email || !email.includes('@')){emailInput.focus();return;}
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){showToast('Confira o email — falta algo como nome@dominio.com.', 'erro');emailInput.focus();return;}
+  const p = state.projects.find(x=>x.id===projectId);
+  if(p && p.members.some(m=>m.invited_email === email)){showToast('Essa pessoa já foi convidada para este projeto.', 'erro');return;}
   const {error} = await sb.from('project_members').insert({
     project_id: projectId,
     invited_email: email,
@@ -2272,14 +2480,18 @@ async function inviteToProject(projectId){
   emailInput.value = '';
   await loadProjects();
   renderProjectsModal();
-  showToast('Convite enviado');
+  // Nenhum email sai daqui: o convite só aparece quando a pessoa entra no app
+  // com esse endereço. "Convite enviado" fazia o dono esperar um email que
+  // nunca chegava.
+  showToast(`Convite criado. Avise ${email} — ele aparece quando a pessoa entrar com esse email.`);
 }
 
+// O código dá entrada no projeto: Math.random não é fonte segura para isso.
+// 32 símbolos divide 256 exato, então o resto não enviesa a distribuição.
 function genInviteCode(){
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for(let i=0;i<6;i++) code += chars[Math.floor(Math.random()*chars.length)];
-  return code;
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  return Array.from(bytes, b=>chars[b % chars.length]).join('');
 }
 
 async function generateInviteCode(projectId){
@@ -2386,8 +2598,19 @@ function flushNotesIfPending(){
 
 function openProjectView(projectId){
   flushNotesIfPending();
+  if(state.view !== 'project') state.viewBeforeProject = state.view;
   state.currentProjectId = projectId;
   state.view = 'project';
+  render();
+  window.scrollTo(0,0);
+}
+
+// O botão de voltar levava sempre ao painel, mesmo para quem chegou pela aba
+// Projetos do celular ou pelo Kanban.
+function voltarDoProjeto(){
+  flushNotesIfPending();
+  state.view = state.viewBeforeProject || 'dashboard';
+  state.viewBeforeProject = null;
   render();
   window.scrollTo(0,0);
 }
@@ -2405,14 +2628,24 @@ async function saveProjectNotes(){
   if(!p) return;
   const html = sanitizeNotesHtml(el.innerHTML);
   const {error} = await sb.from('projects').update({notes: html}).eq('id', p.id);
-  if(!error){
-    p.notes = html;
-    const indicator = document.getElementById('notes-save-indicator');
+  const indicator = document.getElementById('notes-save-indicator');
+  if(error){
+    // Falhava calado: a pessoa saía achando que a nota estava salva.
+    console.error(error);
     if(indicator){
-      indicator.textContent = 'Salvo';
+      indicator.textContent = 'Não salvou — tente de novo';
+      indicator.style.color = 'var(--danger)';
       indicator.style.opacity = '1';
-      setTimeout(()=>{indicator.style.opacity = '0';}, 1500);
     }
+    showToast('A nota do projeto não foi salva. Confira a conexão e edite de novo.', 'erro');
+    return;
+  }
+  p.notes = html;
+  if(indicator){
+    indicator.textContent = 'Salvo';
+    indicator.style.color = '';
+    indicator.style.opacity = '1';
+    setTimeout(()=>{indicator.style.opacity = '0';}, 1500);
   }
 }
 
@@ -2436,7 +2669,7 @@ function renderProjectPage(){
   const p = state.projects.find(x=>x.id===state.currentProjectId);
   if(!p){
     return `<div class="view-header"><div><div class="eyebrow">Projeto</div><h1>Não encontrado</h1></div></div>
-      <div class="empty"><strong>Esse projeto não existe mais ou você não tem acesso.</strong><button class="btn-secondary" style="margin-top:12px;" onclick="state.view='dashboard';render();">Voltar</button></div>`;
+      <div class="empty"><strong>Esse projeto não existe mais ou você não tem acesso.</strong><button class="btn-secondary" style="margin-top:12px;" onclick="voltarDoProjeto()">Voltar</button></div>`;
   }
   const isOwner = p.myRole === 'owner';
   const role = myRoleInProject(p.id);
@@ -2471,11 +2704,11 @@ function renderProjectPage(){
         <h1>${esc(p.name)}</h1>
       </div>
       <div style="display:flex;gap:10px;">
-        <button class="btn-back" onclick="flushNotesIfPending();state.view='dashboard';render();" title="Voltar aos projetos">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        <button class="btn-back" onclick="voltarDoProjeto()" title="Voltar" aria-label="Voltar">
+          <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
         </button>
-        <button class="btn-back refresh-btn" onclick="refreshAll()" title="Atualizar agora">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        <button class="btn-back refresh-btn" onclick="refreshAll()" title="Atualizar agora" aria-label="Atualizar agora">
+          <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
         </button>
         <button class="btn-secondary" onclick="openProjectsModal()">👥 Membros</button>
         ${canEdit ? `<button class="btn-primary" onclick="openModal(null, '', '${p.id}')">+ Nova tarefa</button>` : ''}
@@ -2489,15 +2722,15 @@ function renderProjectPage(){
           <span id="notes-save-indicator" style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--done);opacity:0;transition:opacity .3s;">Salvo</span>
           ${canEdit ? `
           <div style="display:flex;gap:4px;">
-            <button class="editor-btn" onclick="execEditorCmd('bold')" title="Negrito"><b>B</b></button>
-            <button class="editor-btn" onclick="execEditorCmd('italic')" title="Itálico"><i>I</i></button>
-            <button class="editor-btn" onclick="execEditorCmd('formatBlock','H3')" title="Título">H</button>
-            <button class="editor-btn" onclick="execEditorCmd('insertUnorderedList')" title="Lista">•</button>
-            <button class="editor-btn" onclick="insertProjectImage()" title="Imagem">🖼</button>
+            <button class="editor-btn" onclick="execEditorCmd('bold')" title="Negrito" aria-label="Negrito"><b aria-hidden="true">B</b></button>
+            <button class="editor-btn" onclick="execEditorCmd('italic')" title="Itálico" aria-label="Itálico"><i aria-hidden="true">I</i></button>
+            <button class="editor-btn" onclick="execEditorCmd('formatBlock','H3')" title="Título" aria-label="Título"><span aria-hidden="true">H</span></button>
+            <button class="editor-btn" onclick="execEditorCmd('insertUnorderedList')" title="Lista" aria-label="Lista"><span aria-hidden="true">•</span></button>
+            <button class="editor-btn" onclick="insertProjectImage()" title="Imagem" aria-label="Inserir imagem"><span aria-hidden="true">🖼</span></button>
           </div>` : ''}
         </div>
       </div>
-      <div id="project-notes-editor" class="project-notes-editor" ${canEdit ? 'contenteditable="true"' : ''} oninput="scheduleProjectNotesSave()" data-placeholder="${canEdit ? 'Escreva aqui — contexto, links, decisões do projeto…' : 'Nenhuma nota ainda.'}">${sanitizeNotesHtml(p.notes)}</div>
+      <div id="project-notes-editor" class="project-notes-editor" role="textbox" aria-multiline="true" aria-label="Notas do projeto" ${canEdit ? 'contenteditable="true"' : 'aria-readonly="true"'} oninput="scheduleProjectNotesSave()" data-placeholder="${canEdit ? 'Escreva aqui — contexto, links, decisões do projeto…' : 'Nenhuma nota ainda.'}">${sanitizeNotesHtml(p.notes)}</div>
     </div>
 
     <div class="glass panel" style="padding-bottom:20px;">
@@ -3166,6 +3399,7 @@ function render(){
   skipEntranceOnce = false;
   m.scrollLeft = keepScroll;
   attachEvents();
+  tornarClicaveisAcessiveis(m);
 
   if(focoId){
     const denovo = document.getElementById(focoId);
@@ -3176,6 +3410,23 @@ function render(){
       }
     }
   }
+}
+
+// Linhas de tarefa, cartões do Kanban, dias do calendário, contadores do
+// painel: tudo <div onclick>. O mouse alcança, o teclado não. Em vez de
+// reescrever cada template, isto dá foco e papel de botão a eles depois de
+// cada render, e o keydown global lá embaixo traduz Enter/Espaço em clique.
+// Quem já tem um <button> dentro (o atalho "Nova tarefa") fica de fora para
+// não virar duas paradas de Tab.
+const CLICAVEIS_SEL = '[onclick]:not(button):not(a):not(input):not(select):not(textarea):not(label), .cal-cell[data-date], .cal-task[data-task-id]';
+function tornarClicaveisAcessiveis(root){
+  if(!root) return;
+  root.querySelectorAll(CLICAVEIS_SEL).forEach(el=>{
+    if(el.querySelector('button')) return;
+    if(!el.hasAttribute('tabindex')) el.tabIndex = 0;
+    if(!el.hasAttribute('role') && el.tagName !== 'TR') el.setAttribute('role', 'button');
+    el.dataset.clicavel = '1';
+  });
 }
 
 function renderDashboard(){
@@ -3379,6 +3630,7 @@ function openMiniCalDay(iso){
         </div>`;
     }).join('');
   }
+  tornarClicaveisAcessiveis(body);
   document.getElementById('status-modal').classList.add('open');
 }
 
@@ -3410,8 +3662,8 @@ function renderMiniCal(){
     <div class="mini-cal-head">
       <div class="mini-cal-title">${meses[month]} ${year}</div>
       <div class="mini-cal-nav">
-        <button onclick="miniCalNav(-1)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg></button>
-        <button onclick="miniCalNav(1)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></button>
+        <button onclick="miniCalNav(-1)" aria-label="Mês anterior"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg></button>
+        <button onclick="miniCalNav(1)" aria-label="Próximo mês"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></button>
       </div>
     </div>
     <div class="mini-cal-grid">
@@ -3427,7 +3679,7 @@ function renderKbCard(t, col, opts){
   const badge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
   const doneCls = col.type === 'done' ? 'done' : '';
   const extraBadge = opts.badge ? opts.badge(t) : '';
-  const draggable = opts.draggable === false ? false : !state.selecting;
+  const draggable = opts.draggable === false ? false : (!state.selecting && canEditTask(t));
   const dragAttrs = draggable ? `ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)"` : '';
   return `
     <div class="kb-card ${doneCls} ${state.selected.has(t.id)?'is-selected':''}" style="--col-color:${taskColor(t)}" draggable="${draggable}" ${dragAttrs} onclick="cardClick(event,'${t.id}')">
@@ -3586,7 +3838,10 @@ function colHandlePointerDown(e, key, projectId){
   e.preventDefault();
   const colEl = e.currentTarget.closest('.kb-col');
   const container = colEl.closest('.kanban');
-  const cols = [...container.querySelectorAll(':scope > .kb-col')];
+  // [data-status] deixa de fora as colunas compartilhadas de projeto do Kanban
+  // pessoal: sem chave, elas colidiam no Map de posições e o preview do
+  // arrasto empurrava as colunas para o lugar errado.
+  const cols = [...container.querySelectorAll(':scope > .kb-col[data-status]')];
 
   ptrProjectId = projectId || null;
   ptrDragKey = key;
@@ -3607,7 +3862,7 @@ function colHandlePointerDown(e, key, projectId){
 }
 
 function applyColumnPreview(){
-  ptrContainer.querySelectorAll(':scope > .kb-col').forEach(el=>{
+  ptrContainer.querySelectorAll(':scope > .kb-col[data-status]').forEach(el=>{
     if(el === ptrDragColEl) return;
     const key = el.dataset.status;
     const originalRect = ptrOriginalRects.get(key);
@@ -3735,10 +3990,13 @@ async function drop(e, status){
   e.currentTarget.classList.remove('drag-over');
   const id = e.dataTransfer.getData('text/plain');
   const task = state.tasks.find(t=>t.id===id);
-  if(task && task.status !== status){
+  // Texto arrastado de fora, ou cartão de outro quadro: a coluna precisa
+  // existir no quadro da própria tarefa.
+  if(!task || !canEditTask(task) || !columnsForTask(task).some(c=>c.key===status)) return;
+  if(task.status !== status){
     const prevStatus = task.status;
     const prevCompletedAt = task.completed_at;
-    task.completed_at = resolveCompletedAt(status, prevStatus, task.completed_at);
+    task.completed_at = resolveCompletedAt(status, prevStatus, task.completed_at, columnsForTask(task));
     task.status = status;
     render();
     const ok = await updateTaskRemote(id, task);
@@ -4290,6 +4548,11 @@ function openModal(id, prefillDate, prefillProjectId){
     const isMine = t.owner_id === session.user.id;
     const canEdit = isMine || (t.project_id && canEditProject(t.project_id));
     delBtn.style.display = canEdit ? '' : 'none';
+    // Visualizador via campos travados mas um "Salvar" ativo: o banco recusava
+    // e a mensagem de erro era coberta por "Alterações salvas".
+    document.getElementById('m-save').style.display = canEdit ? '' : 'none';
+    document.getElementById('m-cancel').textContent = canEdit ? 'Cancelar' : 'Fechar';
+    title.textContent = canEdit ? 'Editar tarefa' : 'Tarefa';
     document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn, #modal .tag-chip-remove').forEach(el=>{el.disabled = !canEdit;});
     setupGcalToggle(t, canEdit);
     commentsField.style.display = '';
@@ -4302,7 +4565,10 @@ function openModal(id, prefillDate, prefillProjectId){
     document.getElementById('m-client').value = '';
     populateStatusSelect('m-status', colunasDe(prefillProjectId)[0].key, prefillProjectId);
     document.getElementById('m-date').value = prefillDate || '';
-    document.getElementById('m-time').value = `${String(new Date().getHours()).padStart(2,'0')}:${String(new Date().getMinutes()).padStart(2,'0')}`;
+    // Vinha preenchido com a hora atual. O campo é opcional, mas toda tarefa
+    // nova com prazo virava evento com horário aleatório no Google — e uma
+    // criada para hoje disparava o alarme no mesmo minuto em que era salva.
+    document.getElementById('m-time').value = '';
     document.getElementById('m-priority').value = 'normal';
     document.getElementById('m-project').value = prefillProjectId || '';
     populateAssigneeSelect(prefillProjectId, null);
@@ -4313,6 +4579,8 @@ function openModal(id, prefillDate, prefillProjectId){
     renderTaskTagChips();
     document.getElementById('m-notes').value = '';
     delBtn.style.display = 'none';
+    document.getElementById('m-save').style.display = '';
+    document.getElementById('m-cancel').textContent = 'Cancelar';
     document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn, #modal .tag-chip-remove').forEach(el=>{el.disabled = false;});
     setupGcalToggle(null, true);
     commentsField.style.display = 'none';
@@ -4428,13 +4696,34 @@ function populateAssigneeSelect(projectId, currentAssignee){
 
 function closeModal(){document.getElementById('modal').classList.remove('open');state.editingId = null;currentCommentTaskId = null;}
 
-async function saveTask(){
-  const title = document.getElementById('m-title').value.trim();
-  if(!title){document.getElementById('m-title').focus();return;}
+// Enter duas vezes rápido (ou clique duplo no Salvar) criava a tarefa duas vezes.
+let salvandoTarefa = false;
 
+async function saveTask(){
+  if(salvandoTarefa) return;
+  const title = document.getElementById('m-title').value.trim();
+  if(!title){showToast('Dê um título para a tarefa.', 'erro');document.getElementById('m-title').focus();return;}
+  // Precisa ser antes de qualquer await: o navegador só mostra o pedido de
+  // permissão se ele vier direto de um clique ou tecla.
+  if(document.getElementById('m-time').value) pedirPermissaoNotificacao();
+
+  const btn = document.getElementById('m-save');
+  salvandoTarefa = true;
+  btn.disabled = true;
+  btn.textContent = 'Salvando…';
+  try{
+    await salvarTarefaDoModal(title);
+  }finally{
+    salvandoTarefa = false;
+    btn.disabled = false;
+    btn.textContent = 'Salvar';
+  }
+}
+
+async function salvarTarefaDoModal(title){
   if(!state.editingId && document.getElementById('m-repeat').checked){
     const weekdays = selectedWeekdays();
-    if(weekdays.length === 0){showToast('Escolha ao menos um dia da semana');return;}
+    if(weekdays.length === 0){showToast('Escolha ao menos um dia da semana.', 'erro');return;}
     const routine = await createRoutine({
       title,
       client: document.getElementById('m-client').value.trim(),
@@ -4443,8 +4732,11 @@ async function saveTask(){
       time: document.getElementById('m-time').value,
       weekdays
     });
+    // Falhou: o modal fica aberto com o que foi digitado (createRoutine já
+    // mostrou o erro). Antes fechava e a pessoa perdia tudo.
+    if(!routine) return;
     closeModal();render();
-    if(routine) showToast('Rotina criada');
+    showToast('Rotina criada');
     return;
   }
 
@@ -4453,6 +4745,7 @@ async function saveTask(){
   const statusEscolhido = document.getElementById('m-status').value;
   const newStatus = statusEscolhido || colunasDe(document.getElementById('m-project').value || null)[0].key;
   const existingTask = state.editingId ? state.tasks.find(x=>x.id===state.editingId) : null;
+  const projetoEscolhido = document.getElementById('m-project').value || null;
   const gcalInput = document.getElementById('m-gcal');
   // Sem Calendar conectado o interruptor fica escondido: aí a tarefa guarda a
   // escolha que já tinha (ou "sim", para quando a conexão vier depois).
@@ -4471,9 +4764,15 @@ async function saveTask(){
     notes: document.getElementById('m-notes').value.trim(),
     color_id: selectedTaskColor,
     sync_google: wantsGcal,
-    project_id: document.getElementById('m-project').value || null,
+    project_id: projetoEscolhido,
     assigned_to: document.getElementById('m-assignee').value || null,
-    completed_at: resolveCompletedAt(newStatus, existingTask ? existingTask.status : null, existingTask ? existingTask.completed_at : null)
+    completed_at: resolveCompletedAt(
+      newStatus,
+      existingTask ? existingTask.status : null,
+      existingTask ? existingTask.completed_at : null,
+      colunasDe(projetoEscolhido),
+      existingTask ? columnsForTask(existingTask) : null
+    )
   };
   if(selectedTaskTags.length || (existingTask && existingTask.tags && existingTask.tags.length)) data.tags = [...selectedTaskTags];
   const isNew = !state.editingId;
@@ -4482,16 +4781,17 @@ async function saveTask(){
     const ok = await updateTaskRemote(state.editingId, data);
     if(ok){
       const t = state.tasks.find(x=>x.id===state.editingId);
-      Object.assign(t, data);
-      savedTask = t;
+      if(t){ Object.assign(t, data); savedTask = t; }
     }
   }else{
     const newTask = await createTaskRemote(data);
     if(newTask){state.tasks.push(newTask);savedTask = newTask;}
   }
+  // Falhou: mantém o modal aberto com o que foi digitado. Antes ele fechava e
+  // o "Tarefa criada" cobria o toast de erro — falha com cara de sucesso.
+  if(!savedTask) return;
   closeModal();render();
   showToast(isNew ? 'Tarefa criada' : 'Alterações salvas');
-  if(!savedTask) return;
   // Desmarcar o interruptor tem que limpar o evento que ficou para trás —
   // syncTaskToGoogle já ignora a tarefa daqui em diante. Vale a mesma regra de
   // apagar a tarefa: se ela veio do Google, o compromisso real fica de pé.
@@ -4512,38 +4812,99 @@ async function deleteTask(){
   }
 }
 
-async function quickAdd(){
-  const title = document.getElementById('qa-title').value.trim();
-  if(!title){document.getElementById('qa-title').focus();return;}
-  const data = {
-    title,
-    client: document.getElementById('qa-client').value.trim(),
-    status: getColumns()[0].key,
-    date: document.getElementById('qa-date').value,
-    priority: 'normal',
-    notes: ''
-  };
-  const newTask = await createTaskRemote(data);
-  if(newTask){state.tasks.push(newTask);render();}
+// Fecha o modal de cima. Antes o Escape fechava todos de uma vez, e o de
+// rotina (aberto por cima das Configurações) nem estava na lista. A ordem no
+// DOM é a ordem de empilhamento, então o último aberto é o de cima.
+const FECHAR_MODAL = {
+  'modal': ()=>closeModal(),
+  'settings-modal': ()=>closeSettings(),
+  'column-modal': ()=>closeColumnModal(),
+  'routine-modal': ()=>closeRoutineModal(),
+  'status-modal': ()=>closeStatusModal(),
+  'projects-modal': ()=>closeProjectsModal(),
+  'confirm-modal': ()=>resolveDialog(null)
+};
+const SALVAR_MODAL = {
+  'modal': ()=>saveTask(),
+  'column-modal': ()=>saveColumn(),
+  'routine-modal': ()=>saveRoutineModal(),
+  'confirm-modal': ()=>submitDialog()
+};
+
+// Fecha clicando no fundo — mas só se o clique começou no fundo. Selecionar o
+// texto de um campo arrastando para fora do modal soltava o mouse no fundo e
+// fechava o modal, levando junto o que tinha sido digitado.
+document.querySelectorAll('.modal-bg').forEach(bg=>{
+  let inicioNoFundo = false;
+  bg.addEventListener('mousedown', (e)=>{ inicioNoFundo = e.target === bg; });
+  bg.addEventListener('click', (e)=>{
+    if(e.target === bg && inicioNoFundo && FECHAR_MODAL[bg.id]) FECHAR_MODAL[bg.id]();
+    inicioNoFundo = false;
+  });
+});
+
+function campoDeTexto(el){
+  if(!el) return false;
+  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable;
 }
 
-document.getElementById('modal').addEventListener('click', (e)=>{if(e.target.id === 'modal') closeModal();});
-document.getElementById('settings-modal').addEventListener('click', (e)=>{if(e.target.id === 'settings-modal') closeSettings();});
-document.getElementById('column-modal').addEventListener('click', (e)=>{if(e.target.id === 'column-modal') closeColumnModal();});
-document.getElementById('status-modal').addEventListener('click', (e)=>{if(e.target.id === 'status-modal') closeStatusModal();});
-document.getElementById('projects-modal').addEventListener('click', (e)=>{if(e.target.id === 'projects-modal') closeProjectsModal();});
+const TIPOS_INPUT_ENTER = ['text', 'email', 'search', 'date', 'time', 'url', 'tel', 'number'];
+
 document.addEventListener('keydown', (e)=>{
+  // Composição de IME (acentos em alguns teclados, japonês, chinês): o Enter
+  // confirma a letra, não é para o app. E campo que já tratou a tecla (o Enter
+  // do campo de tags adiciona a tag) não pode também salvar a tarefa.
+  if(e.isComposing || e.defaultPrevented) return;
+  const topo = topOpenModal();
+
   if(e.key === 'Escape'){
-    if(document.getElementById('confirm-modal').classList.contains('open')){ resolveDialog(null); return; }
-    closeModal();
-    closeSettings();
-    closeColumnModal();
-    closeStatusModal();
-    closeProjectsModal();
+    if(topo && FECHAR_MODAL[topo.id]){ e.preventDefault(); FECHAR_MODAL[topo.id](); }
+    return;
   }
-  if(e.key === 'n' && !document.getElementById('modal').classList.contains('open') && !document.getElementById('settings-modal').classList.contains('open') && !document.getElementById('column-modal').classList.contains('open') && !document.getElementById('status-modal').classList.contains('open') && !document.getElementById('projects-modal').classList.contains('open') && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA' && !document.activeElement.isContentEditable){
+
+  if(e.key === 'Enter' && topo && SALVAR_MODAL[topo.id]){
+    const alvo = e.target;
+    // Ctrl/⌘+Enter salva de qualquer campo do modal (inclusive das notas).
+    // Enter puro só num campo de uma linha — no textarea ele quebra linha.
+    const atalho = (e.metaKey || e.ctrlKey) && topo.contains(alvo);
+    const campoSimples = alvo && alvo.tagName === 'INPUT' && TIPOS_INPUT_ENTER.includes(alvo.type) && topo.contains(alvo);
+    if((atalho && alvo.id !== 'comment-input') || campoSimples){
+      e.preventDefault();
+      SALVAR_MODAL[topo.id]();
+      return;
+    }
+  }
+
+  // Enter/Espaço nos <div onclick> marcados por tornarClicaveisAcessiveis.
+  if((e.key === 'Enter' || e.key === ' ') && e.target && e.target.dataset && e.target.dataset.clicavel === '1'){
+    e.preventDefault();
+    e.target.click();
+    return;
+  }
+
+  // "N" abre uma tarefa nova. Sem o teste de modificador ele engolia o ⌘N /
+  // Ctrl+N do navegador; sem o do <select> ele disparava na busca por letra
+  // de um select; e sem o do app visível, na tela de login.
+  if((e.key === 'n' || e.key === 'N') && !e.metaKey && !e.ctrlKey && !e.altKey && !topo
+     && !campoDeTexto(document.activeElement)
+     && document.getElementById('app').style.display !== 'none'){
     e.preventDefault();openModal();
   }
+});
+
+// Com a aba escondida o navegador congela os timers e o realtime pode cair
+// (notebook dormindo, celular com a tela apagada). Voltar depois de horas
+// mostrava dados velhos até alguém clicar em Atualizar.
+let escondidaDesde = 0;
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){ escondidaDesde = Date.now(); return; }
+  const fora = escondidaDesde ? Date.now() - escondidaDesde : 0;
+  escondidaDesde = 0;
+  if(fora < 60 * 1000 || !session || document.getElementById('app').style.display === 'none') return;
+  refreshAll(null, true);
+  generateRoutineInstances();
+  checkAlarms();
+  if(isGoogleConnected()) runGoogleSync();
 });
 
 // Nao havia aviso nenhum: fechar a aba com nota em edicao ou modal preenchido

@@ -1,20 +1,24 @@
-import {userFromRequest, freshAccessToken, getCredential, saveCredential, json, fail} from '../_lib.mjs';
+import {userFromRequest, freshAccessToken, getCredential, saveCredential, json, fail, allowMethods, readJson} from '../_lib.mjs';
 
 // Devolve ao navegador um access token curto (~1h), renovando pelo refresh token
 // guardado quando necessário. Também carrega/persiste o id do calendário e o
 // syncToken, que precisam sobreviver entre dispositivos.
 export default async function handler(req, res){
+  if(!allowMethods(req, res, ['GET', 'PATCH'])) return;
   try{
     const user = await userFromRequest(req);
     if(!user) return json(res, 401, {error: 'não autenticado'});
 
     if(req.method === 'PATCH'){
-      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      const body = readJson(req);
+      if(!body) return json(res, 400, {error: 'corpo inválido'});
       const patch = {};
       const str = (v)=> typeof v === 'string' && v.length <= 512 ? v : null;
       if('calendar_id' in body) patch.calendar_id = str(body.calendar_id);
       if('sync_token' in body) patch.sync_token = str(body.sync_token);
-      if(Object.keys(patch).length) await saveCredential(user.id, patch);
+      // Só atualiza quem já tem credencial: o upsert criaria uma linha sem
+      // refresh_token (coluna NOT NULL) e responderia 500.
+      if(Object.keys(patch).length && await getCredential(user.id)) await saveCredential(user.id, patch);
       return json(res, 200, {ok: true});
     }
 
