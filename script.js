@@ -1010,11 +1010,7 @@ async function checkAuth(){
     if(!myProfile || !myProfile.name){
       appEl.style.display = 'none';
       onbEl.classList.add('show');
-      // Quem entrou pelo Google já tem nome na conta — evita redigitar.
-      const meta = session.user.user_metadata || {};
-      const sugerido = meta.full_name || meta.name || '';
       const nameEl = document.getElementById('onboarding-name');
-      if(sugerido && !nameEl.value) nameEl.value = sugerido;
       setTimeout(()=>nameEl.focus(), 60);
       return;
     }
@@ -1113,37 +1109,6 @@ async function doAuth(){
     return;
   }
   await checkAuth();
-}
-
-// Login pela conta Google. É independente da conexão com o Calendar: aqui o
-// Supabase cuida do fluxo e só identifica a pessoa.
-async function signInWithGoogle(){
-  const btn = document.getElementById('google-signin-btn');
-  const reset = ()=>{
-    if(!btn) return;
-    btn.disabled = false;
-    btn.textContent = 'Continuar com Google';
-  };
-  if(btn){ btn.disabled = true; btn.textContent = 'Abrindo Google…'; }
-
-  // Em caso de sucesso o navegador sai desta página. Se continuarmos aqui, o
-  // redirecionamento falhou — normalmente porque o provider Google não está
-  // ativado no Supabase. Sem isto o botão fica travado sem explicação.
-  const travou = setTimeout(()=>{
-    reset();
-    showAuthMessage('O login com Google não está configurado. Ative o provider Google no Supabase.');
-  }, 4000);
-
-  const {error} = await sb.auth.signInWithOAuth({
-    provider: 'google',
-    options: {redirectTo: location.origin}
-  });
-
-  if(error){
-    clearTimeout(travou);
-    reset();
-    showAuthMessage('Não foi possível entrar com o Google: ' + error.message);
-  }
 }
 
 // A conexão vive no backend (api/google/*): o refresh token fica no servidor e
