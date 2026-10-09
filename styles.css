@@ -175,7 +175,7 @@
     to{opacity:1;transform:translate(-50%, 0);}
   }
 
-  .view-header, .status-row, .date-filter, .panel, .kb-col, .cal-view, .table-view{
+  .view-header, .proj-head, .proj-toolbar, .proj-surface, .status-row, .date-filter, .panel, .kb-col, .cal-view, .table-view{
     animation:fadeSlideUp .38s cubic-bezier(0.22,0.9,0.35,1) both;
   }
   .status-row{animation-delay:.03s;}
@@ -198,7 +198,8 @@
   .task-row:nth-of-type(5), .kb-card:nth-of-type(5){animation-delay:.18s;}
   .task-row:nth-of-type(n+6), .kb-card:nth-of-type(n+6){animation-delay:.2s;}
 
-  .no-entrance .view-header, .no-entrance .status-row, .no-entrance .date-filter,
+  .no-entrance .view-header, .no-entrance .proj-head, .no-entrance .proj-toolbar, .no-entrance .proj-surface,
+  .no-entrance .status-row, .no-entrance .date-filter,
   .no-entrance .panel, .no-entrance .kb-col, .no-entrance .cal-view,
   .no-entrance .table-view, .no-entrance .task-row, .no-entrance .kb-card,
   .no-entrance .day-task, .no-entrance .client-item{animation:none;}
@@ -1359,31 +1360,256 @@
   }
   .kanban-filter-row .select{width:auto;min-width:140px;}
 
-  /* Tarefas do projeto: título com a troca entre quadro e calendário ao lado.
-     Mesmo desenho das abas do Desafio, menor por viver dentro de um painel. */
-  .proj-tasks-title{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;}
+  /* ---------- Página do projeto compartilhado ----------
+     Cabeçalho com quem está no projeto e como ele anda, uma barra com a visão
+     (quadro, calendário, notas) e os filtros, e uma superfície por visão — sem
+     painel em volta das colunas. */
+  .proj-head{
+    display:grid;
+    grid-template-columns:auto minmax(0,1fr) auto;
+    align-items:center;
+    gap:16px;
+    margin-bottom:28px;
+  }
+  .proj-head-main{min-width:0;}
+  .proj-title{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:500;
+    font-size:30px;
+    line-height:1.1;
+    letter-spacing:-0.025em;
+    color:var(--text-strong);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .proj-meta{
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:6px 14px;
+    margin-top:8px;
+    font-size:13px;
+    color:var(--text);
+  }
+  .proj-people{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding:2px 10px 2px 2px;
+    margin-left:-2px;
+    border-radius:999px;
+    font-size:13px;
+    color:var(--text);
+    transition:background-color .15s ease;
+  }
+  .proj-people:hover{background:var(--glass-strong);}
+  .proj-avatars{display:inline-flex;}
+  .proj-avatars .member-avatar{
+    width:24px;height:24px;
+    box-shadow:0 0 0 2px var(--bg-base);
+  }
+  .proj-avatars .member-avatar + .member-avatar{margin-left:-7px;}
+  .proj-avatar-mais{
+    display:grid;place-items:center;
+    background:var(--glass-strong);
+    color:var(--text);
+    font-size:10.5px;
+    font-weight:600;
+  }
+  .proj-role{
+    padding:2px 9px;
+    border-radius:999px;
+    background:color-mix(in srgb, var(--accent) 14%, transparent);
+    color:var(--text-strong);
+    font-size:12px;
+    font-weight:500;
+  }
+  .proj-role.leitura{background:var(--glass-strong);color:var(--text);}
+  .proj-andamento{font-variant-numeric:tabular-nums;}
+  .proj-head-actions{display:flex;align-items:center;gap:10px;}
+
+  .proj-toolbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:12px 16px;
+    margin-bottom:18px;
+  }
   .proj-view-abas{
     display:inline-flex;
     gap:2px;
     padding:3px;
-    border-radius:11px;
+    border-radius:12px;
     background:var(--glass);
     border:1px solid var(--glass-border-soft);
   }
   .proj-view-aba{
-    padding:5px 12px;
-    border-radius:8px;
-    font-size:12.5px;
+    position:relative;
+    padding:7px 14px;
+    border-radius:9px;
+    font-size:13px;
     font-weight:500;
     color:var(--text-muted);
     transition:background-color .18s ease, color .18s ease, box-shadow .18s ease;
   }
   .proj-view-aba:hover{color:var(--text);}
   .proj-view-aba.ativa{background:var(--glass-hover);color:var(--text-strong);box-shadow:var(--shadow-soft);}
-  .proj-cal{margin-top:4px;}
+  .proj-view-marca{
+    display:inline-block;
+    width:6px;height:6px;
+    margin-left:6px;
+    border-radius:50%;
+    background:var(--accent);
+    vertical-align:2px;
+  }
+  .proj-filtros{
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:8px;
+    flex:1;
+    justify-content:flex-end;
+    min-width:0;
+  }
+  .proj-filtros .search-box{flex:0 1 240px;min-width:160px;}
+  .proj-filtros .input, .proj-filtros .select{padding-top:8px;padding-bottom:8px;font-size:12.5px;border-radius:9px;}
+  .proj-filtros .select{width:auto;min-width:0;max-width:180px;}
+  .proj-filtros-selects{display:contents;}
+  .proj-limpar-filtros{
+    padding:7px 10px;
+    border-radius:9px;
+    font-size:12.5px;
+    font-weight:500;
+    color:var(--accent);
+    white-space:nowrap;
+  }
+  .proj-limpar-filtros:hover{background:var(--glass);}
+
+  /* Uma superfície só por visão: calendário e notas. */
+  .proj-surface{padding:22px;}
+
+  /* Quadro: as colunas ocupam a largura e crescem com o conteúdo, sem a
+     altura fixa que deixava blocos vazios enormes. */
+  .kanban-projeto{align-items:stretch;}
+  .kanban-projeto .kb-col{flex:1 1 230px;max-width:none;min-height:220px;padding:16px;}
+  .kanban-projeto .kb-col-head{padding-bottom:12px;margin-bottom:12px;}
+  .kb-col-vazia{
+    padding:18px 4px;
+    text-align:center;
+    font-size:12.5px;
+    color:var(--text-muted);
+  }
+  .kb-col-add{
+    flex:0 0 150px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    min-height:56px;
+    align-self:flex-start;
+    padding:14px;
+    border-radius:14px;
+    border:1px dashed var(--line-strong);
+    font-size:13px;
+    font-weight:500;
+    color:var(--text-muted);
+    transition:background-color .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .kb-col-add:hover{background:var(--glass);color:var(--text-strong);border-color:var(--text-soft);}
+  .kb-card-cliente{
+    margin-right:auto;
+    font-family:'Inter',sans-serif;
+    font-size:11.5px;
+    color:var(--text-muted);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    min-width:0;
+  }
+  /* Controles da coluna aparecem no hover (ou com foco dentro dela); no
+     toque continuam sempre visíveis. */
+  @media (hover:hover) and (pointer:fine){
+    .kanban-projeto .kb-col-drag-handle, .kanban-projeto .kb-col-edit{opacity:0;transition:opacity .15s ease;}
+    .kanban-projeto .kb-col:hover :is(.kb-col-drag-handle, .kb-col-edit),
+    .kanban-projeto .kb-col:focus-within :is(.kb-col-drag-handle, .kb-col-edit){opacity:1;}
+  }
+  .kb-card-pessoa{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    margin-bottom:8px;
+    font-size:12px;
+    color:var(--text);
+  }
+  .kb-card-pessoa .member-avatar{width:18px;height:18px;font-size:9.5px;}
+
+  .proj-cal{margin-top:2px;}
   .proj-cal-sem-prazo{margin-top:14px;font-size:12.5px;color:var(--text-muted);}
   .proj-cal-sem-prazo button{margin-left:4px;font-weight:500;color:var(--accent);}
   .proj-cal-sem-prazo button:hover{text-decoration:underline;text-underline-offset:3px;}
+
+  /* Notas: texto com medida de leitura, ferramentas à direita. */
+  .proj-notas-head{
+    display:flex;
+    align-items:center;
+    justify-content:flex-end;
+    gap:12px;
+    margin-bottom:12px;
+    min-height:28px;
+  }
+  .proj-notas-ferramentas{display:flex;gap:4px;}
+  .proj-notas-salvo{
+    margin-right:auto;
+    font-size:12px;
+    color:var(--text-muted);
+    opacity:0;
+    transition:opacity .3s ease;
+  }
+  /* A superfície já é o contêiner: o editor não ganha outra caixa por dentro. */
+  .proj-notas .project-notes-editor{min-height:320px;padding:4px 2px;font-size:14.5px;background:transparent;border:none;border-radius:0;}
+  .proj-notas .project-notes-editor > *{max-width:72ch;}
+  .proj-vazio{
+    padding:56px 24px;
+    text-align:center;
+    color:var(--text-muted);
+    font-size:13px;
+  }
+  .proj-vazio strong{display:block;margin-bottom:4px;font-size:14px;font-weight:500;color:var(--text-strong);}
+
+  @media (max-width:900px){
+    .proj-head{grid-template-columns:auto minmax(0,1fr);gap:12px 14px;margin-bottom:20px;}
+    .proj-head-actions{grid-column:1 / -1;}
+    .proj-head-actions .btn-primary{flex:1;justify-content:center;}
+    /* A barra do topo no celular já tem o botão de atualizar. */
+    .proj-head-actions .refresh-btn{display:none;}
+    .proj-title{font-size:24px;white-space:normal;}
+    /* Sem wrap: em coluna com wrap, a linha toma a largura do conteúdo e vaza. */
+    .proj-toolbar{flex-direction:column;flex-wrap:nowrap;align-items:stretch;}
+    .proj-toolbar > *{min-width:0;}
+    .proj-view-abas{display:flex;}
+    .proj-view-aba{flex:1;}
+    .proj-filtros{justify-content:flex-start;}
+    .proj-filtros .search-box{flex:1 1 100%;}
+    /* Selects numa linha só que rola: o quadro começa mais acima. */
+    .proj-filtros-selects{
+      display:flex;
+      gap:8px;
+      flex:1 1 100%;
+      min-width:0;
+      overflow-x:auto;
+      scrollbar-width:none;
+      margin:0 -16px;
+      padding:0 16px;
+    }
+    .proj-filtros-selects::-webkit-scrollbar{display:none;}
+    .proj-filtros .select{flex:0 0 auto;max-width:none;}
+    .proj-surface{padding:14px 12px;}
+    .kanban-projeto .kb-col{min-height:160px;}
+    .kb-col-add{flex:0 0 140px;}
+    .proj-notas .project-notes-editor{min-height:240px;}
+  }
   .search-box{position:relative;flex:1;min-width:180px;}
   .search-box-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-soft);pointer-events:none;}
   .search-box .input{width:100%;padding-left:34px;}

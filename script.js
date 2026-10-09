@@ -2634,17 +2634,38 @@ async function insertProjectImage(){
   scheduleProjectNotesSave();
 }
 
-// Quadro ou calendário nas tarefas do projeto. Vale para todos os projetos e
-// fica salvo no aparelho, como a aba do Desafio.
+// Quadro, calendário ou notas na página do projeto. Vale para todos os
+// projetos e fica salvo no aparelho, como a aba do Desafio.
+const VISOES_PROJETO = ['kanban', 'calendar', 'notes'];
 function visaoProjetoSalva(){
-  try{ return localStorage.getItem('projectTasksView') === 'calendar' ? 'calendar' : 'kanban'; }catch(e){ return 'kanban'; }
+  try{
+    const v = localStorage.getItem('projectTasksView');
+    return VISOES_PROJETO.includes(v) ? v : 'kanban';
+  }catch(e){ return 'kanban'; }
 }
 
 function setProjectTasksView(visao){
+  // Sair das notas com um salvamento agendado perdia o que acabou de ser digitado.
+  flushNotesIfPending();
   state.projectTasksView = visao;
   try{ localStorage.setItem('projectTasksView', visao); }catch(e){}
   skipEntranceOnce = true;
   render();
+}
+
+// Dono e membros aceitos, cada um com o perfil que tiver carregado.
+function projectPeople(p){
+  const owner = {id: p.owner_id, profile: p.ownerProfile, label: (p.ownerProfile && p.ownerProfile.name) || p.owner_email || 'Dono'};
+  const members = p.members
+    .filter(m=>m.status==='accepted' && m.user_id && m.user_id !== p.owner_id)
+    .map(m=>({id: m.user_id, profile: m.profile, label: (m.profile && m.profile.name) || m.invited_email || 'Membro'}));
+  return [owner, ...members];
+}
+
+function projectHasNotes(p){
+  const html = p.notes || '';
+  if(/<img\b/i.test(html)) return true;
+  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() !== '';
 }
 
 function renderProjectCalendar(p, tasks){
@@ -2664,27 +2685,61 @@ function renderProjectCalendar(p, tasks){
     </div>`;
 }
 
+function renderProjectNotes(p, canEdit){
+  const temNotas = projectHasNotes(p);
+  if(!canEdit && !temNotas){
+    return `<div class="glass proj-surface proj-vazio"><strong>Ninguém escreveu notas neste projeto ainda.</strong>Quem edita o projeto pode registrar aqui contexto, links e decisões.</div>`;
+  }
+  return `
+    <div class="glass proj-surface proj-notas">
+      <div class="proj-notas-head">
+        <span id="notes-save-indicator" class="proj-notas-salvo">Salvo</span>
+        ${canEdit ? `
+        <div class="proj-notas-ferramentas" role="toolbar" aria-label="Formatação das notas">
+          <button class="editor-btn" onclick="execEditorCmd('bold')" title="Negrito" aria-label="Negrito"><b aria-hidden="true">B</b></button>
+          <button class="editor-btn" onclick="execEditorCmd('italic')" title="Itálico" aria-label="Itálico"><i aria-hidden="true">I</i></button>
+          <button class="editor-btn" onclick="execEditorCmd('formatBlock','H3')" title="Título" aria-label="Título"><span aria-hidden="true">H</span></button>
+          <button class="editor-btn" onclick="execEditorCmd('insertUnorderedList')" title="Lista" aria-label="Lista">
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg>
+          </button>
+          <button class="editor-btn" onclick="insertProjectImage()" title="Imagem" aria-label="Inserir imagem">
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          </button>
+        </div>` : ''}
+      </div>
+      <div id="project-notes-editor" class="project-notes-editor" role="textbox" aria-multiline="true" aria-label="Notas do projeto" ${canEdit ? 'contenteditable="true"' : 'aria-readonly="true"'} oninput="scheduleProjectNotesSave()" data-placeholder="${canEdit ? 'Escreva aqui — contexto, links, decisões do projeto…' : ''}">${sanitizeNotesHtml(p.notes)}</div>
+    </div>`;
+}
+
 function renderProjectPage(){
   const p = state.projects.find(x=>x.id===state.currentProjectId);
   if(!p){
-    return `<div class="view-header"><div><div class="eyebrow">Projeto</div><h1>Não encontrado</h1></div></div>
+    return `<div class="view-header"><div><h1>Projeto não encontrado</h1></div></div>
       <div class="empty"><strong>Esse projeto não existe mais ou você não tem acesso.</strong><button class="btn-secondary" style="margin-top:12px;" onclick="voltarDoProjeto()">Voltar</button></div>`;
   }
   const isOwner = p.myRole === 'owner';
   const role = myRoleInProject(p.id);
   const canEdit = isOwner || role === 'editor';
+  const roleLabel = isOwner ? 'Dono' : (role === 'editor' ? 'Editor' : 'Visualizador');
   const projectTasks = state.tasks.filter(t=>t.project_id===p.id);
   const cols = getProjectColumns(p);
-  const activeCount = projectTasks.filter(t=>taskColumnType(t)!=='done').length;
+  const doneCount = projectTasks.filter(t=>taskColumnType(t)==='done').length;
+  const openCount = projectTasks.length - doneCount;
+  const people = projectPeople(p);
+  const visao = state.projectTasksView;
+  const asCalendar = visao === 'calendar';
+  const asNotes = visao === 'notes';
   const clientOptions = [...new Set(projectTasks.map(t=>t.client).filter(Boolean))].sort();
   const assigneeOptions = [
     {id:'', label:'Todas as pessoas'},
     {id:'unassigned', label:'Sem atribuição'},
-    {id: p.owner_id, label: (p.ownerProfile && p.ownerProfile.name) || p.owner_email || 'Dono'},
-    ...p.members.filter(m=>m.status==='accepted' && m.user_id).map(m=>({id:m.user_id, label:(m.profile && m.profile.name) || m.invited_email || 'Membro'}))
+    ...people.map(pe=>({id: pe.id, label: pe.label}))
   ];
   const tagOptions = tagsInList(projectTasks);
-  const asCalendar = state.projectTasksView === 'calendar';
+  // Com filtro ligado, "Sem tarefas" parecia projeto vazio; o aviso diz que
+  // é o filtro que está escondendo o trabalho.
+  const filtrando = !!(state.filter.kanbanSearch || state.filter.kanbanClient || state.filter.kanbanTag || state.filter.kanbanAssignee
+    || (!asCalendar && state.filter.kanbanDate && state.filter.kanbanDate !== 'all'));
   const filteredProjectTasks = projectTasks.filter(t=>{
     if(state.filter.kanbanClient && t.client !== state.filter.kanbanClient) return false;
     if(state.filter.kanbanTag && !taskHasTag(t, state.filter.kanbanTag)) return false;
@@ -2699,79 +2754,55 @@ function renderProjectPage(){
     return true;
   });
 
-  return `
-    <div class="view-header">
-      <div>
-        <div class="eyebrow">Projeto compartilhado</div>
-        <h1>${esc(p.name)}</h1>
-      </div>
-      <div style="display:flex;gap:10px;">
-        <button class="btn-back" onclick="voltarDoProjeto()" title="Voltar" aria-label="Voltar">
-          <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-        </button>
-        <button class="btn-back refresh-btn" onclick="refreshAll()" title="Atualizar agora" aria-label="Atualizar agora">
-          <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-        </button>
-        <button class="btn-secondary" onclick="openProjectsModal()">👥 Membros</button>
-        ${canEdit ? `<button class="btn-primary" onclick="openModal(null, '', '${p.id}')">+ Nova tarefa</button>` : ''}
-      </div>
-    </div>
+  const avatares = people.slice(0, 4).map(pe=>avatarChip(pe.id === session.user.id ? {avatar_url: state.myAvatarUrl} : pe.profile, (pe.label || '?')[0])).join('');
+  const excedente = people.length > 4 ? `<span class="member-avatar proj-avatar-mais">+${people.length - 4}</span>` : '';
+  const andamento = projectTasks.length === 0
+    ? 'Nenhuma tarefa ainda'
+    : `${openCount} em aberto · ${doneCount} concluída${doneCount!==1?'s':''}`;
 
-    <div class="glass panel" style="margin-bottom:20px;">
-      <div class="panel-head">
-        <div class="panel-title">📝 Notas do projeto</div>
-        <div style="display:flex;align-items:center;gap:10px;">
-          <span id="notes-save-indicator" style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--done);opacity:0;transition:opacity .3s;">Salvo</span>
-          ${canEdit ? `
-          <div style="display:flex;gap:4px;">
-            <button class="editor-btn" onclick="execEditorCmd('bold')" title="Negrito" aria-label="Negrito"><b aria-hidden="true">B</b></button>
-            <button class="editor-btn" onclick="execEditorCmd('italic')" title="Itálico" aria-label="Itálico"><i aria-hidden="true">I</i></button>
-            <button class="editor-btn" onclick="execEditorCmd('formatBlock','H3')" title="Título" aria-label="Título"><span aria-hidden="true">H</span></button>
-            <button class="editor-btn" onclick="execEditorCmd('insertUnorderedList')" title="Lista" aria-label="Lista"><span aria-hidden="true">•</span></button>
-            <button class="editor-btn" onclick="insertProjectImage()" title="Imagem" aria-label="Inserir imagem"><span aria-hidden="true">🖼</span></button>
-          </div>` : ''}
-        </div>
-      </div>
-      <div id="project-notes-editor" class="project-notes-editor" role="textbox" aria-multiline="true" aria-label="Notas do projeto" ${canEdit ? 'contenteditable="true"' : 'aria-readonly="true"'} oninput="scheduleProjectNotesSave()" data-placeholder="${canEdit ? 'Escreva aqui — contexto, links, decisões do projeto…' : 'Nenhuma nota ainda.'}">${sanitizeNotesHtml(p.notes)}</div>
-    </div>
+  const abas = [
+    {key:'kanban', label:'Quadro'},
+    {key:'calendar', label:'Calendário'},
+    {key:'notes', label:'Notas', marca: !asNotes && projectHasNotes(p)}
+  ];
 
-    <div class="glass panel" style="padding-bottom:20px;">
-      <div class="panel-head">
-        <div class="proj-tasks-title">
-          <div class="panel-title">Tarefas do projeto</div>
-          <div class="proj-view-abas" role="group" aria-label="Ver tarefas como">
-            <button class="proj-view-aba ${asCalendar ? '' : 'ativa'}" aria-pressed="${!asCalendar}" onclick="setProjectTasksView('kanban')">Quadro</button>
-            <button class="proj-view-aba ${asCalendar ? 'ativa' : ''}" aria-pressed="${asCalendar}" onclick="setProjectTasksView('calendar')">Calendário</button>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;">
-          ${canEdit && !asCalendar ? `<button class="btn-format" onclick="openColumnModal(null, '${p.id}')">+ Nova coluna</button>` : ''}
-          <div class="panel-hint">${activeCount} ativa${activeCount!==1?'s':''} · ${projectTasks.length} no total</div>
-        </div>
-      </div>
-      <div class="kanban-filter-row">
+  const filtros = asNotes ? '' : `
+      <div class="proj-filtros">
         <div class="search-box">
           <svg class="search-box-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="search" class="input" id="kf-search" name="kf-search" autocomplete="off" placeholder="Pesquisar tarefas…" value="${esc(state.filter.kanbanSearch)}">
+          <input type="search" class="input" id="kf-search" name="kf-search" autocomplete="off" placeholder="Pesquisar tarefas…" aria-label="Pesquisar tarefas do projeto" value="${esc(state.filter.kanbanSearch)}">
         </div>
-        <select class="select" id="kf-assignee" style="width:auto;">
+        <div class="proj-filtros-selects">
+        <select class="select" id="kf-assignee" aria-label="Filtrar por pessoa">
           ${assigneeOptions.map(o=>`<option value="${o.id}" ${state.filter.kanbanAssignee===o.id?'selected':''}>${esc(o.label)}</option>`).join('')}
         </select>
-        <select class="select" id="kf-client" style="width:auto;">
+        <select class="select" id="kf-client" aria-label="Filtrar por cliente">
           <option value="">Todos clientes</option>
           ${clientOptions.map(c=>`<option value="${esc(c)}" ${state.filter.kanbanClient===c?'selected':''}>${esc(c)}</option>`).join('')}
         </select>
         ${renderTagFilterSelect('kf-tag', tagOptions, state.filter.kanbanTag)}
-        ${asCalendar ? '' : `<select class="select" id="kf-date" style="width:auto;">
+        ${asCalendar ? '' : `<select class="select" id="kf-date" aria-label="Filtrar por prazo">
           <option value="all" ${(!state.filter.kanbanDate||state.filter.kanbanDate==='all')?'selected':''}>Qualquer prazo</option>
           <option value="today" ${state.filter.kanbanDate==='today'?'selected':''}>Hoje</option>
           <option value="next3" ${state.filter.kanbanDate==='next3'?'selected':''}>Próximos dias</option>
           <option value="week" ${state.filter.kanbanDate==='week'?'selected':''}>Semana</option>
           <option value="month" ${state.filter.kanbanDate==='month'?'selected':''}>Mês</option>
         </select>`}
-      </div>
-      ${asCalendar ? renderProjectCalendar(p, filteredProjectTasks) : `
-      <div class="kanban" style="margin-top:4px;">
+        </div>
+        ${filtrando ? `<button class="proj-limpar-filtros" onclick="limparFiltrosProjeto()">Limpar filtros</button>` : ''}
+      </div>`;
+
+  let corpo;
+  if(asNotes){
+    corpo = renderProjectNotes(p, canEdit);
+  } else if(!asCalendar && !canEdit && projectTasks.length === 0){
+    corpo = `<div class="glass proj-surface proj-vazio"><strong>Nenhuma tarefa neste projeto ainda.</strong>Quem edita o projeto cria as tarefas aqui; elas aparecem para você assim que forem criadas.</div>`;
+  } else if(asCalendar){
+    corpo = `<div class="glass proj-surface">${renderProjectCalendar(p, filteredProjectTasks)}</div>
+      ${state.projCalSelectedDate ? renderDayPanel(state.projCalSelectedDate, groupTasksByCalDate(filteredProjectTasks)[state.projCalSelectedDate] || [], {projectId: p.id, canEdit}) : ''}`;
+  } else {
+    corpo = `
+      <div class="kanban kanban-projeto">
         ${cols.map(col=>{
           const list = sortByDateThenPriority(filteredProjectTasks.filter(t=>statusVisivel(t, cols)===col.key && !isHiddenFromKanban(t)));
           const collapsed = col.hidden && !state.expandedCols.has(col.key);
@@ -2795,25 +2826,75 @@ function renderProjectPage(){
                   ${canEdit ? `<div class="kb-col-drag-handle" onpointerdown="colHandlePointerDown(event,'${col.key}','${p.id}')" title="Arrastar para reordenar coluna">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8L22 12L18 16"/><path d="M6 8L2 12L6 16"/><path d="M2 12H22"/></svg>
                   </div>
-                  <button class="kb-col-edit" onclick="openColumnModal('${col.key}', '${p.id}')" title="Editar coluna">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                  <button class="kb-col-edit" onclick="openColumnModal('${col.key}', '${p.id}')" title="Editar coluna" aria-label="Editar coluna ${esc(col.name)}">
+                    <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                   </button>` : ''}
                 </div>
               </div>
               <div class="kb-cards">
                 ${list.length===0
-                  ? `<div class="empty" style="padding:22px 8px;font-size:12px;"><strong>Nada aqui</strong></div>`
-                  : list.map(t=>{
-                    const assignee = getAssigneeLabel(t);
-                    return renderKbCard(t, col, {badge: assignee ? ()=>`<span class="project-badge" style="margin-bottom:6px;">👤 ${esc(assignee)}</span>` : null});
-                  }).join('')}
+                  ? `<div class="kb-col-vazia">${filtrando ? 'Nada com esses filtros' : 'Sem tarefas'}</div>`
+                  : list.map(t=>renderKbCard(t, col, {clientInMeta: true, badge: ()=>renderAssigneeChip(t, p, people)})).join('')}
               </div>
             </div>`;
         }).join('')}
-      </div>`}
+        ${canEdit ? `<button class="kb-col-add" onclick="openColumnModal(null, '${p.id}')">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Nova coluna
+        </button>` : ''}
+      </div>`;
+  }
+
+  return `
+    <header class="proj-head">
+      <button class="btn-back" onclick="voltarDoProjeto()" title="Voltar" aria-label="Voltar">
+        <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      </button>
+      <div class="proj-head-main">
+        <h1 class="proj-title">${esc(p.name)}</h1>
+        <div class="proj-meta">
+          <button class="proj-people" onclick="openProjectsModal()" title="${isOwner ? 'Ver e gerenciar membros' : 'Ver membros'}">
+            <span class="proj-avatars">${avatares}${excedente}</span>
+            <span>${people.length} pessoa${people.length!==1?'s':''}</span>
+          </button>
+          <span class="proj-role ${canEdit ? '' : 'leitura'}">${roleLabel}${canEdit ? '' : ' · só leitura'}</span>
+          <span class="proj-andamento">${andamento}</span>
+        </div>
+      </div>
+      <div class="proj-head-actions">
+        <button class="btn-back refresh-btn" onclick="refreshAll()" title="Atualizar agora" aria-label="Atualizar agora">
+          <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        </button>
+        ${canEdit ? `<button class="btn-primary" onclick="openModal(null, '', '${p.id}')">+ Nova tarefa</button>` : ''}
+      </div>
+    </header>
+
+    <div class="proj-toolbar">
+      <div class="proj-view-abas" role="group" aria-label="Ver o projeto como">
+        ${abas.map(a=>`<button class="proj-view-aba ${visao===a.key ? 'ativa' : ''}" aria-pressed="${visao===a.key}" onclick="setProjectTasksView('${a.key}')">${a.label}${a.marca ? '<span class="proj-view-marca" title="Tem notas"></span>' : ''}</button>`).join('')}
+      </div>
+      ${filtros}
     </div>
-    ${asCalendar && state.projCalSelectedDate ? renderDayPanel(state.projCalSelectedDate, groupTasksByCalDate(filteredProjectTasks)[state.projCalSelectedDate] || [], {projectId: p.id, canEdit}) : ''}
+
+    ${corpo}
   `;
+}
+
+function limparFiltrosProjeto(){
+  Object.assign(state.filter, {kanbanSearch:'', kanbanClient:'', kanbanTag:'', kanbanAssignee:'', kanbanDate:'all'});
+  skipEntranceOnce = true;
+  render();
+}
+
+// Responsável no cartão: foto (ou inicial) e primeiro nome, no lugar do emoji.
+function renderAssigneeChip(t, p, people){
+  if(!t.assigned_to) return '';
+  const pe = people.find(x=>x.id===t.assigned_to);
+  const label = getAssigneeLabel(t);
+  if(!label) return '';
+  const profile = t.assigned_to === session.user.id ? {avatar_url: state.myAvatarUrl} : (pe && pe.profile);
+  const nome = label === 'Você' ? 'Você' : label.split(/\s+/)[0];
+  return `<span class="kb-card-pessoa">${avatarChip(profile, (pe ? pe.label : label)[0])}${esc(nome)}</span>`;
 }
 
 // Tela dedicada pra projetos compartilhados — só alcançável pela aba
@@ -3694,11 +3775,12 @@ function renderKbCard(t, col, opts){
   return `
     <div class="kb-card ${doneCls} ${state.selected.has(t.id)?'is-selected':''}" style="--col-color:${taskColor(t)}" draggable="${draggable}" ${dragAttrs} onclick="cardClick(event,'${t.id}')">
       ${state.selecting ? `<span class="kb-card-check">${state.selected.has(t.id)?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><polyline points="20 6 9 17 4 12"/></svg>':''}</span>` : ''}
-      <div class="kb-card-client">${esc(t.client || '—')}</div>
+      ${t.client && !opts.clientInMeta ? `<div class="kb-card-client">${esc(t.client)}</div>` : ''}
       <div class="kb-card-title">${t.routine_id ? '<span title="Gerada por uma rotina" style="margin-right:4px;">🔁</span>' : ''}${esc(t.title)}</div>
       ${extraBadge}
       ${renderTagChipsInline(t, 3)}
       <div class="kb-card-meta">
+        ${opts.clientInMeta && t.client ? `<span class="kb-card-cliente">${esc(t.client)}</span>` : ''}
         ${(col.type === 'done' && state.hideDateOnDone) ? '' : `<span class="${taskDateStatus(t)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>`}
         ${badge}
       </div>
