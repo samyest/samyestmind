@@ -2586,6 +2586,8 @@ function voltarDoProjeto(){
 
 let notesSaveTimer = null;
 function scheduleProjectNotesSave(){
+  const indicator = document.getElementById('notes-save-indicator');
+  if(indicator){ indicator.textContent = 'Salvando…'; indicator.classList.remove('erro'); }
   if(notesSaveTimer) clearTimeout(notesSaveTimer);
   notesSaveTimer = setTimeout(saveProjectNotes, 900);
 }
@@ -2602,27 +2604,55 @@ async function saveProjectNotes(){
     // Falhava calado: a pessoa saía achando que a nota estava salva.
     console.error(error);
     if(indicator){
-      indicator.textContent = 'Não salvou — tente de novo';
-      indicator.style.color = 'var(--danger)';
-      indicator.style.opacity = '1';
+      indicator.textContent = 'Não salvou — edite de novo';
+      indicator.classList.add('erro');
     }
     showToast('A nota do projeto não foi salva. Confira a conexão e edite de novo.', 'erro');
     return;
   }
   p.notes = html;
   if(indicator){
-    indicator.textContent = 'Salvo';
-    indicator.style.color = '';
-    indicator.style.opacity = '1';
-    setTimeout(()=>{indicator.style.opacity = '0';}, 1500);
+    indicator.textContent = 'Salvo agora';
+    setTimeout(()=>{
+      const atual = document.getElementById('notes-save-indicator');
+      if(atual && atual.textContent === 'Salvo agora') atual.textContent = 'Salvo automaticamente';
+    }, 2500);
   }
 }
 
 function execEditorCmd(cmd, value){
   document.getElementById('project-notes-editor').focus();
+  // O botão de título só aplicava: apertar de novo não voltava a texto normal.
+  if(cmd === 'formatBlock' && value === 'H3' && /^h3$/i.test(document.queryCommandValue('formatBlock'))) value = 'P';
   document.execCommand(cmd, false, value || null);
   scheduleProjectNotesSave();
+  atualizarFerramentasNotas();
 }
+
+function atualizarFerramentasNotas(){
+  const ed = document.getElementById('project-notes-editor');
+  if(!ed) return;
+  const sel = document.getSelection();
+  const dentro = sel && sel.anchorNode && ed.contains(sel.anchorNode);
+  let bloco = '';
+  try{ bloco = dentro ? String(document.queryCommandValue('formatBlock')) : ''; }catch(e){}
+  const emTitulo = /^h[1-6]$/i.test(bloco);
+  document.querySelectorAll('.proj-nota-btn[data-cmd]').forEach(btn=>{
+    const cmd = btn.dataset.cmd;
+    let ativo = false;
+    if(dentro){
+      try{
+        if(cmd === 'formatBlock') ativo = emTitulo;
+        // Título já é negrito no navegador: o B aceso ali só confundia.
+        else if(cmd === 'bold') ativo = !emTitulo && document.queryCommandState('bold');
+        else ativo = document.queryCommandState(cmd);
+      }catch(e){}
+    }
+    btn.classList.toggle('ativo', ativo);
+    btn.setAttribute('aria-pressed', ativo ? 'true' : 'false');
+  });
+}
+document.addEventListener('selectionchange', atualizarFerramentasNotas);
 
 async function insertProjectImage(){
   const raw = await perguntar('Inserir imagem', {label:'Endereço da imagem', placeholder:'https://…', okLabel:'Inserir'});
@@ -2690,24 +2720,29 @@ function renderProjectNotes(p, canEdit){
   if(!canEdit && !temNotas){
     return `<div class="glass proj-surface proj-vazio"><strong>Ninguém escreveu notas neste projeto ainda.</strong>Quem edita o projeto pode registrar aqui contexto, links e decisões.</div>`;
   }
+  const ferramenta = (cmd, label, conteudo, valor)=>`<button class="proj-nota-btn" data-cmd="${cmd}" onmousedown="event.preventDefault()" onclick="execEditorCmd('${cmd}'${valor ? `,'${valor}'` : ''})" title="${label}" aria-label="${label}" aria-pressed="false">${conteudo}</button>`;
   return `
     <div class="glass proj-surface proj-notas">
-      <div class="proj-notas-head">
-        <span id="notes-save-indicator" class="proj-notas-salvo">Salvo</span>
+      <div class="proj-notas-doc">
         ${canEdit ? `
-        <div class="proj-notas-ferramentas" role="toolbar" aria-label="Formatação das notas">
-          <button class="editor-btn" onclick="execEditorCmd('bold')" title="Negrito" aria-label="Negrito"><b aria-hidden="true">B</b></button>
-          <button class="editor-btn" onclick="execEditorCmd('italic')" title="Itálico" aria-label="Itálico"><i aria-hidden="true">I</i></button>
-          <button class="editor-btn" onclick="execEditorCmd('formatBlock','H3')" title="Título" aria-label="Título"><span aria-hidden="true">H</span></button>
-          <button class="editor-btn" onclick="execEditorCmd('insertUnorderedList')" title="Lista" aria-label="Lista">
-            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg>
-          </button>
-          <button class="editor-btn" onclick="insertProjectImage()" title="Imagem" aria-label="Inserir imagem">
-            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-          </button>
+        <div class="proj-notas-head">
+          <div class="proj-notas-ferramentas" role="toolbar" aria-label="Formatação das notas">
+            ${ferramenta('formatBlock', 'Título', '<span aria-hidden="true" class="proj-nota-h">T</span>', 'H3')}
+            <span class="proj-nota-sep" aria-hidden="true"></span>
+            ${ferramenta('bold', 'Negrito', '<b aria-hidden="true">B</b>')}
+            ${ferramenta('italic', 'Itálico', '<i aria-hidden="true">I</i>')}
+            <span class="proj-nota-sep" aria-hidden="true"></span>
+            ${ferramenta('insertUnorderedList', 'Lista', '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg>')}
+            ${ferramenta('insertOrderedList', 'Lista numerada', '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="10" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>')}
+            <span class="proj-nota-sep" aria-hidden="true"></span>
+            <button class="proj-nota-btn" onmousedown="event.preventDefault()" onclick="insertProjectImage()" title="Inserir imagem" aria-label="Inserir imagem">
+              <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </button>
+          </div>
+          <span id="notes-save-indicator" class="proj-notas-salvo" role="status">Salvo automaticamente</span>
         </div>` : ''}
+        <div id="project-notes-editor" class="project-notes-editor" role="textbox" aria-multiline="true" aria-label="Notas do projeto" ${canEdit ? 'contenteditable="true"' : 'aria-readonly="true"'} oninput="scheduleProjectNotesSave()" data-placeholder="${canEdit ? 'Escreva o contexto do projeto: objetivo, links, decisões, combinados…' : ''}">${sanitizeNotesHtml(p.notes)}</div>
       </div>
-      <div id="project-notes-editor" class="project-notes-editor" role="textbox" aria-multiline="true" aria-label="Notas do projeto" ${canEdit ? 'contenteditable="true"' : 'aria-readonly="true"'} oninput="scheduleProjectNotesSave()" data-placeholder="${canEdit ? 'Escreva aqui — contexto, links, decisões do projeto…' : ''}">${sanitizeNotesHtml(p.notes)}</div>
     </div>`;
 }
 
