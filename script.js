@@ -745,6 +745,9 @@ let state = {
   editingId: null,
   calDate: new Date(),
   calSelectedDate: null,
+  projCalDate: new Date(),
+  projCalSelectedDate: null,
+  projectTasksView: visaoProjetoSalva(),
   miniCalDate: new Date(),
   dateFilter: 'all',
   filter: {client:'', status:'', search:'', project:'', assignee:'', tableDate:'all', kanbanClient:'', kanbanDate:'all', kanbanAssignee:'', kanbanSearch:'', kanbanTag:'', tag:''},
@@ -2563,6 +2566,7 @@ function flushNotesIfPending(){
 
 function openProjectView(projectId){
   flushNotesIfPending();
+  if(state.currentProjectId !== projectId) state.projCalSelectedDate = null;
   if(state.view !== 'project') state.viewBeforeProject = state.view;
   state.currentProjectId = projectId;
   state.view = 'project';
@@ -2630,6 +2634,36 @@ async function insertProjectImage(){
   scheduleProjectNotesSave();
 }
 
+// Quadro ou calendário nas tarefas do projeto. Vale para todos os projetos e
+// fica salvo no aparelho, como a aba do Desafio.
+function visaoProjetoSalva(){
+  try{ return localStorage.getItem('projectTasksView') === 'calendar' ? 'calendar' : 'kanban'; }catch(e){ return 'kanban'; }
+}
+
+function setProjectTasksView(visao){
+  state.projectTasksView = visao;
+  try{ localStorage.setItem('projectTasksView', visao); }catch(e){}
+  skipEntranceOnce = true;
+  render();
+}
+
+function renderProjectCalendar(p, tasks){
+  const d = state.projCalDate;
+  const meses = MESES_LONGOS_CAP;
+  const tasksByDate = groupTasksByCalDate(tasks);
+  const semPrazo = tasks.filter(t=>!calDateKey(t)).length;
+  const taskTitle = t=>{
+    const assignee = getAssigneeLabel(t);
+    return assignee ? `${t.title} · ${assignee}` : t.title;
+  };
+  return `
+    <div class="proj-cal">
+      ${renderCalMonth(d, tasksByDate, state.projCalSelectedDate, taskTitle)}
+      ${calMonthIsEmpty(d, tasksByDate) ? `<div class="empty cal-empty-mobile" style="margin-top:10px;"><strong>Nada agendado em ${meses[d.getMonth()].toLowerCase()}.</strong></div>` : ''}
+      ${semPrazo > 0 ? `<div class="proj-cal-sem-prazo">${semPrazo === 1 ? '1 tarefa sem prazo fica' : `${semPrazo} tarefas sem prazo ficam`} só no quadro. <button onclick="setProjectTasksView('kanban')">Ver no quadro</button></div>` : ''}
+    </div>`;
+}
+
 function renderProjectPage(){
   const p = state.projects.find(x=>x.id===state.currentProjectId);
   if(!p){
@@ -2650,6 +2684,7 @@ function renderProjectPage(){
     ...p.members.filter(m=>m.status==='accepted' && m.user_id).map(m=>({id:m.user_id, label:(m.profile && m.profile.name) || m.invited_email || 'Membro'}))
   ];
   const tagOptions = tagsInList(projectTasks);
+  const asCalendar = state.projectTasksView === 'calendar';
   const filteredProjectTasks = projectTasks.filter(t=>{
     if(state.filter.kanbanClient && t.client !== state.filter.kanbanClient) return false;
     if(state.filter.kanbanTag && !taskHasTag(t, state.filter.kanbanTag)) return false;
@@ -2657,7 +2692,9 @@ function renderProjectPage(){
       if(state.filter.kanbanAssignee === 'unassigned'){ if(t.assigned_to) return false; }
       else if(t.assigned_to !== state.filter.kanbanAssignee) return false;
     }
-    if(state.filter.kanbanDate && state.filter.kanbanDate !== 'all' && !matchesDateFilter(t, state.filter.kanbanDate)) return false;
+    // O filtro de prazo some no calendário (a navegação por mês faz esse papel);
+    // aplicá-lo escondido deixaria o mês vazio sem explicação.
+    if(!asCalendar && state.filter.kanbanDate && state.filter.kanbanDate !== 'all' && !matchesDateFilter(t, state.filter.kanbanDate)) return false;
     if(!matchesKanbanSearch(t, state.filter.kanbanSearch)) return false;
     return true;
   });
@@ -2700,9 +2737,15 @@ function renderProjectPage(){
 
     <div class="glass panel" style="padding-bottom:20px;">
       <div class="panel-head">
-        <div class="panel-title">Tarefas do projeto</div>
+        <div class="proj-tasks-title">
+          <div class="panel-title">Tarefas do projeto</div>
+          <div class="proj-view-abas" role="group" aria-label="Ver tarefas como">
+            <button class="proj-view-aba ${asCalendar ? '' : 'ativa'}" aria-pressed="${!asCalendar}" onclick="setProjectTasksView('kanban')">Quadro</button>
+            <button class="proj-view-aba ${asCalendar ? 'ativa' : ''}" aria-pressed="${asCalendar}" onclick="setProjectTasksView('calendar')">Calendário</button>
+          </div>
+        </div>
         <div style="display:flex;align-items:center;gap:10px;">
-          ${canEdit ? `<button class="btn-format" onclick="openColumnModal(null, '${p.id}')">+ Nova coluna</button>` : ''}
+          ${canEdit && !asCalendar ? `<button class="btn-format" onclick="openColumnModal(null, '${p.id}')">+ Nova coluna</button>` : ''}
           <div class="panel-hint">${activeCount} ativa${activeCount!==1?'s':''} · ${projectTasks.length} no total</div>
         </div>
       </div>
@@ -2719,14 +2762,15 @@ function renderProjectPage(){
           ${clientOptions.map(c=>`<option value="${esc(c)}" ${state.filter.kanbanClient===c?'selected':''}>${esc(c)}</option>`).join('')}
         </select>
         ${renderTagFilterSelect('kf-tag', tagOptions, state.filter.kanbanTag)}
-        <select class="select" id="kf-date" style="width:auto;">
+        ${asCalendar ? '' : `<select class="select" id="kf-date" style="width:auto;">
           <option value="all" ${(!state.filter.kanbanDate||state.filter.kanbanDate==='all')?'selected':''}>Qualquer prazo</option>
           <option value="today" ${state.filter.kanbanDate==='today'?'selected':''}>Hoje</option>
           <option value="next3" ${state.filter.kanbanDate==='next3'?'selected':''}>Próximos dias</option>
           <option value="week" ${state.filter.kanbanDate==='week'?'selected':''}>Semana</option>
           <option value="month" ${state.filter.kanbanDate==='month'?'selected':''}>Mês</option>
-        </select>
+        </select>`}
       </div>
+      ${asCalendar ? renderProjectCalendar(p, filteredProjectTasks) : `
       <div class="kanban" style="margin-top:4px;">
         ${cols.map(col=>{
           const list = sortByDateThenPriority(filteredProjectTasks.filter(t=>statusVisivel(t, cols)===col.key && !isHiddenFromKanban(t)));
@@ -2766,8 +2810,9 @@ function renderProjectPage(){
               </div>
             </div>`;
         }).join('')}
-      </div>
+      </div>`}
     </div>
+    ${asCalendar && state.projCalSelectedDate ? renderDayPanel(state.projCalSelectedDate, groupTasksByCalDate(filteredProjectTasks)[state.projCalSelectedDate] || [], {projectId: p.id, canEdit}) : ''}
   `;
 }
 
@@ -3971,8 +4016,26 @@ async function drop(e, status){
 }
 
 
-function renderCalendar(){
-  const d = state.calDate;
+// Concluída vai para o dia em que foi concluída; o resto, para o prazo.
+// Sem nenhum dos dois, a tarefa não tem lugar no calendário.
+function calDateKey(t){
+  const isDone = taskColumnType(t) === 'done';
+  return (isDone && t.completed_at) ? isoDateFromTimestamp(t.completed_at) : (t.date || null);
+}
+
+function groupTasksByCalDate(tasks){
+  const byDate = {};
+  tasks.forEach(t=>{
+    const key = calDateKey(t);
+    if(key){if(!byDate[key]) byDate[key] = [];byDate[key].push(t);}
+  });
+  return byDate;
+}
+
+// Cabeçalho do mês e grade — iguais no calendário pessoal e no do projeto.
+// taskTitle diz o que vai no title de cada tarefa (o projeto acrescenta o
+// responsável).
+function renderCalMonth(d, tasksByDate, selectedIso, taskTitle){
   const year = d.getFullYear(), month = d.getMonth();
   const first = new Date(year, month, 1);
   const startDow = first.getDay();
@@ -3981,12 +4044,6 @@ function renderCalendar(){
   const dowShort = DIAS_CURTOS_CAP;
   const meses = MESES_LONGOS_CAP;
   const today = new Date();
-  const tasksByDate = {};
-  personalTasks().forEach(t=>{
-    const isDone = taskColumnType(t) === 'done';
-    const key = (isDone && t.completed_at) ? isoDateFromTimestamp(t.completed_at) : t.date;
-    if(key){if(!tasksByDate[key]) tasksByDate[key] = [];tasksByDate[key].push(t);}
-  });
 
   let cells = '';
   const prevMonthDays = new Date(year, month, 0).getDate();
@@ -3994,7 +4051,7 @@ function renderCalendar(){
   for(let day=1;day<=daysInMonth;day++){
     const iso = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const isToday = today.getDate()===day && today.getMonth()===month && today.getFullYear()===year;
-    const isSelected = state.calSelectedDate === iso;
+    const isSelected = selectedIso === iso;
     const list = tasksByDate[iso] || [];
     const wd = (startDow + day - 1) % 7;
     cells += `
@@ -4002,7 +4059,7 @@ function renderCalendar(){
         <div class="cal-cell-num"><span class="cal-cell-dow">${dowShort[wd]} </span>${day}</div>
         ${list.map(t=>{
           const isDone = taskColumnType(t)==='done';
-          return `<div class="cal-task" style="border-left-color:${taskColumnColor(t)};${isDone?'opacity:0.6;':''}" data-task-id="${t.id}" title="${esc(t.title)}${isDone?' (concluída)':''}">${isDone?'✓ ':''}${esc(t.title)}</div>`;
+          return `<div class="cal-task" style="border-left-color:${taskColumnColor(t)};${isDone?'opacity:0.6;':''}" data-task-id="${t.id}" title="${esc(taskTitle(t))}${isDone?' (concluída)':''}">${isDone?'✓ ':''}${esc(t.title)}</div>`;
         }).join('')}
       </div>`;
   }
@@ -4010,9 +4067,33 @@ function renderCalendar(){
   const trailing = (7 - filled % 7) % 7;
   for(let i=1;i<=trailing;i++) cells += `<div class="cal-cell other"><div class="cal-cell-num">${i}</div></div>`;
 
+  return `
+      <div class="cal-view-head">
+        <div class="cal-view-title">${meses[month]} ${year}</div>
+        <div class="cal-view-nav">
+          <button onclick="calNav(-1)">← Anterior</button>
+          <button onclick="calToday()">Hoje</button>
+          <button onclick="calNav(1)">Próximo →</button>
+        </div>
+      </div>
+      <div class="cal-grid">
+        ${dow.map(d=>`<div class="cal-dow">${d}</div>`).join('')}
+        ${cells}
+      </div>`;
+}
+
+function calMonthIsEmpty(d, tasksByDate){
+  const prefix = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  return !Object.keys(tasksByDate).some(iso => iso.startsWith(prefix));
+}
+
+function renderCalendar(){
+  const d = state.calDate;
+  const meses = MESES_LONGOS_CAP;
+  const tasksByDate = groupTasksByCalDate(personalTasks());
+
   const dayPanel = state.calSelectedDate ? renderDayPanel(state.calSelectedDate, tasksByDate[state.calSelectedDate] || []) : '';
-  const hasAnyTaskThisMonth = Object.keys(tasksByDate).some(iso => iso.startsWith(`${year}-${String(month+1).padStart(2,'0')}`));
-  const emptyMonthHint = !hasAnyTaskThisMonth ? `<div class="empty cal-empty-mobile" style="margin-top:10px;"><strong>Nada agendado em ${meses[month].toLowerCase()}.</strong>Toque em um dia pra criar uma tarefa.</div>` : '';
+  const emptyMonthHint = calMonthIsEmpty(d, tasksByDate) ? `<div class="empty cal-empty-mobile" style="margin-top:10px;"><strong>Nada agendado em ${meses[d.getMonth()].toLowerCase()}.</strong>Toque em um dia pra criar uma tarefa.</div>` : '';
 
   const connected = isGoogleConnected();
   const gcalBanner = connected ? (isGoogleExpiringSoon() ? `
@@ -4045,18 +4126,7 @@ function renderCalendar(){
     </div>
     ${gcalBanner}
     <div class="glass cal-view">
-      <div class="cal-view-head">
-        <div class="cal-view-title">${meses[month]} ${year}</div>
-        <div class="cal-view-nav">
-          <button onclick="calNav(-1)">← Anterior</button>
-          <button onclick="calToday()">Hoje</button>
-          <button onclick="calNav(1)">Próximo →</button>
-        </div>
-      </div>
-      <div class="cal-grid">
-        ${dow.map(d=>`<div class="cal-dow">${d}</div>`).join('')}
-        ${cells}
-      </div>
+      ${renderCalMonth(d, tasksByDate, state.calSelectedDate, t=>t.title)}
       ${emptyMonthHint}
       ${calSyncing ? `
       <div class="cal-sync-overlay">
@@ -4069,7 +4139,11 @@ function renderCalendar(){
     ${dayPanel}`;
 }
 
-function renderDayPanel(iso, tasks){
+// opts.projectId: painel do calendário de um projeto. opts.canEdit: falso para
+// visualizador, que não pode criar tarefa ali.
+function renderDayPanel(iso, tasks, opts){
+  const o = opts || {};
+  const canAdd = o.canEdit !== false;
   const [y,m,d] = iso.split('-');
   const dt = new Date(+y, +m-1, +d);
   const dias = DIAS_LONGOS;
@@ -4081,17 +4155,18 @@ function renderDayPanel(iso, tasks){
       <div class="day-panel-head">
         <div class="day-panel-date">${dateLabel}</div>
         <div class="day-panel-actions">
-          <button class="btn-primary" onclick="openModal(null,'${iso}')">+ Adicionar neste dia</button>
+          ${canAdd ? `<button class="btn-primary" onclick="openModal(null,'${iso}'${o.projectId ? `,'${o.projectId}'` : ''})">+ Adicionar neste dia</button>` : ''}
           <button class="day-panel-close" onclick="selectCalDay(null)" title="Fechar">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
       </div>
       ${tasks.length===0
-        ? `<div class="empty"><strong>Nada agendado neste dia.</strong>Clica em "Adicionar neste dia" pra criar uma tarefa.</div>`
+        ? `<div class="empty"><strong>Nada agendado neste dia.</strong>${canAdd ? 'Clica em "Adicionar neste dia" pra criar uma tarefa.' : ''}</div>`
         : `<div class="day-panel-tasks">
             ${tasks.map(t=>{
               const priorityBadge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
+              const assignee = o.projectId ? getAssigneeLabel(t) : null;
               return `
                 <div class="day-task ${taskColumnType(t)==='done'?'done':''}" style="--col-color:${taskColumnColor(t)}" onclick="openModal('${t.id}')">
                   <div class="day-task-head">
@@ -4102,6 +4177,7 @@ function renderDayPanel(iso, tasks){
                     <span>${esc(t.client || 'sem cliente')}</span>
                     <span>·</span>
                     <span>${esc(taskColumnName(t))}</span>
+                    ${assignee ? `<span>·</span><span>👤 ${esc(assignee)}</span>` : ''}
                   </div>
                   ${t.notes ? `<div class="day-task-notes">${esc(t.notes)}</div>` : ''}
                 </div>`;
@@ -4111,10 +4187,19 @@ function renderDayPanel(iso, tasks){
     </div>`;
 }
 
+// O calendário do projeto guarda mês e dia selecionado à parte: navegar num não
+// mexe no outro, e o dia aberto no pessoal não aparece aberto no projeto.
+function calStateKeys(){
+  return state.view === 'project'
+    ? {date:'projCalDate', selected:'projCalSelectedDate'}
+    : {date:'calDate', selected:'calSelectedDate'};
+}
+
 function selectCalDay(iso){
-  state.calSelectedDate = (state.calSelectedDate === iso) ? null : iso;
+  const k = calStateKeys().selected;
+  state[k] = (state[k] === iso) ? null : iso;
   render();
-  if(state.calSelectedDate){
+  if(state[k]){
     setTimeout(()=>{
       const panel = document.querySelector('.day-panel');
       if(panel) panel.scrollIntoView({behavior:'smooth', block:'nearest'});
@@ -4122,8 +4207,13 @@ function selectCalDay(iso){
   }
 }
 
-function calNav(delta){state.calDate.setMonth(state.calDate.getMonth()+delta);render();}
-function calToday(){state.calDate = new Date();render();}
+function calNav(delta){
+  const d = state[calStateKeys().date];
+  d.setDate(1);
+  d.setMonth(d.getMonth()+delta);
+  render();
+}
+function calToday(){state[calStateKeys().date] = new Date();render();}
 
 function renderTable(){
   const projectFilter = state.filter.project || '';
