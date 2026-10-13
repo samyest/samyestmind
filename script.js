@@ -191,6 +191,8 @@ function openSettings(){
   document.getElementById('s-name').value = getUserName();
   document.getElementById('s-sound').checked = state.soundEnabled !== false;
   document.getElementById('s-hide-date-done').checked = !!state.hideDateOnDone;
+  const nConcluidas = state.metas.lista.filter(g=>g.status === 'concluida').length;
+  document.getElementById('s-historico-metas').textContent = nConcluidas ? `Ver histórico (${nConcluidas})` : 'Ver histórico';
   renderMyAvatar('settings-avatar-preview', getUserName());
   const grid = document.getElementById('theme-grid');
   grid.innerHTML = Object.entries(THEMES).map(([key, t])=>`
@@ -844,7 +846,7 @@ let state = {
   selected: new Set(),
   ignoredEvents: new Set(),
   novidadesVistas: [],
-  metas: {lista: [], registros: {}, modo: {}, carregado: false, precisaSql: false, atual: null, verConcluidas: false, viewAntes: null, calMes: null}
+  metas: {lista: [], registros: {}, modo: {}, carregado: false, precisaSql: false, atual: null, viewAntes: null, calMes: null}
 };
 
 // Eventos que o usuário já descartou uma vez. Sem isto, a sincronização completa
@@ -5171,6 +5173,7 @@ const FECHAR_MODAL = {
   'projects-modal': ()=>closeProjectsModal(),
   'meta-modal': ()=>fecharNovaMeta(),
   'metas-intro-modal': ()=>fecharApresentacaoMetas(),
+  'metas-historico-modal': ()=>fecharHistoricoMetas(),
   'confirm-modal': ()=>resolveDialog(null)
 };
 const SALVAR_MODAL = {
@@ -6400,6 +6403,32 @@ async function loadMetas(){
   });
   state.metas.precisaSql = false;
   state.metas.carregado = true;
+  concluirMetasNoAlvo();
+}
+
+// Número e etapas têm fim: ao bater 100% a meta vai sozinha para o histórico.
+// Hábito não tem (a semana recomeça) e "feito ou não feito" já é o próprio
+// botão de concluir.
+function metaNoAlvo(g){
+  if(g.status !== 'ativa') return false;
+  if(g.kind === 'etapas') return g.steps.length > 0 && g.steps.every(s=>s.ok);
+  if(g.kind === 'numero') return (g.target ?? 0) !== (g.start ?? 0) && metaProgresso(g).pct >= 1;
+  return false;
+}
+
+// Metas que já estavam no alvo antes de existir a conclusão automática.
+async function concluirMetasNoAlvo(){
+  const prontas = state.metas.lista.filter(metaNoAlvo);
+  if(!prontas.length) return;
+  const agora = new Date().toISOString();
+  const {error} = await sb.from('goals').update({status: 'concluida', completed_at: agora, updated_at: agora}).in('id', prontas.map(g=>g.id));
+  if(error){ console.error(error); return; }
+  prontas.forEach(g=>{ g.status = 'concluida'; g.completedAt = agora; });
+  metaRerender();
+}
+
+async function concluirSeNoAlvo(g){
+  if(metaNoAlvo(g)) await concluirMeta(g.id, true);
 }
 
 function metaPorId(id){ return state.metas.lista.find(g=>g.id === id) || null; }
@@ -6587,8 +6616,8 @@ function renderSidebarMetas(){
     wrap.innerHTML = `<div class="nav-empty">Falta rodar o supabase/metas.sql</div>`;
     return;
   }
+  // Concluídas não ocupam a barra lateral: ficam no histórico, nas Configurações.
   const ativas = state.metas.lista.filter(g=>g.status === 'ativa');
-  const concluidas = state.metas.lista.filter(g=>g.status === 'concluida');
   const item = (g)=>{
     const p = metaProgresso(g);
     const ativo = state.view === 'meta' && state.metas.atual === g.id;
@@ -6603,11 +6632,7 @@ function renderSidebarMetas(){
   if(!state.metas.lista.length){
     html += `<button class="nav-empty-acao" onclick="abrirNovaMeta()">Criar a primeira meta</button>`;
   }else if(!ativas.length){
-    html += `<div class="nav-empty">Nenhuma meta em andamento</div>`;
-  }
-  if(concluidas.length){
-    html += `<button class="nav-concluidas" onclick="state.metas.verConcluidas=!state.metas.verConcluidas;renderSidebarMetas()" aria-expanded="${state.metas.verConcluidas}">${state.metas.verConcluidas ? 'Esconder concluídas' : `Concluídas (${concluidas.length})`}</button>`;
-    if(state.metas.verConcluidas) html += concluidas.map(item).join('');
+    html += `<button class="nav-empty-acao" onclick="abrirNovaMeta()">Criar uma meta</button>`;
   }
   wrap.innerHTML = html;
 }
@@ -7154,6 +7179,7 @@ async function atualizarMeta(r){
   Object.assign(g, metaLinha(data));
   fecharNovaMeta();
   metaRerender();
+  if(metaNoAlvo(g)){ await concluirMeta(g.id, true); return true; }
   showToast('Meta salva');
   return true;
 }
@@ -7170,7 +7196,7 @@ async function gravarMeta(g, patch, msgErro){
   return true;
 }
 
-async function concluirMeta(id){
+async function concluirMeta(id, automatico){
   const g = metaPorId(id);
   if(!g) return;
   const agora = new Date().toISOString();
@@ -7178,7 +7204,7 @@ async function concluirMeta(id){
   g.status = 'concluida';
   g.completedAt = agora;
   metaRerender();
-  showToast('Meta concluída');
+  showToast(automatico ? 'Chegou a 100%: meta concluída e guardada no histórico' : 'Meta concluída');
 }
 
 async function reabrirMeta(id){
@@ -7239,6 +7265,7 @@ async function registrarValorMeta(id){
   const novo = absoluto ? n : metaValorAtual(g) + n;
   if(!await gravarRegistroMeta(g, todayIso(), novo)) return;
   metaRerender();
+  if(metaNoAlvo(g)){ await concluirMeta(g.id, true); return; }
   showToast(`Registrado: ${fmtMetaValor(novo, g.unit)}`);
 }
 
@@ -7283,6 +7310,7 @@ async function salvarEtapasMeta(g, novas, msgErro){
     metaRerender();
     return false;
   }
+  await concluirSeNoAlvo(g);
   return true;
 }
 
@@ -7662,6 +7690,35 @@ function renderMetasMobile(){
       ${!state.metas.lista.length && !state.metas.precisaSql ? '<p class="meta-vazio">Nenhuma meta ainda. Toque em Nova meta para criar a primeira.</p>' : ''}
       ${state.metas.precisaSql ? '<p class="meta-dica">Falta rodar o supabase/metas.sql no Supabase.</p>' : ''}
     </section>`;
+}
+
+/* ---------- histórico de metas (nas Configurações) ---------- */
+
+const DATA_CONCLUSAO = new Intl.DateTimeFormat(LOCALE_APP, {day: 'numeric', month: 'short', year: 'numeric'});
+
+function abrirHistoricoMetas(){
+  closeSettings();
+  const concluidas = state.metas.lista
+    .filter(g=>g.status === 'concluida')
+    .sort((a, b)=>(b.completedAt || '').localeCompare(a.completedAt || ''));
+  document.getElementById('metas-historico-body').innerHTML = concluidas.length
+    ? concluidas.map(g=>`
+      <button class="meta-linha" onclick="abrirMetaDoHistorico('${g.id}')">
+        <span class="sidebar-meta-dot" style="--area:${corDaArea(g.area)}" aria-hidden="true"></span>
+        <span class="meta-linha-nome">${esc(g.title)}</span>
+        <span class="meta-linha-prog">${g.completedAt ? DATA_CONCLUSAO.format(new Date(g.completedAt)) : 'Concluída'}</span>
+      </button>`).join('')
+    : '<p class="meta-vazio">Nenhuma meta concluída ainda. Quando uma chegar a 100%, ela aparece aqui.</p>';
+  document.getElementById('metas-historico-modal').classList.add('open');
+}
+
+function fecharHistoricoMetas(){
+  document.getElementById('metas-historico-modal').classList.remove('open');
+}
+
+function abrirMetaDoHistorico(id){
+  fecharHistoricoMetas();
+  abrirMeta(id);
 }
 
 /* ---------- apresentação das Metas (uma vez por conta) ---------- */

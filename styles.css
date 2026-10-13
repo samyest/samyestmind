@@ -3582,7 +3582,7 @@
     .nav-section-add{opacity:1;}
   }
   .nav-empty{padding:4px 12px 6px;font-size:12px;color:var(--text-muted);}
-  .nav-empty-acao, .nav-concluidas{
+  .nav-empty-acao{
     width:100%;
     padding:7px 12px;
     border-radius:10px;
@@ -3591,8 +3591,7 @@
     color:var(--text-muted);
     transition:background-color .15s ease, color .15s ease;
   }
-  .nav-empty-acao:hover, .nav-concluidas:hover{background:var(--glass-strong);color:var(--text-strong);}
-  .nav-concluidas{font-size:11.5px;}
+  .nav-empty-acao:hover{background:var(--glass-strong);color:var(--text-strong);}
   /* Quadradinho em vez da bolinha dos projetos: meta e projeto lado a lado na
      barra não se confundem. */
   /* O rótulo herdado dos projetos é caixa alta ("DONO"); aqui ele carrega

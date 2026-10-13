@@ -262,6 +262,13 @@
         <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">Gerencie projetos com outras pessoas — convide por email e escolha quem edita ou só visualiza.</p>
         <button class="btn-secondary" style="width:100%;" onclick="closeSettings();openProjectsModal();">Abrir projetos</button>
       </div>
+      <div class="field">
+        <div class="field-label-row">
+          <label>Histórico de metas</label>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">Metas concluídas saem da barra lateral e ficam guardadas aqui, com a data em que você chegou lá.</p>
+        <button class="btn-secondary" id="s-historico-metas" style="width:100%;" onclick="abrirHistoricoMetas()">Ver histórico</button>
+      </div>
       <div class="field" style="text-align:center;">
         <a href="/privacidade.html" target="_blank" rel="noopener" style="font-size:12px;color:var(--text-soft);">Política de privacidade</a>
       </div>
@@ -581,6 +588,22 @@
     <div class="modal-foot">
       <button class="btn-secondary" id="meta-voltar" onclick="voltarMeta()">Cancelar</button>
       <button class="btn-primary" id="meta-seguir" onclick="avancarMeta()">Continuar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="metas-historico-modal" role="dialog" aria-modal="true" aria-labelledby="metas-historico-title">
+  <div class="modal modal-narrow">
+    <div class="modal-head">
+      <div class="modal-head-title" id="metas-historico-title">Metas concluídas</div>
+      <button class="modal-close" onclick="fecharHistoricoMetas()" aria-label="Fechar">
+        <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="metas-historico-body"></div>
+    <div class="modal-foot">
+      <div></div>
+      <button class="btn-secondary" onclick="fecharHistoricoMetas()">Fechar</button>
     </div>
   </div>
 </div>
