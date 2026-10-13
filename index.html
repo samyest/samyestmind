@@ -314,11 +314,25 @@
     <div class="modal-body">
       <div class="field">
         <label for="col-name">Nome da coluna</label>
-        <input type="text" class="input" id="col-name" placeholder="Ex: Em revisão">
+        <input type="text" class="input" id="col-name" placeholder="Ex: Em revisão" autocomplete="off" oninput="atualizarPreviewColuna()">
       </div>
       <div class="field">
-        <label>Cor</label>
-        <div class="color-swatch-row" id="col-color-swatches" role="group" aria-label="Cor da coluna"></div>
+        <label id="col-color-label">Cor</label>
+        <div class="col-preview" id="col-preview" aria-hidden="true">
+          <div class="kb-col-head">
+            <div class="kb-col-title"><span class="kb-col-dot"></span><span id="col-preview-nome">Nova coluna</span></div>
+            <div class="kb-col-count">1</div>
+          </div>
+          <div class="kb-card"><div class="kb-card-title">Tarefa de exemplo</div></div>
+        </div>
+        <div class="color-grid" id="col-color-swatches" role="radiogroup" aria-labelledby="col-color-label" onkeydown="teclaGradeCores(event)"></div>
+        <div class="color-custom-row">
+          <label class="color-custom-pick" id="col-color-pick" title="Abrir o seletor de cores">
+            <input type="color" id="col-color-native" aria-label="Escolher outra cor no seletor" oninput="selectColumnColor(this.value)">
+          </label>
+          <input type="text" class="input color-hex-input" id="col-color-hex" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Código da cor" placeholder="#5B7A94" oninput="digitarCorHex(this)" onblur="marcarCorDaColuna()">
+          <span class="color-custom-hint">Outra cor: escolha no seletor ou digite o código.</span>
+        </div>
       </div>
       <div class="field">
         <div class="field-label-row">
@@ -501,7 +515,7 @@
       </div>
       <div class="field">
         <label>🎨 Cor <span style="font-weight:400;color:var(--text-soft);">(sincroniza com o Google Calendar)</span></label>
-        <div id="m-color-swatches" class="task-color-row" role="group" aria-label="Cor da tarefa"></div>
+        <div id="m-color-swatches" class="task-color-row" role="radiogroup" aria-label="Cor da tarefa"></div>
       </div>
       <div class="field" id="m-project-field" style="display:none;">
         <label for="m-project">Projeto compartilhado</label>

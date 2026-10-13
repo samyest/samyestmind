@@ -167,6 +167,7 @@ function applyTheme(name){
   r.setProperty('--text-muted', t.textMuted);
   r.setProperty('--text-soft', t.textSoft);
   r.setProperty('--glass', t.glass || 'rgba(255,255,255,0.45)');
+  r.setProperty('--modal-glass', t.dark ? (t.glass || 'rgba(255,255,255,0.45)') : (t.glassStrong || 'rgba(255,255,255,0.65)'));
   r.setProperty('--glass-strong', t.glassStrong || 'rgba(255,255,255,0.65)');
   r.setProperty('--glass-hover', t.glassHover || 'rgba(255,255,255,0.72)');
   r.setProperty('--glass-border', t.glassBorder || 'rgba(255,255,255,0.75)');
@@ -436,16 +437,21 @@ const DEFAULT_COLUMNS = [
   {key:'doing', name:'Em Andamento', color:'#5B7A94', type:'active'},
   {key:'done', name:'Concluído', color:'#8FA88C', type:'done'}
 ];
-const COLUMN_COLOR_PRESETS = [
-  '#9AAFC2','#7D9AB3','#5B7A94','#3D5578',
-  '#C9A868','#D4A93F','#B8863D','#8F6A2E',
-  '#8FA88C','#5CA05A','#3D7A4A','#2C5F3B',
-  '#C48577','#D4826B','#B85C48','#933A2C',
-  '#B084CC','#9B5FBF','#7A3FA0','#5C2C7A',
-  '#5CC2C6','#3D9FA3','#2C7A7D','#1F5A5C',
-  '#E0899E','#C9587A','#A83D5C','#822C46',
-  '#6B7280','#4B5563','#374151','#1F2937'
+// Oito famílias em quatro tons. Na grade, cada coluna é uma família e cada
+// linha um tom: o olho corre o matiz na horizontal e a intensidade na
+// vertical. Antes eram 32 quadrados em fileiras quebradas ao acaso.
+const FAMILIAS_COR = [
+  {nome:'Azul-acinzentado', cores:['#9AAFC2','#7D9AB3','#5B7A94','#3D5578']},
+  {nome:'Mostarda',         cores:['#C9A868','#D4A93F','#B8863D','#8F6A2E']},
+  {nome:'Verde',            cores:['#8FA88C','#5CA05A','#3D7A4A','#2C5F3B']},
+  {nome:'Terracota',        cores:['#C48577','#D4826B','#B85C48','#933A2C']},
+  {nome:'Roxo',             cores:['#B084CC','#9B5FBF','#7A3FA0','#5C2C7A']},
+  {nome:'Turquesa',         cores:['#5CC2C6','#3D9FA3','#2C7A7D','#1F5A5C']},
+  {nome:'Rosa',             cores:['#E0899E','#C9587A','#A83D5C','#822C46']},
+  {nome:'Cinza',            cores:['#6B7280','#4B5563','#374151','#1F2937']}
 ];
+const TONS_COR = ['claro', 'médio', 'escuro', 'profundo'];
+const COLUMN_COLOR_PRESETS = FAMILIAS_COR.flatMap(f=>f.cores);
 let selectedColumnColor = COLUMN_COLOR_PRESETS[0];
 let editingColumnKey = null;
 
@@ -513,22 +519,102 @@ async function persistColumns(){
   return true;
 }
 
+// input[type=color] só aceita #rrggbb; corSegura deixa passar #abc e #rrggbbaa.
+function hex6(v){
+  let h = corSegura(v).slice(1);
+  if(h.length === 3 || h.length === 4) h = h.slice(0, 3).split('').map(c=>c + c).join('');
+  else if(h.length === 6 || h.length === 8) h = h.slice(0, 6);
+  else return COR_PADRAO.toUpperCase();
+  return '#' + h.toUpperCase();
+}
+
+// Decide a cor do check sobre o quadrado: branco nas cores escuras, escuro
+// nas claras (luminância relativa, a mesma conta do WCAG).
+function corEhClara(cor){
+  const h = hex6(cor).slice(1);
+  const [r, g, b] = [0, 2, 4].map(i=>{
+    const c = parseInt(h.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.45;
+}
+
 function renderColorSwatches(){
   const wrap = document.getElementById('col-color-swatches');
   if(!wrap) return;
-  const isCustom = !COLUMN_COLOR_PRESETS.includes(selectedColumnColor);
-  wrap.innerHTML = COLUMN_COLOR_PRESETS.map(c=>`
-    <button type="button" class="color-swatch-btn ${c===selectedColumnColor?'selected':''}" style="background:${c}" onclick="selectColumnColor('${c}')"></button>
-  `).join('') + `
-    <label class="color-swatch-btn color-swatch-custom ${isCustom?'selected':''}" style="${isCustom ? `background:${corSegura(selectedColumnColor)};` : ''}" title="Escolher outra cor">
-      ${isCustom ? '' : '<span>+</span>'}
-      <input type="color" value="${corSegura(selectedColumnColor)}" aria-label="Escolher outra cor" oninput="selectColumnColor(this.value)" style="opacity:0;position:absolute;inset:0;width:100%;height:100%;cursor:pointer;border:none;padding:0;">
-    </label>
-  `;
+  wrap.innerHTML = TONS_COR.map((tom, i)=>FAMILIAS_COR.map(f=>{
+    const c = f.cores[i];
+    return `<button type="button" role="radio" class="color-swatch-btn${corEhClara(c) ? ' claro' : ''}" style="--sw:${c}" data-cor="${c}" aria-label="${f.nome} ${tom}" title="${f.nome} ${tom}" onclick="selectColumnColor('${c}')"></button>`;
+  }).join('')).join('');
+  marcarCorDaColuna();
 }
+
 function selectColumnColor(c){
-  selectedColumnColor = c;
-  renderColorSwatches();
+  selectedColumnColor = hex6(c);
+  marcarCorDaColuna();
+}
+
+// Atualiza seleção, prévia e campos sem redesenhar a grade: redesenhar
+// trocava os botões a cada clique e o foco do teclado se perdia.
+function marcarCorDaColuna(){
+  const atual = hex6(selectedColumnColor);
+  const botoes = [...document.querySelectorAll('#col-color-swatches .color-swatch-btn')];
+  let achou = false;
+  botoes.forEach(b=>{
+    const sel = b.dataset.cor === atual;
+    if(sel) achou = true;
+    b.classList.toggle('selected', sel);
+    b.setAttribute('aria-checked', String(sel));
+    b.tabIndex = sel ? 0 : -1;
+  });
+  // Cor própria: nada da grade fica marcado, e o primeiro quadrado recebe o Tab.
+  if(!achou && botoes.length) botoes[0].tabIndex = 0;
+  const pick = document.getElementById('col-color-pick');
+  if(pick){
+    pick.classList.toggle('selected', !achou);
+    pick.style.setProperty('--sw', atual);
+  }
+  const nativo = document.getElementById('col-color-native');
+  if(nativo) nativo.value = atual;
+  const hex = document.getElementById('col-color-hex');
+  if(hex && document.activeElement !== hex){
+    hex.value = atual;
+    hex.removeAttribute('aria-invalid');
+  }
+  const prev = document.getElementById('col-preview');
+  if(prev) prev.style.setProperty('--col-color', atual);
+}
+
+// Aceita com ou sem "#", em 3 ou 6 dígitos. Só aplica quando o código está
+// completo; no meio da digitação a prévia fica na última cor válida.
+function digitarCorHex(input){
+  let v = input.value.trim();
+  if(v && v[0] !== '#') v = '#' + v;
+  const valido = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v);
+  if(valido){
+    input.removeAttribute('aria-invalid');
+    selectColumnColor(v);
+  }else if(v.length >= 7){
+    input.setAttribute('aria-invalid', 'true');
+  }
+}
+
+// Setas andam pela grade como num grupo de rádio: mover já escolhe a cor.
+function teclaGradeCores(e){
+  const passo = {ArrowRight: 1, ArrowLeft: -1, ArrowDown: FAMILIAS_COR.length, ArrowUp: -FAMILIAS_COR.length}[e.key];
+  if(passo === undefined) return;
+  const botoes = [...document.querySelectorAll('#col-color-swatches .color-swatch-btn')];
+  const i = botoes.indexOf(document.activeElement);
+  const j = i + passo;
+  if(i === -1 || j < 0 || j >= botoes.length) return;
+  e.preventDefault();
+  botoes[j].focus();
+  selectColumnColor(botoes[j].dataset.cor);
+}
+
+function atualizarPreviewColuna(){
+  const el = document.getElementById('col-preview-nome');
+  if(el) el.textContent = document.getElementById('col-name').value.trim() || 'Nova coluna';
 }
 
 function openStatusDetail(filterKey, label){
@@ -599,7 +685,7 @@ function openColumnModal(key, projectId){
     title.textContent = 'Editar coluna';
     document.getElementById('col-name').value = col.name;
     document.getElementById('col-hidden').checked = !!col.hidden;
-    selectedColumnColor = col.color;
+    selectedColumnColor = hex6(col.color);
     delBtn.style.display = cols.length > 1 ? '' : 'none';
   } else {
     title.textContent = 'Nova coluna';
@@ -609,6 +695,7 @@ function openColumnModal(key, projectId){
     delBtn.style.display = 'none';
   }
   renderColorSwatches();
+  atualizarPreviewColuna();
   modal.classList.add('open');
   setTimeout(()=>document.getElementById('col-name').focus(), 50);
 }
@@ -2873,10 +2960,6 @@ function renderProjectPage(){
               </div>
             </div>`;
         }).join('')}
-        ${canEdit ? `<button class="kb-col-add" onclick="openColumnModal(null, '${p.id}')">
-          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Nova coluna
-        </button>` : ''}
       </div>`;
   }
 
@@ -2900,6 +2983,7 @@ function renderProjectPage(){
         <button class="btn-back refresh-btn" onclick="refreshAll()" title="Atualizar agora" aria-label="Atualizar agora">
           <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
         </button>
+        ${canEdit && visao === 'kanban' ? `<button class="btn-secondary" onclick="openColumnModal(null, '${p.id}')">+ Nova coluna</button>` : ''}
         ${canEdit ? `<button class="btn-primary" onclick="openModal(null, '', '${p.id}')">+ Nova tarefa</button>` : ''}
       </div>
     </header>
@@ -4495,19 +4579,26 @@ function renderTaskColorSwatches(){
   const wrap = document.getElementById('m-color-swatches');
   if(!wrap) return;
   const none = `
-    <button type="button" class="task-color-btn task-color-none ${!selectedTaskColor?'selected':''}"
-      onclick="selectTaskColor(null)" title="Sem cor própria (usa a cor da coluna)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/></svg>
+    <button type="button" role="radio" aria-checked="${!selectedTaskColor}" class="task-color-btn task-color-none ${!selectedTaskColor?'selected':''}"
+      onclick="selectTaskColor(null)" title="Sem cor própria (usa a cor da coluna)" aria-label="Sem cor própria, usa a cor da coluna">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/></svg>
     </button>`;
   wrap.innerHTML = none + EVENT_COLORS.map(c=>`
-    <button type="button" class="task-color-btn ${selectedTaskColor===c.id?'selected':''}"
-      style="background:${c.hex}" onclick="selectTaskColor('${c.id}')" title="${c.name}"></button>
+    <button type="button" role="radio" aria-checked="${selectedTaskColor===c.id}" class="task-color-btn${corEhClara(c.hex) ? ' claro' : ''} ${selectedTaskColor===c.id?'selected':''}"
+      style="--sw:${c.hex}" onclick="selectTaskColor('${c.id}')" title="${c.name}" aria-label="${c.name}"></button>
   `).join('');
 }
 
 function selectTaskColor(id){
+  const wrap = document.getElementById('m-color-swatches');
+  const tinhaFoco = wrap && wrap.contains(document.activeElement);
   selectedTaskColor = id;
   renderTaskColorSwatches();
+  // Redesenhar troca os botões: devolve o foco ao escolhido para quem usa teclado.
+  if(tinhaFoco){
+    const sel = wrap.querySelector('.task-color-btn.selected');
+    if(sel) sel.focus();
+  }
 }
 
 // Sem Calendar conectado o interruptor aparece desligado e travado: escondê-lo
