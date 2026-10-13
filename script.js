@@ -2553,6 +2553,18 @@ async function novoProjetoRapido(){
   showToast('Projeto criado');
 }
 
+// Atalho do cabeçalho do projeto: abre a lista de projetos já no campo de
+// convite deste, em vez de a pessoa caçar o cartão certo.
+function convidarNoProjeto(projectId){
+  openProjectsModal();
+  setTimeout(()=>{
+    const input = document.getElementById(`invite-email-${projectId}`);
+    if(!input) return;
+    input.closest('.project-card').scrollIntoView({block: 'center'});
+    input.focus();
+  }, 60);
+}
+
 async function inviteToProject(projectId){
   const emailInput = document.getElementById(`invite-email-${projectId}`);
   const roleSelect = document.getElementById(`invite-role-${projectId}`);
@@ -3018,6 +3030,7 @@ function renderProjectPage(){
         <button class="btn-back refresh-btn" onclick="refreshAll()" title="Atualizar agora" aria-label="Atualizar agora">
           <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
         </button>
+        ${isOwner ? `<button class="btn-secondary btn-com-icone" onclick="convidarNoProjeto('${p.id}')"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg>Convidar</button>` : ''}
         ${canEdit && visao === 'kanban' ? `<button class="btn-secondary" onclick="openColumnModal(null, '${p.id}')">+ Nova coluna</button>` : ''}
         ${canEdit ? `<button class="btn-primary" onclick="openModal(null, '', '${p.id}')">+ Nova tarefa</button>` : ''}
       </div>
