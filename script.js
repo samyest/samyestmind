@@ -843,7 +843,7 @@ let state = {
   selecting: false,
   selected: new Set(),
   ignoredEvents: new Set(),
-  metas: {lista: [], registros: {}, modo: {}, carregado: false, precisaSql: false, atual: null, verConcluidas: false, viewAntes: null}
+  metas: {lista: [], registros: {}, modo: {}, carregado: false, precisaSql: false, atual: null, verConcluidas: false, viewAntes: null, calMes: null}
 };
 
 // Eventos que o usuário já descartou uma vez. Sem isto, a sincronização completa
@@ -3930,6 +3930,38 @@ function renderMiniCal(){
 
 function miniCalNav(delta){state.miniCalDate.setMonth(state.miniCalDate.getMonth()+delta);render();}
 
+// Ícone de repetição desenhado: o emoji 🔁 no título destoava do resto dos
+// ícones do app e não dizia de onde a tarefa vinha.
+const ICONE_REPETE = '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>';
+
+function diasCurtos(ws){
+  const ds = [...new Set(ws)].sort((a, b)=>a - b);
+  if(ds.length === 7) return 'todo dia';
+  if(ds.join() === '1,2,3,4,5') return 'dias úteis';
+  if(ds.join() === '0,6') return 'fins de semana';
+  return ds.map(i=>DIAS_CURTOS[i]).join(', ');
+}
+
+// Linha de origem de uma tarefa gerada por rotina. Se a rotina é o hábito de
+// uma meta, mostra a meta (cor da área e progresso da semana) e leva até ela;
+// se é uma rotina comum, mostra em que dias ela se repete.
+function origemDoCartao(t){
+  if(!t.routine_id) return '';
+  const g = state.metas.lista.find(x=>x.routineId === t.routine_id && x.status === 'ativa');
+  if(g){
+    const p = metaProgresso(g);
+    const texto = `Meta · ${p.curto.replace('/', ' de ')} na semana`;
+    // No modo de seleção o cartão inteiro é alvo de seleção: a linha vira
+    // texto, senão o clique nela abriria a meta em vez de selecionar.
+    if(state.selecting){
+      return `<div class="kb-card-origem"><span class="sidebar-meta-dot" style="--area:${corDaArea(g.area)}" aria-hidden="true"></span><span>${esc(texto)}</span></div>`;
+    }
+    return `<button type="button" class="kb-card-origem kb-card-origem-meta" onclick="event.stopPropagation();abrirMeta('${g.id}')" title="Abrir a meta" aria-label="Abrir a meta ${esc(g.title)}: ${esc(p.longo)}"><span class="sidebar-meta-dot" style="--area:${corDaArea(g.area)}" aria-hidden="true"></span><span>${esc(texto)}</span></button>`;
+  }
+  const r = state.routines.find(x=>x.id === t.routine_id);
+  return `<div class="kb-card-origem" title="Gerada por uma rotina">${ICONE_REPETE}<span>${r ? esc(diasCurtos(r.weekdays)) : 'rotina'}</span></div>`;
+}
+
 function renderKbCard(t, col, opts){
   opts = opts || {};
   const badge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
@@ -3941,15 +3973,24 @@ function renderKbCard(t, col, opts){
     <div class="kb-card ${doneCls} ${state.selected.has(t.id)?'is-selected':''}" style="--col-color:${taskColor(t)}" draggable="${draggable}" ${dragAttrs} onclick="cardClick(event,'${t.id}')">
       ${state.selecting ? `<span class="kb-card-check">${state.selected.has(t.id)?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><polyline points="20 6 9 17 4 12"/></svg>':''}</span>` : ''}
       ${t.client && !opts.clientInMeta ? `<div class="kb-card-client">${esc(t.client)}</div>` : ''}
-      <div class="kb-card-title">${t.routine_id ? '<span title="Gerada por uma rotina" style="margin-right:4px;">🔁</span>' : ''}${esc(t.title)}</div>
+      <div class="kb-card-title">${esc(t.title)}</div>
+      ${origemDoCartao(t)}
       ${extraBadge}
       ${renderTagChipsInline(t, 3)}
       <div class="kb-card-meta">
         ${opts.clientInMeta && t.client ? `<span class="kb-card-cliente">${esc(t.client)}</span>` : ''}
-        ${(col.type === 'done' && state.hideDateOnDone) ? '' : `<span class="${taskDateStatus(t)}">${t.date ? dateWithTime(t) : 'sem prazo'}</span>`}
+        ${(col.type === 'done' && state.hideDateOnDone) ? '' : `<span class="${taskDateStatus(t)}">${dataDoCartao(t)}</span>`}
         ${badge}
       </div>
     </div>`;
+}
+
+// Tarefa de rotina do dia mostra "hoje": o "13/10" de toda manhã não dizia
+// nada que a coluna já não dissesse.
+function dataDoCartao(t){
+  if(!t.date) return 'sem prazo';
+  if(t.routine_id && t.date === todayIso()) return t.time ? `hoje · ${t.time.slice(0, 5)}` : 'hoje';
+  return dateWithTime(t);
 }
 
 function matchesKanbanFilters(t){
@@ -6443,7 +6484,14 @@ function metaDiasFeitos(g){
   return dias;
 }
 
+function metaCriadaIso(g){
+  return g.created ? isoDateFromTimestamp(new Date(g.created).getTime()) : todayIso();
+}
+
+// Dias de antes de a meta existir não contam como previstos: uma meta criada
+// na terça mostrava "0 de 7 nesta semana", contando domingo e segunda.
 function metaSemana(g){
+  const criada = metaCriadaIso(g);
   const ini = new Date();
   ini.setHours(0, 0, 0, 0);
   ini.setDate(ini.getDate() - ini.getDay());
@@ -6453,9 +6501,30 @@ function metaSemana(g){
     const d = new Date(ini);
     d.setDate(ini.getDate() + i);
     const iso = isoDateFromTimestamp(d.getTime());
-    dias.push({iso, dow: i, previsto: g.weekdays.includes(i), feito: feitos.has(iso)});
+    dias.push({iso, dow: i, previsto: g.weekdays.includes(i) && iso >= criada, feito: feitos.has(iso)});
   }
   return dias;
+}
+
+// A maior sequência de dias previstos feitos sem nenhuma falha, desde a
+// criação. Hoje em aberto não interrompe.
+function metaMelhorSequencia(g){
+  if(!g.weekdays.length) return 0;
+  const feitos = metaDiasFeitos(g);
+  const hoje = todayIso();
+  const [y, m, d] = metaCriadaIso(g).split('-').map(Number);
+  const dia = new Date(y, m - 1, d);
+  let melhor = 0, atual = 0;
+  for(let i = 0; i < 3000; i++){
+    const iso = isoDateFromTimestamp(dia.getTime());
+    if(iso > hoje) break;
+    if(g.weekdays.includes(dia.getDay())){
+      if(feitos.has(iso)){ atual++; if(atual > melhor) melhor = atual; }
+      else if(iso !== hoje) atual = 0;
+    }
+    dia.setDate(dia.getDate() + 1);
+  }
+  return melhor;
 }
 
 // Dias previstos seguidos que foram feitos, de hoje para trás. Hoje ainda em
@@ -7186,7 +7255,9 @@ async function apagarRegistroMeta(goalId, regId){
 
 async function alternarDiaHabito(goalId, iso){
   const g = metaPorId(goalId);
-  if(!g || !/^\d{4}-\d{2}-\d{2}$/.test(iso) || iso > todayIso()) return;
+  if(!g || !/^\d{4}-\d{2}-\d{2}$/.test(iso) || iso > todayIso() || iso < metaCriadaIso(g)) return;
+  // Guardado antes do redesenho: depois dele o foco já não está no botão.
+  const veioDoCalendario = !!(document.activeElement && document.activeElement.classList.contains('meta-cal-dia'));
   const manual = metaRegistros(g).find(r=>r.date === iso);
   if(manual){
     const {error} = await sb.from('goal_entries').delete().eq('id', manual.id);
@@ -7201,7 +7272,8 @@ async function alternarDiaHabito(goalId, iso){
     return;
   }
   metaRerender();
-  setTimeout(()=>{ const b = document.querySelector(`.meta-dia[data-dia="${iso}"]`); if(b) b.focus(); }, 30);
+  // Devolve o foco ao dia clicado, na semana ou no calendário.
+  setTimeout(()=>{ const b = document.querySelector(`${veioDoCalendario ? '.meta-cal-dia' : '.meta-dia'}[data-dia="${iso}"]`); if(b) b.focus(); }, 30);
 }
 
 async function salvarEtapasMeta(g, novas, msgErro){
@@ -7328,59 +7400,174 @@ function renderMetaNumero(g, p){
 
 function renderMetaHabito(g, p){
   const hoje = todayIso();
+  const criada = metaCriadaIso(g);
   const semana = metaSemana(g);
   const seq = metaSequencia(g);
+  const recorde = metaMelhorSequencia(g);
   const previstos = semana.filter(d=>d.previsto).length;
   const feitos = semana.filter(d=>d.previsto && d.feito).length;
-  // Grade com uma coluna por semana, domingo no topo. Começa na semana em que
-  // a meta nasceu (até ~6 meses atrás, ou 12 semanas no celular): antes dela
-  // não existia dia previsto, e colunas vazias à esquerda só confundiam.
-  const feitosSet = metaDiasFeitos(g);
-  const criada = g.created ? isoDateFromTimestamp(new Date(g.created).getTime()) : hoje;
+  return `
+    <div class="meta-habito">
+      <div class="meta-habito-principal">
+        <div class="meta-semana" role="group" aria-label="Esta semana">
+          ${semana.map(d=>`
+            <button type="button" class="meta-dia ${d.previsto ? 'previsto' : ''} ${d.feito ? 'feito' : ''} ${d.iso === hoje ? 'hoje' : ''}" data-dia="${d.iso}" aria-pressed="${d.feito}" aria-label="${DIAS_LONGOS[d.dow]}, ${fmtDate(d.iso)}${d.iso < criada ? ', antes da meta' : d.previsto ? '' : ', fora dos dias marcados'}" ${d.iso > hoje || d.iso < criada || g.status === 'concluida' ? 'disabled' : ''} onclick="alternarDiaHabito('${g.id}','${d.iso}')">
+              <span class="meta-dia-letra">${DOW_LETTERS[d.dow]}</span>
+              <span class="meta-dia-marca">${d.feito ? ICONE_CHECK : ''}</span>
+            </button>`).join('')}
+        </div>
+        <div class="meta-habito-numeros">
+          <div><strong>${seq}</strong>${seq === 1 ? 'dia seguido' : 'dias seguidos'}</div>
+          <div><strong>${recorde}</strong>${recorde === 1 ? 'dia de recorde' : 'dias de recorde'}</div>
+          <div><strong>${feitos} de ${previstos}</strong>nesta semana</div>
+        </div>
+        ${renderMetaSemanas(g)}
+        <p class="meta-dica meta-dica-pe">${g.routineId
+          ? 'Aparece como tarefa nos dias marcados; concluir a tarefa marca o dia aqui e no calendário.'
+          : 'Marque os dias feitos aqui ou no calendário. Para virar tarefa nos dias marcados, ligue em Editar.'}</p>
+      </div>
+      ${renderMetaCalendario(g)}
+    </div>`;
+}
+
+// Semana a semana: quanto dos dias marcados foi feito em cada semana, até as
+// 8 mais recentes. Mostra a tendência que o calendário, mês a mês, não deixa
+// ver. Uma série só: todas as barras na cor de destaque; o valor escrito fica
+// só na semana atual e o resto vai no balão (mouse e teclado) e na lista.
+function renderMetaSemanas(g){
+  const hoje = todayIso();
+  const criada = metaCriadaIso(g);
+  const feitos = metaDiasFeitos(g);
   const semanaAtual = new Date();
   semanaAtual.setHours(0, 0, 0, 0);
   semanaAtual.setDate(semanaAtual.getDate() - semanaAtual.getDay());
   const [cy, cm, cd] = criada.split('-').map(Number);
   const semanaCriada = new Date(cy, cm - 1, cd);
   semanaCriada.setDate(semanaCriada.getDate() - semanaCriada.getDay());
-  const maxSemanas = window.innerWidth < 700 ? 12 : 26;
-  const semanas = Math.max(1, Math.min(maxSemanas, Math.round((semanaAtual - semanaCriada) / (7 * 86400000)) + 1));
-  const ini = new Date(semanaAtual);
-  ini.setDate(ini.getDate() - 7 * (semanas - 1));
-  let celulas = '', totalPrev = 0, totalFeitos = 0;
-  for(let i = 0; i < semanas * 7; i++){
-    const d = new Date(ini);
-    d.setDate(ini.getDate() + i);
-    const iso = isoDateFromTimestamp(d.getTime());
-    const previsto = g.weekdays.includes(d.getDay()) && iso >= criada;
-    const feito = feitosSet.has(iso);
-    if(iso <= hoje && previsto){ totalPrev++; if(feito) totalFeitos++; }
-    celulas += `<span class="${iso > hoje ? 'futuro' : feito ? 'feito' : previsto ? 'previsto' : 'livre'}"></span>`;
+  const total = Math.min(8, Math.round((semanaAtual - semanaCriada) / (7 * 86400000)) + 1);
+  // Uma barra só não é gráfico: a semana atual já está na faixa logo acima.
+  if(total < 2) return '';
+  const colunas = [];
+  for(let w = total - 1; w >= 0; w--){
+    const inicio = new Date(semanaAtual);
+    inicio.setDate(inicio.getDate() - 7 * w);
+    let previstos = 0, feitosSemana = 0;
+    for(let i = 0; i < 7; i++){
+      const d = new Date(inicio);
+      d.setDate(inicio.getDate() + i);
+      const iso = isoDateFromTimestamp(d.getTime());
+      if(iso < criada || iso > hoje || !g.weekdays.includes(d.getDay())) continue;
+      previstos++;
+      if(feitos.has(iso)) feitosSemana++;
+    }
+    colunas.push({inicio: isoDateFromTimestamp(inicio.getTime()), previstos, feitos: feitosSemana, atual: w === 0});
   }
-  const tituloGrade = semanas === 1 ? 'Esta semana'
-    : semanas < maxSemanas ? `Desde que a meta começou, há ${semanas} semanas`
-    : maxSemanas === 26 ? 'Últimos 6 meses' : `Últimas ${maxSemanas} semanas`;
+  const ALTURA = 72;
   return `
-    <div class="meta-semana" role="group" aria-label="Esta semana">
-      ${semana.map(d=>`
-        <button type="button" class="meta-dia ${d.previsto ? 'previsto' : ''} ${d.feito ? 'feito' : ''} ${d.iso === hoje ? 'hoje' : ''}" data-dia="${d.iso}" aria-pressed="${d.feito}" aria-label="${DIAS_LONGOS[d.dow]}, ${fmtDate(d.iso)}${d.previsto ? '' : ', fora dos dias marcados'}" ${d.iso > hoje || g.status === 'concluida' ? 'disabled' : ''} onclick="alternarDiaHabito('${g.id}','${d.iso}')">
-          <span class="meta-dia-letra">${DOW_LETTERS[d.dow]}</span>
-          <span class="meta-dia-marca">${d.feito ? ICONE_CHECK : ''}</span>
-        </button>`).join('')}
-    </div>
-    <div class="meta-habito-numeros">
-      <div><strong>${seq}</strong>${seq === 1 ? 'dia seguido' : 'dias seguidos'}</div>
-      <div><strong>${feitos} de ${previstos}</strong>nesta semana</div>
-    </div>
-    <h2 class="meta-sub">${tituloGrade}</h2>
-    <div class="meta-grade-wrap" aria-hidden="true">
-      <div class="meta-grade-dias">${DOW_LETTERS.map(l=>`<span>${l}</span>`).join('')}</div>
-      <div class="meta-grade">${celulas}</div>
-    </div>
-    <p class="sr-only">${totalFeitos} de ${totalPrev} dias marcados feitos nesse período.</p>
-    <p class="meta-dica meta-dica-pe">${g.routineId
-      ? 'Aparece como tarefa nos dias marcados; concluir a tarefa marca o dia aqui.'
-      : 'Marque aqui os dias feitos. Para virar tarefa nos dias marcados, ligue em Editar.'}</p>`;
+    <h2 class="meta-sub">Semana a semana</h2>
+    <div class="meta-colunas" role="list" aria-label="Dias marcados feitos em cada semana">
+      ${colunas.map(c=>{
+        const pct = c.previstos ? c.feitos / c.previstos : 0;
+        const valor = c.previstos ? `${c.feitos}/${c.previstos}` : '—';
+        const texto = c.previstos ? `${c.feitos} de ${c.previstos} dias marcados` : 'nenhum dia marcado';
+        return `
+          <div class="meta-col ${c.atual ? 'atual' : ''}" role="listitem" tabindex="0" aria-label="Semana de ${fmtDate(c.inicio)}${c.atual ? ', esta semana' : ''}: ${texto}">
+            <div class="meta-col-area" aria-hidden="true">
+              ${c.atual ? `<span class="meta-col-valor">${valor}</span>` : ''}
+              <span class="meta-col-barra" style="height:${Math.round(pct * ALTURA)}px"></span>
+            </div>
+            <span class="meta-col-data" aria-hidden="true">${fmtDate(c.inicio)}</span>
+            <span class="meta-col-dica" aria-hidden="true"><strong>${valor}</strong>${c.atual ? 'esta semana' : `semana de ${fmtDate(c.inicio)}`}</span>
+          </div>`;
+      }).join('')}
+    </div>`;
+}
+
+// Mês mostrado no calendário do hábito. Volta para o mês atual ao abrir
+// outra meta: a navegação de uma não vaza para a outra.
+function mesDaMeta(g){
+  const c = state.metas.calMes;
+  if(c && c.goal === g.id) return new Date(c.ano, c.mes, 1);
+  const hoje = new Date();
+  return new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+}
+
+function mudarMesMeta(id, delta){
+  const g = metaPorId(id);
+  if(!g) return;
+  const atual = mesDaMeta(g);
+  const alvo = new Date(atual.getFullYear(), atual.getMonth() + delta, 1);
+  state.metas.calMes = {goal: id, ano: alvo.getFullYear(), mes: alvo.getMonth()};
+  metaRerender();
+  setTimeout(()=>{
+    const b = document.querySelector(`.meta-cal [data-mes-nav="${delta < 0 ? 'ant' : 'prox'}"]`);
+    if(b && !b.disabled) b.focus();
+  }, 30);
+}
+
+// O mês inteiro: feito (cheio), não feito (contorno), previsto (tracejado),
+// hoje (anel). Dá para marcar ou desmarcar qualquer dia entre a criação e hoje.
+function renderMetaCalendario(g){
+  const hoje = todayIso();
+  const criada = metaCriadaIso(g);
+  const feitos = metaDiasFeitos(g);
+  const mes = mesDaMeta(g);
+  const ano = mes.getFullYear();
+  const m = mes.getMonth();
+  const agora = new Date();
+  const [cy, cm] = criada.split('-').map(Number);
+  const podeVoltar = ano > cy || (ano === cy && m > cm - 1);
+  const podeAvancar = ano < agora.getFullYear() || (ano === agora.getFullYear() && m < agora.getMonth());
+  const diasNoMes = new Date(ano, m + 1, 0).getDate();
+  let celulas = '';
+  for(let i = 0; i < mes.getDay(); i++) celulas += '<span aria-hidden="true"></span>';
+  let previstosMes = 0, feitosMes = 0;
+  for(let dia = 1; dia <= diasNoMes; dia++){
+    const iso = `${ano}-${String(m + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+    const dow = new Date(ano, m, dia).getDay();
+    const antes = iso < criada;
+    const futuro = iso > hoje;
+    const previsto = g.weekdays.includes(dow) && !antes;
+    const feito = feitos.has(iso);
+    if(previsto && !futuro){ previstosMes++; if(feito) feitosMes++; }
+    const estado = feito ? 'feito'
+      : antes ? 'antes'
+      : futuro ? (previsto ? 'previsto' : 'futuro')
+      : previsto ? (iso === hoje ? 'previsto' : 'perdido')
+      : 'livre';
+    const descricao = feito ? 'feito'
+      : antes ? 'antes da meta'
+      : !previsto ? 'fora dos dias marcados'
+      : futuro ? 'previsto'
+      : iso === hoje ? 'previsto para hoje' : 'não feito';
+    const clicavel = !antes && !futuro && g.status !== 'concluida';
+    celulas += `<button type="button" class="meta-cal-dia ${estado} ${iso === hoje ? 'hoje' : ''}" data-dia="${iso}" aria-pressed="${feito}" aria-label="${dia} de ${MESES_LONGOS[m]}, ${descricao}" ${clicavel ? '' : 'disabled'} onclick="alternarDiaHabito('${g.id}','${iso}')">${dia}</button>`;
+  }
+  const nomeMes = `${MESES_LONGOS_CAP[m]} ${ano}`;
+  const mesAtual = ano === agora.getFullYear() && m === agora.getMonth();
+  const resumo = previstosMes
+    ? `${feitosMes} de ${previstosMes} dia${previstosMes !== 1 ? 's' : ''} marcado${previstosMes !== 1 ? 's' : ''} feito${previstosMes !== 1 ? 's' : ''} em ${MESES_LONGOS[m]}${mesAtual ? ' até hoje' : ''}.`
+    : `Nenhum dia marcado em ${MESES_LONGOS[m]}${mesAtual ? ' até hoje' : ''}.`;
+  return `
+    <section class="meta-cal" aria-label="Calendário de ${nomeMes}">
+      <div class="mini-cal-head">
+        <h2 class="mini-cal-title">${nomeMes}</h2>
+        <div class="mini-cal-nav">
+          <button type="button" data-mes-nav="ant" onclick="mudarMesMeta('${g.id}', -1)" aria-label="Mês anterior" ${podeVoltar ? '' : 'disabled'}><svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <button type="button" data-mes-nav="prox" onclick="mudarMesMeta('${g.id}', 1)" aria-label="Próximo mês" ${podeAvancar ? '' : 'disabled'}><svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></button>
+        </div>
+      </div>
+      <div class="mini-cal-grid meta-cal-grid">
+        ${DOW_LETTERS.map(l=>`<div class="mini-cal-dow" aria-hidden="true">${l}</div>`).join('')}
+        ${celulas}
+      </div>
+      <p class="meta-cal-resumo">${resumo}</p>
+      <div class="meta-cal-legenda" aria-hidden="true">
+        <span><i class="feito"></i>Feito</span>
+        <span><i class="perdido"></i>Não feito</span>
+        <span><i class="previsto"></i>Previsto</span>
+      </div>
+    </section>`;
 }
 
 function renderMetaEtapas(g, p){
@@ -7448,7 +7635,7 @@ function renderMetaPage(){
       </div>
     </header>
     ${concluida && g.completedAt ? `<p class="meta-concluida-faixa">Concluída em ${dataLonga(isoDateFromTimestamp(new Date(g.completedAt).getTime()))}</p>` : ''}
-    <section class="glass panel meta-painel" aria-label="Progresso">${corpo}</section>
+    <section class="glass panel meta-painel meta-painel-${g.kind}" aria-label="Progresso">${corpo}</section>
     ${g.why ? `<blockquote class="meta-porque-citacao"><p>${esc(g.why)}</p></blockquote>` : ''}`;
 }
 
