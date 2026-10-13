@@ -86,13 +86,14 @@
     <div class="side-user">
       <div class="side-user-avatar" id="user-avatar">?</div>
       <div class="side-user-info">
-        <div class="side-user-email" id="user-name-display">—</div>
-        <div class="side-user-email" id="user-email" style="color:var(--text-muted);font-size:10.5px;">—</div>
+        <div class="side-user-nome" id="user-name-display">—</div>
       </div>
-      <button class="side-user-logout" onclick="openSettings()" title="Configurações" aria-label="Configurações" style="margin-right:2px;">
+      <button class="side-user-acao" onclick="openSettings()" title="Configurações" aria-label="Configurações">
         <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
       </button>
-      <button class="side-user-logout" onclick="logout()" title="Sair">SAIR</button>
+      <button class="side-user-acao sair" onclick="logout()" title="Sair da conta" aria-label="Sair da conta">
+        <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
     </div>
   </aside>
   <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()" title="Esconder/mostrar barra lateral" aria-label="Esconder ou mostrar a barra lateral" aria-expanded="true">

@@ -1998,8 +1998,8 @@
   .side-user{
     display:flex;
     align-items:center;
-    gap:10px;
-    padding:12px 8px;
+    gap:2px;
+    padding:12px 2px 12px 4px;
     margin-top:8px;
     border-top:1px solid var(--line);
     padding-top:14px;
@@ -2015,6 +2015,7 @@
     font-size:12px;
     flex-shrink:0;
     overflow:hidden;
+    margin-right:8px;
   }
   .comments-list{
     max-height:260px;
@@ -2124,27 +2125,19 @@
     font-weight:500;
     font-size:11px;
   }
-  .side-user-info{
-    flex:1;
-    overflow:hidden;
-    font-size:11.5px;
-    line-height:1.3;
+  .side-user-info{flex:1;min-width:0;line-height:1.3;}
+  .side-user-nome{font-size:13px;font-weight:500;color:var(--text-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  /* Ícones em vez de "SAIR" escrito: a palavra comia o espaço do nome. */
+  .side-user-acao{
+    width:28px;height:28px;
+    flex-shrink:0;
+    display:grid;place-items:center;
+    border-radius:8px;
+    color:color-mix(in srgb, var(--text) 70%, var(--text-muted));
+    transition:background-color .15s ease, color .15s ease;
   }
-  .side-user-email{
-    color:var(--text);
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-  }
-  .side-user-logout{
-    color:var(--text-muted);
-    font-family:'JetBrains Mono',monospace;
-    font-size:10px;
-    padding:4px 8px;
-    border-radius:6px;
-    transition:background-color .15s, border-color .15s, color .15s, box-shadow .15s, transform .15s, opacity .15s;
-  }
-  .side-user-logout:hover{color:var(--danger);background:rgba(196,133,119,0.1);}
+  .side-user-acao:hover{background:var(--glass-strong);color:var(--text-strong);}
+  .side-user-acao.sair:hover{color:var(--danger);background:color-mix(in srgb, var(--danger) 12%, transparent);}
 
 
   .theme-grid{

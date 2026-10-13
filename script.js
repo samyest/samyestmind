@@ -464,7 +464,14 @@ async function saveSettings(){
   document.getElementById('settings-modal').classList.remove('open');
   render();
   document.getElementById('user-name-display').textContent = name;
+  atualizarDicaUsuario();
   renderMyAvatar('user-avatar', name);
+}
+
+// Nome longo termina em "…" na barra lateral; inteiro ao passar o mouse.
+function atualizarDicaUsuario(){
+  const info = document.querySelector('.side-user-info');
+  if(info) info.title = state.myName || '';
 }
 const DEFAULT_COLUMNS = [
   {key:'todo', name:'A Fazer', color:'#9AAFC2', type:'active'},
@@ -1144,7 +1151,6 @@ async function checkAuth(){
     onbEl.classList.remove('show');
     appEl.style.display = 'grid';
     appEl.classList.toggle('sidebar-collapsed', localStorage.getItem('sidebarCollapsed') === '1');
-    const email = session.user.email;
     state.myName = myProfile.name;
     state.myAvatarUrl = myProfile.avatar_url || null;
     state.savedTheme = myProfile.theme || 'bluegray';
@@ -1152,8 +1158,8 @@ async function checkAuth(){
     state.novidadesVistas = Array.isArray(myProfile.novidades_vistas) ? myProfile.novidades_vistas : [];
     applyTheme(state.savedTheme);
     state.columns = normalizarColunas(myProfile.kanban_columns) || JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
-    document.getElementById('user-email').textContent = email || '';
     document.getElementById('user-name-display').textContent = state.myName;
+    atualizarDicaUsuario();
     renderMyAvatar('user-avatar', state.myName);
     // A barra lateral aparece completa já no primeiro desenho: o Desafio só
     // depende do e-mail, e os projetos vêm da última visita até o banco responder.
