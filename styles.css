@@ -4248,3 +4248,143 @@
     .dash-acoes .task-row, .dash-acoes .task-row.urgent, .dash-acoes .task-row.high{position:relative;padding:9px 8px 9px 26px;row-gap:3px;column-gap:10px;}
     .dash-acoes .task-check{position:absolute;left:10px;top:16px;}
   }
+
+  /* Nova tarefa / editar tarefa ------------------------------------------- */
+  /* O título é a coisa principal; o resto são propriedades em linhas curtas,
+     rótulo à esquerda e controle à direita, sem caixa em volta até tocar. */
+  .modal.tk-modal{max-width:600px;}
+  .tk-corpo{gap:0;padding-top:18px;}
+  .tk-titulo{
+    width:100%;
+    padding:6px 0 10px;
+    border:none;
+    border-bottom:1px solid var(--line);
+    background:transparent;
+    outline:none;
+    font-family:'Space Grotesk';
+    font-size:20px;
+    font-weight:500;
+    letter-spacing:-0.01em;
+    color:var(--text-strong);
+    transition:border-color .15s ease;
+  }
+  .tk-titulo::placeholder{color:var(--text-soft);}
+  .tk-titulo:focus{border-bottom-color:var(--accent);}
+  .tk-titulo:disabled{opacity:0.7;cursor:not-allowed;}
+
+  .tk-props{display:flex;flex-direction:column;gap:2px;padding:14px 0 10px;}
+  .tk-prop{
+    display:grid;
+    grid-template-columns:128px minmax(0, 1fr);
+    align-items:center;
+    gap:12px;
+    min-height:40px;
+  }
+  .tk-prop-nome{
+    display:flex;
+    align-items:center;
+    gap:9px;
+    font-size:13px;
+    color:var(--text-muted);
+  }
+  .tk-prop-nome svg{width:16px;height:16px;flex-shrink:0;color:var(--text-soft);}
+  .tk-prop-valor{position:relative;min-width:0;}
+  .tk-props .input,
+  .tk-props .select,
+  .tk-props .tag-input{
+    padding:8px 10px;
+    min-height:0;
+    background:transparent;
+    border-color:transparent;
+    font-size:13.5px;
+  }
+  .tk-props .input:hover:not(:disabled),
+  .tk-props .select:hover:not(:disabled),
+  .tk-props .tag-input:hover{background:var(--glass-strong);}
+  .tk-props .input:focus,
+  .tk-props .select:focus,
+  .tk-props .tag-input:focus-within{background:var(--glass-strong);border-color:var(--accent);}
+  .tk-quando{display:flex;align-items:center;gap:6px;}
+  .tk-quando #m-date{flex:1 1 auto;min-width:0;}
+  .tk-quando #m-time{flex:0 0 112px;}
+  .tk-quando .time-clear-btn{width:28px;height:28px;background:transparent;border-color:transparent;}
+  .tk-props .task-color-row{margin:0;padding:5px 2px;gap:6px;}
+  .tk-props .task-color-btn{width:22px;height:22px;}
+
+  .tk-opcoes{border-top:1px solid var(--line);}
+  .tk-opcao .set-linha{border-top:none;padding:12px 0;}
+  .tk-opcao + .tk-opcao{border-top:1px solid var(--line);}
+  .tk-opcao .weekday-picker{margin:0 0 6px;}
+  .tk-dica{margin:8px 0 12px;font-size:12px;line-height:1.5;color:var(--text-muted);}
+
+  .field > .tk-secao{
+    display:block;
+    margin-bottom:8px;
+    font-family:inherit;
+    font-size:13px;
+    font-weight:500;
+    letter-spacing:0;
+    text-transform:none;
+    color:var(--text-muted);
+  }
+  .field.tk-notas{padding-top:16px;border-top:1px solid var(--line);}
+  .field.tk-notas textarea{min-height:110px;}
+  .field.tk-comentarios{padding-top:18px;}
+
+  @media (max-width:900px){
+    .tk-prop{grid-template-columns:92px minmax(0, 1fr);gap:8px;}
+    .tk-quando{flex-wrap:wrap;row-gap:2px;}
+    .tk-quando #m-date{flex:1 0 100%;}
+    .tk-quando #m-time{flex:1 1 0;min-width:0;}
+    .tk-titulo{font-size:18px;}
+  }
+
+  /* Legibilidade do modal de tarefa. --text-muted/--text-soft dos temas claros
+     ficam abaixo de 4,5:1 sobre o vidro, e o fundo padrão dos campos é a mesma
+     cor do modal. Os tons daqui saem do --text de cada tema, então valem nos
+     claros e nos escuros. */
+  .tk-modal{
+    --tk-rotulo:color-mix(in srgb, var(--text) 86%, var(--text-muted));
+    --tk-apoio:color-mix(in srgb, var(--text) 74%, var(--text-muted));
+    --tk-campo:color-mix(in srgb, var(--text) 6%, transparent);
+    --tk-campo-hover:color-mix(in srgb, var(--text) 10%, transparent);
+  }
+  .tk-titulo{border-bottom-color:color-mix(in srgb, var(--text) 18%, transparent);}
+  .tk-titulo::placeholder{color:var(--tk-apoio);opacity:1;}
+  .tk-prop-nome{font-size:13.5px;color:var(--tk-rotulo);}
+  .tk-prop-nome svg{color:var(--tk-apoio);}
+  .tk-props .input,
+  .tk-props .select,
+  .tk-props .tag-input{background:var(--tk-campo);color:var(--text-strong);}
+  .tk-props .input:hover:not(:disabled),
+  .tk-props .select:hover:not(:disabled),
+  .tk-props .tag-input:hover{background:var(--tk-campo-hover);}
+  .tk-props .input:focus,
+  .tk-props .select:focus,
+  .tk-props .tag-input:focus-within{background:var(--tk-campo);border-color:var(--accent);}
+  .tk-props .input::placeholder,
+  .tk-props .tag-input-field::placeholder{color:var(--tk-apoio);}
+  .tk-props .input:disabled, .tk-props .select:disabled{opacity:0.75;}
+  .tk-quando .time-clear-btn{color:var(--tk-apoio);}
+  .tk-props .task-color-none{background:var(--tk-campo);border-color:color-mix(in srgb, var(--text) 30%, transparent);color:var(--tk-apoio);}
+  .tk-modal .set-linha-desc,
+  .tk-modal .tk-dica{color:var(--tk-apoio);font-size:12.5px;}
+  .tk-modal .sound-toggle-track{background:color-mix(in srgb, var(--text) 20%, transparent);}
+  .tk-modal .sound-toggle input:checked + .sound-toggle-track{background:var(--accent);}
+  .tk-modal .weekday-btn{
+    font-family:inherit;
+    font-size:12.5px;
+    color:var(--tk-rotulo);
+    background:var(--tk-campo);
+    border-color:color-mix(in srgb, var(--text) 16%, transparent);
+  }
+  .tk-modal .weekday-btn.selected{background:var(--accent);border-color:var(--accent);color:var(--accent-text);}
+  .tk-modal .field > .tk-secao{color:var(--tk-rotulo);font-size:13.5px;}
+  .tk-modal .field textarea,
+  .tk-modal .comment-composer textarea{background:var(--tk-campo);border-color:transparent;color:var(--text-strong);}
+  .tk-modal .field textarea:focus,
+  .tk-modal .comment-composer textarea:focus{border-color:var(--accent);}
+  .tk-modal textarea::placeholder{color:var(--tk-apoio);}
+  .tk-modal .tk-opcoes,
+  .tk-modal .tk-opcao + .tk-opcao,
+  .tk-modal .field.tk-notas{border-color:color-mix(in srgb, var(--text) 12%, transparent);}

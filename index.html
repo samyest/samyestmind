@@ -491,118 +491,135 @@
 </div>
 
 <div class="modal-bg" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-  <div class="modal">
+  <div class="modal tk-modal">
     <div class="modal-head">
-      <div class="modal-head-title" id="modal-title">Nova tarefa</div>
+      <h2 class="set-titulo" id="modal-title">Nova tarefa</h2>
       <button class="modal-close" onclick="closeModal()" aria-label="Fechar">
         <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <div class="modal-body">
-      <div class="field">
-        <label for="m-title">O que precisa ser feito</label>
-        <input type="text" class="input" id="m-title" placeholder="Ex: Enviar orçamento para o cliente">
-      </div>
-      <div class="field-row">
-        <div class="field" style="position:relative;">
-          <label for="m-client">Cliente / Projeto</label>
-          <input type="text" class="input" id="m-client" placeholder="Nome do cliente" autocomplete="off" oninput="filterClientSuggestions()" onfocus="filterClientSuggestions()" onblur="setTimeout(hideClientSuggestions, 150)">
-          <div id="client-suggestions" class="client-suggestions"></div>
-        </div>
-        <div class="field">
-          <label for="m-status">Status</label>
-          <select class="select" id="m-status">
-            <option value="todo">A Fazer</option>
-            <option value="waiting">Aguardando retorno</option>
-            <option value="doing">Em Andamento</option>
-            <option value="done">Concluído</option>
-          </select>
-        </div>
-      </div>
-      <div class="field-row">
-        <div class="field" id="m-date-field">
-          <label for="m-date">Prazo</label>
-          <input type="date" class="input" id="m-date" onchange="updateGcalHint()">
-        </div>
-        <div class="field">
-          <label for="m-priority">Prioridade</label>
-          <select class="select" id="m-priority">
-            <option value="normal">Normal</option>
-            <option value="high">Alta</option>
-            <option value="urgent">Urgente</option>
-          </select>
-        </div>
-      </div>
-      <div class="field" id="m-repeat-field">
-        <div class="field-label-row">
-          <label for="m-repeat">🔁 Repetir toda semana</label>
-          <label class="sound-toggle">
-            <input type="checkbox" id="m-repeat" onchange="toggleRepeatField()">
-            <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
-          </label>
-        </div>
-        <div id="m-repeat-days" class="weekday-picker" style="display:none;" role="group" aria-label="Dias em que repete">
-          <button type="button" class="weekday-btn" data-day="0" onclick="toggleWeekdayBtn(this)">D</button>
-          <button type="button" class="weekday-btn" data-day="1" onclick="toggleWeekdayBtn(this)">S</button>
-          <button type="button" class="weekday-btn" data-day="2" onclick="toggleWeekdayBtn(this)">T</button>
-          <button type="button" class="weekday-btn" data-day="3" onclick="toggleWeekdayBtn(this)">Q</button>
-          <button type="button" class="weekday-btn" data-day="4" onclick="toggleWeekdayBtn(this)">Q</button>
-          <button type="button" class="weekday-btn" data-day="5" onclick="toggleWeekdayBtn(this)">S</button>
-          <button type="button" class="weekday-btn" data-day="6" onclick="toggleWeekdayBtn(this)">S</button>
-        </div>
-        <p id="m-repeat-hint" style="font-size:11.5px;color:var(--text-muted);margin-top:8px;line-height:1.5;display:none;">Cria a tarefa sozinha em cada dia marcado. Concluir ou apagar a de hoje não afeta os próximos dias — gerencie ou pare a rotina em Configurações.</p>
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label for="m-time">⏰ Horário (opcional — te avisa com som na hora)</label>
-          <div class="field-control-row">
-            <input type="time" class="input" id="m-time" style="max-width:160px;">
-            <button type="button" class="time-clear-btn" onclick="document.getElementById('m-time').value='';" title="Remover horário" aria-label="Remover horário">
-              <svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
+    <div class="modal-body tk-corpo">
+      <label class="sr-only" for="m-title">O que precisa ser feito</label>
+      <input type="text" class="tk-titulo" id="m-title" placeholder="O que precisa ser feito?" autocomplete="off">
+
+      <div class="tk-props">
+        <div class="tk-prop">
+          <label class="tk-prop-nome" for="m-client"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>Cliente</label>
+          <div class="tk-prop-valor">
+            <input type="text" class="input" id="m-client" placeholder="Nome do cliente" autocomplete="off" oninput="filterClientSuggestions()" onfocus="filterClientSuggestions()" onblur="setTimeout(hideClientSuggestions, 150)">
+            <div id="client-suggestions" class="client-suggestions"></div>
           </div>
         </div>
-        <div class="field" id="m-gcal-field" style="display:none;">
-          <label for="m-gcal">📅 Adicionar ao Google Calendar</label>
-          <div class="field-control-row">
+        <div class="tk-prop">
+          <label class="tk-prop-nome" for="m-status"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="14" rx="1.5"/></svg>Status</label>
+          <div class="tk-prop-valor">
+            <select class="select" id="m-status">
+              <option value="todo">A Fazer</option>
+              <option value="waiting">Aguardando retorno</option>
+              <option value="doing">Em Andamento</option>
+              <option value="done">Concluído</option>
+            </select>
+          </div>
+        </div>
+        <div class="tk-prop" id="m-date-field">
+          <label class="tk-prop-nome" for="m-date"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Prazo</label>
+          <div class="tk-prop-valor">
+            <div class="tk-quando">
+              <input type="date" class="input" id="m-date" onchange="updateGcalHint()">
+              <input type="time" class="input" id="m-time" aria-label="Horário (opcional; toca um aviso na hora)" title="Horário (opcional; toca um aviso na hora)">
+              <button type="button" class="time-clear-btn" onclick="document.getElementById('m-time').value='';" title="Remover horário" aria-label="Remover horário">
+                <svg aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="tk-prop">
+          <label class="tk-prop-nome" for="m-priority"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22V4"/><path d="M5 4h12l-2.5 4.5L17 13H5"/></svg>Prioridade</label>
+          <div class="tk-prop-valor">
+            <select class="select" id="m-priority">
+              <option value="normal">Normal</option>
+              <option value="high">Alta</option>
+              <option value="urgent">Urgente</option>
+            </select>
+          </div>
+        </div>
+        <div class="tk-prop" id="m-project-field" style="display:none;">
+          <label class="tk-prop-nome" for="m-project"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>Projeto</label>
+          <div class="tk-prop-valor">
+            <select class="select" id="m-project">
+              <option value="">Pessoal (privado)</option>
+            </select>
+          </div>
+        </div>
+        <div class="tk-prop" id="m-assignee-field" style="display:none;">
+          <label class="tk-prop-nome" for="m-assignee"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a7 7 0 0114 0v1"/></svg>Responsável</label>
+          <div class="tk-prop-valor">
+            <select class="select" id="m-assignee">
+              <option value="">Todo mundo do projeto</option>
+            </select>
+          </div>
+        </div>
+        <div class="tk-prop">
+          <span class="tk-prop-nome"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 6.5 6 11a6 6 0 01-12 0c0-4.5 6-11 6-11z"/></svg>Cor</span>
+          <div class="tk-prop-valor">
+            <div id="m-color-swatches" class="task-color-row" role="radiogroup" aria-label="Cor da tarefa (vai junto para o Google Agenda)"></div>
+          </div>
+        </div>
+        <div class="tk-prop">
+          <label class="tk-prop-nome" for="m-tag-input"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0L3 13V3h10l7.6 7.6a2 2 0 010 2.8z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg>Tags</label>
+          <div class="tk-prop-valor">
+            <div class="tag-input" id="m-tags" onclick="document.getElementById('m-tag-input').focus()">
+              <span id="m-tags-chips" class="tag-chips"></span>
+              <input type="text" id="m-tag-input" class="tag-input-field" placeholder="Digite e tecle Enter" autocomplete="off" maxlength="24" oninput="filterTagSuggestions()" onfocus="filterTagSuggestions()" onkeydown="tagInputKeydown(event)" onblur="setTimeout(()=>{commitTagInput();hideTagSuggestions();}, 150)">
+            </div>
+            <div id="tag-suggestions" class="client-suggestions" role="listbox" aria-label="Tags já usadas"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tk-opcoes">
+        <div class="tk-opcao" id="m-repeat-field">
+          <div class="set-linha">
+            <div class="set-linha-texto">
+              <label class="set-linha-titulo" for="m-repeat">Repetir toda semana</label>
+              <div class="set-linha-desc">Vira uma rotina: a tarefa aparece sozinha nos dias marcados.</div>
+            </div>
+            <label class="sound-toggle">
+              <input type="checkbox" id="m-repeat" onchange="toggleRepeatField()">
+              <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
+            </label>
+          </div>
+          <div id="m-repeat-days" class="weekday-picker" style="display:none;" role="group" aria-label="Dias em que repete">
+            <button type="button" class="weekday-btn" data-day="0" onclick="toggleWeekdayBtn(this)" aria-label="Domingo">D</button>
+            <button type="button" class="weekday-btn" data-day="1" onclick="toggleWeekdayBtn(this)" aria-label="Segunda">S</button>
+            <button type="button" class="weekday-btn" data-day="2" onclick="toggleWeekdayBtn(this)" aria-label="Terça">T</button>
+            <button type="button" class="weekday-btn" data-day="3" onclick="toggleWeekdayBtn(this)" aria-label="Quarta">Q</button>
+            <button type="button" class="weekday-btn" data-day="4" onclick="toggleWeekdayBtn(this)" aria-label="Quinta">Q</button>
+            <button type="button" class="weekday-btn" data-day="5" onclick="toggleWeekdayBtn(this)" aria-label="Sexta">S</button>
+            <button type="button" class="weekday-btn" data-day="6" onclick="toggleWeekdayBtn(this)" aria-label="Sábado">S</button>
+          </div>
+          <p id="m-repeat-hint" class="tk-dica" style="display:none;">Concluir ou apagar a de hoje não mexe nos próximos dias. A rotina se pausa ou edita em Configurações.</p>
+        </div>
+        <div class="tk-opcao" id="m-gcal-field" style="display:none;">
+          <div class="set-linha">
+            <div class="set-linha-texto">
+              <label class="set-linha-titulo" for="m-gcal">Google Agenda</label>
+              <div class="set-linha-desc" id="m-gcal-hint">Cria o evento na sua agenda.</div>
+            </div>
             <label class="sound-toggle">
               <input type="checkbox" id="m-gcal" checked onchange="updateGcalHint()">
               <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
             </label>
-            <span id="m-gcal-hint" class="field-inline-hint">Cria o evento na sua agenda.</span>
           </div>
         </div>
       </div>
-      <div class="field">
-        <label>🎨 Cor <span style="font-weight:400;color:var(--text-soft);">(sincroniza com o Google Calendar)</span></label>
-        <div id="m-color-swatches" class="task-color-row" role="radiogroup" aria-label="Cor da tarefa"></div>
+
+      <div class="field tk-notas">
+        <label class="tk-secao" for="m-notes">Notas</label>
+        <textarea id="m-notes" placeholder="Detalhes, links, o que combinar…"></textarea>
       </div>
-      <div class="field" id="m-project-field" style="display:none;">
-        <label for="m-project">Projeto compartilhado</label>
-        <select class="select" id="m-project">
-          <option value="">Pessoal (privado)</option>
-        </select>
-      </div>
-      <div class="field" id="m-assignee-field" style="display:none;">
-        <label for="m-assignee">Atribuir a</label>
-        <select class="select" id="m-assignee">
-          <option value="">Todo mundo do projeto</option>
-        </select>
-      </div>
-      <div class="field" style="position:relative;">
-        <label for="m-tag-input">🏷️ Tags <span style="font-weight:400;color:var(--text-soft);">(Enter para adicionar)</span></label>
-        <div class="tag-input" id="m-tags" onclick="document.getElementById('m-tag-input').focus()">
-          <span id="m-tags-chips" class="tag-chips"></span>
-          <input type="text" id="m-tag-input" class="tag-input-field" placeholder="Ex: Marketing" autocomplete="off" maxlength="24" oninput="filterTagSuggestions()" onfocus="filterTagSuggestions()" onkeydown="tagInputKeydown(event)" onblur="setTimeout(()=>{commitTagInput();hideTagSuggestions();}, 150)">
-        </div>
-        <div id="tag-suggestions" class="client-suggestions" role="listbox" aria-label="Tags já usadas"></div>
-      </div>
-      <div class="field">
-        <label for="m-notes">Notas</label>
-        <textarea id="m-notes" placeholder="Escreva suas notas aqui…"></textarea>
-      </div>
-      <div class="field" id="m-comments-field" style="display:none;">
-        <label for="comment-input">💬 Comentários</label>
+      <div class="field tk-comentarios" id="m-comments-field" style="display:none;">
+        <label class="tk-secao" for="comment-input">Comentários</label>
         <div id="task-comments-list" class="comments-list"></div>
         <div class="comment-composer">
           <textarea id="comment-input" placeholder="Escreva um comentário… (Enter envia, Shift+Enter quebra linha)" rows="2" onkeydown="if(event.key==='Enter' && !event.shiftKey && !event.isComposing){event.preventDefault();sendComment();}"></textarea>
