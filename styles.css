@@ -188,7 +188,7 @@
   .kanban .kb-col:nth-child(3){animation-delay:.14s;}
   .kanban .kb-col:nth-child(4){animation-delay:.19s;}
 
-  .task-row, .kb-card, .day-task, .client-item{
+  .task-row, .kb-card, .day-task, .dash-meta{
     animation:fadeSlideUp .32s ease both;
   }
   .task-row:nth-of-type(1), .kb-card:nth-of-type(1){animation-delay:.02s;}
@@ -202,7 +202,7 @@
   .no-entrance .status-row, .no-entrance .date-filter,
   .no-entrance .panel, .no-entrance .kb-col, .no-entrance .cal-view,
   .no-entrance .table-view, .no-entrance .task-row, .no-entrance .kb-card,
-  .no-entrance .day-task, .no-entrance .client-item{animation:none;}
+  .no-entrance .day-task, .no-entrance .dash-meta{animation:none;}
 
   .priority-badge.urgent{animation:urgentPulse 2.2s ease-in-out infinite;}
 
@@ -546,7 +546,7 @@
     transform:scale(0.96);
   }
   .kb-card:active{transform:scale(0.98);}
-  .task-row:active, .day-task:active, .client-item:active{background:var(--glass-hover);}
+  .task-row:active, .day-task:active, .dash-meta:active{background:var(--glass-hover);}
   .mobile-nav-item:active{transform:scale(0.9);}
   .mobile-nav-item{transition:transform .15s ease, color .15s ease;}
   .nav-item{transition:background .18s ease, transform .1s ease;}
@@ -701,8 +701,9 @@
 
   .dash-grid{
     display:grid;
-    grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);
+    grid-template-columns:minmax(0,1.7fr) minmax(300px,1fr);
     gap:22px;
+    align-items:start;
   }
 
   .panel{padding:26px;min-width:0;}
@@ -859,66 +860,6 @@
   .input::placeholder{color:var(--text-soft);}
   .select{cursor:pointer;}
 
-  .date-filter-row{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:16px;
-    flex-wrap:wrap;
-    margin-bottom:32px;
-  }
-
-  .today-alert{
-    display:flex;
-    align-items:center;
-    gap:14px;
-    padding:14px 24px 14px 18px;
-    cursor:pointer;
-    background:var(--glass);
-    backdrop-filter:blur(24px) saturate(160%);
-    -webkit-backdrop-filter:blur(24px) saturate(160%);
-    border:1px solid var(--glass-border-soft);
-    border-radius:16px;
-    border-left:4px solid #E24E3D;
-    box-shadow:var(--shadow-soft);
-    transition:background .15s ease, transform .1s ease;
-  }
-  .today-alert:hover{background:var(--glass-strong);}
-  .today-alert:active{transform:scale(0.98);}
-  .today-alert-icon{font-size:24px;line-height:1;flex-shrink:0;}
-  .today-alert-body{min-width:0;}
-  .today-alert-label{
-    font-family:'JetBrains Mono',monospace;
-    font-size:10px;
-    text-transform:uppercase;
-    letter-spacing:0.08em;
-    color:var(--text-muted);
-    font-weight:500;
-  }
-  .today-alert-title{
-    font-size:15px;
-    font-weight:600;
-    color:var(--text-strong);
-    line-height:1.25;
-    max-width:320px;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-  }
-  .today-alert-sub{
-    font-size:12px;
-    color:var(--text-muted);
-    margin-top:2px;
-    max-width:320px;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-  }
-  .today-alert.today-alert-calm{
-    border-left-color:var(--done);
-    cursor:default;
-  }
-  .today-alert.today-alert-calm:hover{background:var(--glass);}
 
   .mini-cal-head{
     display:flex;
@@ -2205,45 +2146,6 @@
   }
   .side-user-logout:hover{color:var(--danger);background:rgba(196,133,119,0.1);}
 
-  .client-item{
-    display:flex;
-    align-items:center;
-    gap:10px;
-    padding:9px 2px;
-    border-bottom:1px solid var(--line);
-    font-size:12.5px;
-  }
-  .client-item:last-child{border-bottom:none;}
-  .client-name{
-    color:var(--text);
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-    flex:1;
-    min-width:0;
-  }
-  .client-bar{
-    width:56px;
-    height:5px;
-    background:rgba(154,175,194,0.15);
-    border-radius:3px;
-    overflow:hidden;
-    flex-shrink:0;
-  }
-  .client-bar-fill{
-    height:100%;
-    background:linear-gradient(90deg, var(--palette-6), var(--accent));
-    border-radius:3px;
-  }
-  .client-count{
-    font-family:'JetBrains Mono',monospace;
-    font-size:11px;
-    color:var(--text-muted);
-    min-width:16px;
-    text-align:right;
-    flex-shrink:0;
-  }
-
   .settings-btn{
     width:100%;
     padding:10px 12px;
@@ -2913,9 +2815,6 @@
       left:12px;right:12px;
       max-width:none;
     }
-    .date-filter-row{flex-direction:column;align-items:stretch;gap:12px;margin-bottom:24px;}
-    .today-alert{width:100%;}
-    .today-alert-title, .today-alert-sub{max-width:none;}
     .toast{bottom:calc(84px + env(safe-area-inset-bottom));}
     .view-header{flex-direction:column;align-items:flex-start;gap:14px;}
     .view-header h1{font-size:26px;}
@@ -2944,8 +2843,6 @@
     .panel-title{font-size:14.5px;}
     .panel-head{margin-bottom:12px;}
     .mini-cal-day{font-size:11px;}
-    .client-item{padding:8px 2px;font-size:12px;}
-    .client-bar{width:44px;}
     .empty{padding:32px 16px;}
 
     .task-row{
@@ -3094,7 +2991,7 @@
   /* Listas longas: o navegador pula o layout do que esta fora da tela. */
   /* .kb-card fica de fora de proposito: e arrastavel, e pular o layout dele
      atrapalha a imagem de arraste. */
-  .task-row, .day-task, .client-item{
+  .task-row, .day-task, .dash-meta{
     content-visibility:auto;
     contain-intrinsic-size:auto 64px;
   }
@@ -4265,4 +4162,106 @@
     .set-aba svg{display:none;}
     .set-paineis{padding:20px 20px 24px;}
     .set-perfil{align-items:center;}
+  }
+
+  /* Visão geral -------------------------------------------------------- */
+  .dash-acoes .panel-head{margin-bottom:8px;}
+  h2.panel-title, h3.dash-grupo-titulo{margin:0;}
+  .dash-prazo{
+    display:flex;
+    gap:2px;
+    padding:3px;
+    border-radius:10px;
+    background:var(--glass-strong);
+  }
+  .dash-prazo button{
+    padding:6px 11px;
+    border-radius:8px;
+    font-size:12.5px;
+    color:var(--text-muted);
+    white-space:nowrap;
+    transition:background-color .15s ease, color .15s ease;
+  }
+  .dash-prazo button:hover{color:var(--text-strong);}
+  .dash-prazo button.active{background:var(--glass-hover);color:var(--text-strong);font-weight:500;box-shadow:0 1px 3px rgba(43,54,68,0.10);}
+  .dash-grupo + .dash-grupo{margin-top:6px;}
+  .dash-grupo-titulo{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:14px 12px 4px;
+    font-family:inherit;
+    font-size:12.5px;
+    font-weight:600;
+    color:var(--text-muted);
+  }
+  .dash-grupo-titulo span{font-weight:500;font-variant-numeric:tabular-nums;color:var(--text-soft);}
+  .dash-grupo.atrasadas .dash-grupo-titulo{color:var(--danger);}
+  .dash-grupo.hoje .dash-grupo-titulo{color:var(--text-strong);}
+  .dash-link{font-size:12.5px;color:var(--text-muted);text-underline-offset:3px;}
+  .dash-link:hover{color:var(--accent);text-decoration:underline;}
+  .dash-ver-todas{display:block;margin:14px auto 0;}
+
+  /* Mais enxuto que o resto do app: sem faixa, fundo ou pílula nas linhas;
+     prioridade e cliente viram texto, e o espaço separa no lugar das linhas. */
+  .dash-acoes .task-row,
+  .dash-acoes .task-row.urgent,
+  .dash-acoes .task-row.high{
+    padding:10px 12px;
+    gap:12px;
+    border-bottom:none;
+    background:none;
+    box-shadow:none;
+  }
+  .dash-acoes .task-row:hover{background:var(--glass-strong);}
+  .dash-acoes .task-title{font-size:13.5px;}
+  .dash-acoes .priority-badge,
+  .dash-acoes .task-client,
+  .dash-acoes .project-badge,
+  .dash-acoes .task-date{
+    padding:0;
+    background:none;
+    border-radius:0;
+    font-family:inherit;
+    font-size:12px;
+    letter-spacing:0;
+    text-transform:none;
+    animation:none;
+  }
+  .dash-acoes .task-client, .dash-acoes .project-badge{color:var(--text-soft);}
+  .dash-acoes .priority-badge.urgent{color:var(--danger);}
+  .dash-acoes .priority-badge.high{color:var(--waiting);}
+  .dash-acoes .task-date{min-width:40px;font-variant-numeric:tabular-nums;}
+  .dash-acoes .task-check{width:7px;height:7px;}
+  .dash-grupo-titulo{padding:18px 12px 4px;font-size:12px;font-weight:500;}
+  .dash-grupo:first-child .dash-grupo-titulo{padding-top:6px;}
+  .dash-grupo.hoje .dash-grupo-titulo{font-weight:600;}
+  .dash-grid .mini-cal-day{aspect-ratio:auto;height:34px;}
+
+  .dash-meta{
+    display:grid;
+    grid-template-columns:auto minmax(0, 1fr) auto;
+    align-items:center;
+    gap:7px 10px;
+    width:100%;
+    padding:10px 6px;
+    border-radius:10px;
+    text-align:left;
+    transition:background-color .15s ease;
+  }
+  .dash-meta:hover{background:var(--glass-strong);}
+  .dash-meta-nome{font-size:13.5px;color:var(--text-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .dash-meta-prog{font-size:12px;color:var(--text-muted);font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .dash-meta-barra{grid-column:2 / -1;grid-row:2;height:3px;border-radius:4px;background:var(--line);overflow:hidden;}
+  .dash-meta-barra > span{display:block;height:100%;border-radius:4px;background:var(--area);}
+  .dash-metas-vazio{padding:28px 16px;}
+  .dash-metas-vazio .btn-com-icone{margin:12px auto 0;}
+  @media (max-width:900px){
+    .dash-acoes .panel-head{flex-direction:column;align-items:stretch;gap:10px;}
+    .dash-prazo{overflow-x:auto;scrollbar-width:none;}
+    .dash-prazo::-webkit-scrollbar{display:none;}
+    .dash-prazo button{flex:1 0 auto;}
+    /* A segunda linha (prioridade, cliente) começa alinhada ao título. */
+    .dash-acoes .task-row, .dash-acoes .task-row.urgent, .dash-acoes .task-row.high{position:relative;padding:9px 8px 9px 26px;row-gap:3px;column-gap:10px;}
+    .dash-acoes .task-check{position:absolute;left:10px;top:16px;}
   }

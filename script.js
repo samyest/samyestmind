@@ -3743,21 +3743,18 @@ function renderDashboard(){
   const acoes = sortByDateThenPriority(
     pTasks.filter(t=>taskColumnType(t)==='active' && matchesDateFilter(t, state.dateFilter))
   );
-  const aguardando = sortByDateThenPriority(
-    pTasks.filter(t=>taskColumnType(t)==='waiting' && matchesDateFilter(t, state.dateFilter))
-  );
   const dataStr = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'});
 
   const renderTaskRow = (t)=>{
     const isUrgent = t.priority === 'urgent';
     const isHigh = t.priority === 'high';
     const badge = isUrgent
-      ? '<span class="priority-badge urgent">🔥 Urgente</span>'
+      ? '<span class="priority-badge urgent">Urgente</span>'
       : isHigh ? '<span class="priority-badge high">Alta</span>' : '';
     const cls = isUrgent ? 'urgent' : (isHigh ? 'high' : '');
     const dot = taskDotStyle(t);
     const pName = t.project_id ? projectName(t.project_id) : null;
-    const projBadge = pName ? `<span class="project-badge">👥 ${esc(pName)}</span>` : '';
+    const projBadge = pName ? `<span class="project-badge">${esc(pName)}</span>` : '';
     return `
       <div class="task-row ${cls}" onclick="openModal('${t.id}')">
         <div class="task-check ${dot.cls}" style="${dot.style}"></div>
@@ -3766,7 +3763,7 @@ function renderDashboard(){
         <span class="task-row-break"></span>
         ${badge}
         ${projBadge}
-        <div class="task-client">${esc(t.client || '—')}</div>
+        ${t.client ? `<div class="task-client">${esc(t.client)}</div>` : ''}
       </div>`;
   };
 
@@ -3791,107 +3788,94 @@ function renderDashboard(){
       ${colCounts.map(c=>`<div class="status-item" onclick="openStatusDetail('col:${c.key}')"><div class="lbl">${esc(c.name)}</div><div class="val" data-count="${c.count}">0</div></div>`).join('')}
       <div class="status-item overdue" onclick="openStatusDetail('overdue', 'Atrasadas')"><div class="lbl">Atrasadas</div><div class="val" data-count="${overdue}">0</div></div>
     </div>
-    <div class="date-filter-row">
-      <div class="date-filter">
-        <span class="date-filter-label">Prazo:</span>
-        <button class="date-pill ${state.dateFilter==='all'?'active':''}" onclick="setDateFilter('all')">Todas</button>
-        <button class="date-pill ${state.dateFilter==='today'?'active':''}" onclick="setDateFilter('today')">Hoje</button>
-        <button class="date-pill ${state.dateFilter==='next3'?'active':''}" onclick="setDateFilter('next3')">Próximos dias</button>
-        <button class="date-pill ${state.dateFilter==='week'?'active':''}" onclick="setDateFilter('week')">Semana</button>
-        <button class="date-pill ${state.dateFilter==='month'?'active':''}" onclick="setDateFilter('month')">Mês</button>
-      </div>
-      ${renderTodayAlert()}
-    </div>
     <div class="dash-grid">
-      <div style="display:flex;flex-direction:column;gap:22px;">
-        <div class="glass panel">
-          <div class="panel-head">
-            <div class="panel-title">🎯 Suas próximas ações</div>
-            <div class="panel-hint">${acoes.length} depende${acoes.length!==1?'m':''} de você</div>
+      <section class="glass panel dash-acoes" aria-labelledby="dash-acoes-titulo">
+        <div class="panel-head">
+          <h2 class="panel-title" id="dash-acoes-titulo">Próximas ações</h2>
+          <div class="dash-prazo" role="group" aria-label="Prazo">
+            ${DASH_PRAZOS.map(([k, nome])=>`<button class="${state.dateFilter===k?'active':''}" aria-pressed="${state.dateFilter===k}" onclick="setDateFilter('${k}')">${nome}</button>`).join('')}
           </div>
-          ${acoes.length===0
-            ? `<div class="empty"><strong>${state.dateFilter==='all' ? 'Zero pendências suas.' : 'Nada nesse período.'}</strong>${state.dateFilter==='all' ? 'Aproveita pra respirar.' : 'Ajusta o filtro pra ver mais.'}</div>`
-            : acoes.slice(0,6).map(renderTaskRow).join('')
-          }
         </div>
-        <div class="glass panel">
-          <div class="panel-head">
-            <div class="panel-title">👥 Foco por cliente</div>
-          </div>
-          ${renderClientFocus()}
-        </div>
-        ${aguardando.length > 0 ? `
-        <div class="glass panel">
-          <div class="panel-head">
-            <div class="panel-title" style="color:var(--text-muted);">⏳ Aguardando retorno</div>
-            <div class="panel-hint">${aguardando.length} item${aguardando.length!==1?'s':''} com terceiros</div>
-          </div>
-          ${aguardando.slice(0,5).map(renderTaskRow).join('')}
-        </div>
-        ` : ''}
-      </div>
+        ${renderAcoesAgrupadas(acoes, renderTaskRow)}
+      </section>
       <div class="side-col">
+        ${state.metas.precisaSql ? '' : `
+        <section class="glass panel" aria-labelledby="dash-metas-titulo">
+          <div class="panel-head">
+            <h2 class="panel-title" id="dash-metas-titulo">Suas metas</h2>
+            ${state.metas.lista.some(g=>g.status === 'ativa') ? `<button class="dash-link" onclick="abrirNovaMeta()">Nova meta</button>` : ''}
+          </div>
+          ${renderMetasPainel()}
+        </section>`}
         <div class="glass panel">${renderMiniCal()}</div>
       </div>
     </div>
   `;
 }
 
-function renderClientFocus(){
-  const active = personalTasks().filter(t=>taskColumnType(t)!=='done');
-  if(active.length === 0){
-    return `<div class="empty" style="padding:26px 12px;font-size:12.5px;"><strong>Sem pendências</strong>Nenhum cliente ativo</div>`;
-  }
-  const byClient = {};
-  active.forEach(t=>{
-    const c = t.client || 'Sem cliente';
-    byClient[c] = (byClient[c] || 0) + 1;
-  });
-  const sorted = Object.entries(byClient).sort((a,b)=>b[1]-a[1]).slice(0,6);
-  const max = sorted[0][1];
-  return sorted.map(([client, count])=>{
-    const pct = (count/max)*100;
-    return `
-      <div class="client-item">
-        <div class="client-name">${esc(client)}</div>
-        <div class="client-bar"><div class="client-bar-fill" style="width:${pct}%"></div></div>
-        <div class="client-count">${count}</div>
-      </div>`;
-  }).join('');
+const DASH_PRAZOS = [['today', 'Hoje'], ['week', 'Semana'], ['month', 'Mês'], ['all', 'Todas']];
+
+// Em que grupo da Visão geral a tarefa cai, pela distância do prazo até hoje.
+function grupoDoPrazo(t){
+  if(!t.date) return 'sem';
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const [y, m, d] = t.date.split('-');
+  const diff = Math.round((new Date(+y, +m - 1, +d) - hoje) / 86400000);
+  if(diff < 0) return 'atrasadas';
+  if(diff === 0) return 'hoje';
+  if(diff === 1) return 'amanha';
+  if(diff <= 7) return 'semana';
+  return 'depois';
+}
+const GRUPOS_PRAZO = [['atrasadas', 'Atrasadas'], ['hoje', 'Hoje'], ['amanha', 'Amanhã'], ['semana', 'Nos próximos 7 dias'], ['depois', 'Mais pra frente'], ['sem', 'Sem prazo']];
+const DASH_LIMITE_ACOES = 10;
+
+function irParaTodasTarefas(){
+  state.view = 'table';
+  render();
+  window.scrollTo(0, 0);
 }
 
-function renderTodayAlert(){
-  const candidates = personalTasks().filter(t=>{
-    if(taskColumnType(t)!=='active') return false;
-    const ds = dateStatus(t.date);
-    return ds === 'today' || ds === 'overdue';
-  });
-
-  if(candidates.length === 0){
-    return `
-      <div class="glass today-alert today-alert-calm">
-        <div class="today-alert-icon">✅</div>
-        <div class="today-alert-body">
-          <div class="today-alert-title">Nada urgente hoje</div>
-          <div class="today-alert-sub">Aproveita pra respirar</div>
-        </div>
-      </div>`;
+// O que vence primeiro aparece primeiro, separado por quando vence: a lista
+// corrida misturava a atrasada de ontem com a do mês que vem.
+function renderAcoesAgrupadas(acoes, linha){
+  if(!acoes.length){
+    const todas = state.dateFilter === 'all';
+    return `<div class="empty"><strong>${todas ? 'Zero pendências suas.' : 'Nada nesse período.'}</strong>${todas ? 'Aproveita pra respirar.' : 'Escolha um prazo maior pra ver mais.'}</div>`;
   }
+  const mostrar = acoes.slice(0, DASH_LIMITE_ACOES);
+  const html = GRUPOS_PRAZO.map(([k, nome])=>{
+    const doGrupo = mostrar.filter(t=>grupoDoPrazo(t) === k);
+    if(!doGrupo.length) return '';
+    const total = acoes.filter(t=>grupoDoPrazo(t) === k).length;
+    return `
+      <div class="dash-grupo ${k}">
+        <h3 class="dash-grupo-titulo">${nome}<span>${total}</span></h3>
+        ${doGrupo.map(linha).join('')}
+      </div>`;
+  }).join('');
+  const resto = acoes.length - mostrar.length;
+  return html + (resto > 0 ? `<button class="dash-link dash-ver-todas" onclick="irParaTodasTarefas()">Ver as outras ${resto} em Todas as tarefas</button>` : '');
+}
 
-  candidates.sort((a,b)=>priorityWeight(b) - priorityWeight(a));
-  const top = candidates[0];
-  const isOverdue = dateStatus(top.date) === 'overdue';
-  const restCount = candidates.length - 1;
-
-  return `
-    <div class="glass today-alert" onclick="openModal('${top.id}')">
-      <div class="today-alert-icon">🔥</div>
-      <div class="today-alert-body">
-        <div class="today-alert-label">${isOverdue ? 'Atrasada' : 'Prioridade de hoje'}</div>
-        <div class="today-alert-title">${esc(top.title)}</div>
-        <div class="today-alert-sub">${esc(top.client || 'Sem cliente')}${restCount > 0 ? ` · +${restCount} pendente${restCount>1?'s':''}` : ''}</div>
-      </div>
-    </div>`;
+// Metas em andamento na Visão geral: uma linha por meta com a barra na cor da
+// área, para ver de relance o que está andando sem abrir cada página.
+function renderMetasPainel(){
+  const ativas = state.metas.lista.filter(g=>g.status === 'ativa');
+  if(!ativas.length){
+    return `<div class="empty dash-metas-vazio"><strong>Nenhuma meta em andamento.</strong>Uma meta junta o que você quer alcançar e mostra o caminho até lá.<button class="btn-secondary btn-com-icone" onclick="abrirNovaMeta()">${ICONE_MAIS}Criar meta</button></div>`;
+  }
+  return ativas.slice(0, 6).map(g=>{
+    const p = metaProgresso(g);
+    const temBarra = g.kind !== 'unica';
+    return `
+      <button class="dash-meta" onclick="abrirMeta('${g.id}')" style="--area:${corDaArea(g.area)}">
+        <span class="sidebar-meta-dot" aria-hidden="true"></span>
+        <span class="dash-meta-nome">${esc(g.title)}</span>
+        ${temBarra ? `<span class="dash-meta-barra" aria-hidden="true"><span style="width:${(Math.max(0, Math.min(1, p.pct)) * 100).toFixed(1)}%"></span></span>` : ''}
+        <span class="dash-meta-prog">${esc(p.longo)}</span>
+      </button>`;
+  }).join('');
 }
 
 function openMiniCalDay(iso){
