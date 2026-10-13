@@ -2146,23 +2146,6 @@
   }
   .side-user-logout:hover{color:var(--danger);background:rgba(196,133,119,0.1);}
 
-  .settings-btn{
-    width:100%;
-    padding:10px 12px;
-    display:flex;
-    align-items:center;
-    gap:12px;
-    background:transparent;
-    color:var(--text);
-    border-radius:10px;
-    font-size:13.5px;
-    transition:background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .15s ease, opacity .15s ease;
-    margin-top:10px;
-    border-top:1px solid var(--line);
-    padding-top:14px;
-  }
-  .settings-btn:hover{background:var(--glass-strong);color:var(--text-strong);}
-  .settings-btn svg{width:16px;height:16px;color:var(--text-muted);flex-shrink:0;}
 
   .theme-grid{
     display:grid;

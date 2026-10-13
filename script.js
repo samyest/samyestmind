@@ -682,7 +682,7 @@ function openStatusDetail(filterKey, label){
       const isUrgent = t.priority === 'urgent';
       const isHigh = t.priority === 'high';
       const badge = isUrgent
-        ? '<span class="priority-badge urgent">🔥 Urgente</span>'
+        ? '<span class="priority-badge urgent">Urgente</span>'
         : isHigh ? '<span class="priority-badge high">Alta</span>' : '';
       const cls = isDone ? 'done-highlight' : (isUrgent ? 'urgent' : (isHigh ? 'high' : ''));
       const rowStyle = isDone ? `--col-color:${taskColumnColor(t)};` : '';
@@ -2155,16 +2155,6 @@ function getUserName(){
   const emailPart = session.user.email.split('@')[0];
   const firstPart = emailPart.split(/[._-]/)[0];
   return firstPart.charAt(0).toUpperCase() + firstPart.slice(1);
-}
-
-async function editUserName(){
-  const current = getUserName();
-  const newName = await perguntar('Como você quer ser chamado?', {value: current, label:'Seu nome', okLabel:'Salvar'});
-  if(!newName || newName.trim() === '' || newName === current) return;
-  const {error} = await sb.from('profiles').upsert({id: session.user.id, name: newName.trim(), updated_at: new Date().toISOString()});
-  if(error){console.error(error);showToast('Não deu para salvar o nome. Tente de novo em instantes.', 'erro');return;}
-  state.myName = newName.trim();
-  render();
 }
 
 async function loadTasks(){
@@ -3901,7 +3891,7 @@ function openMiniCalDay(iso){
       const isUrgent = t.priority === 'urgent';
       const isHigh = t.priority === 'high';
       const badge = isUrgent
-        ? '<span class="priority-badge urgent">🔥 Urgente</span>'
+        ? '<span class="priority-badge urgent">Urgente</span>'
         : isHigh ? '<span class="priority-badge high">Alta</span>' : '';
       const cls = isDone ? 'done-highlight' : (isUrgent ? 'urgent' : (isHigh ? 'high' : ''));
       const rowStyle = isDone ? `--col-color:${taskColumnColor(t)};` : '';
@@ -3995,7 +3985,7 @@ function origemDoCartao(t){
 
 function renderKbCard(t, col, opts){
   opts = opts || {};
-  const badge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
+  const badge = t.priority === 'urgent' ? '<span class="priority-badge urgent">Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
   const doneCls = col.type === 'done' ? 'done' : '';
   const extraBadge = opts.badge ? opts.badge(t) : '';
   const draggable = opts.draggable === false ? false : (!state.selecting && canEditTask(t));
@@ -4484,7 +4474,7 @@ function renderDayPanel(iso, tasks, opts){
         ? `<div class="empty"><strong>Nada agendado neste dia.</strong>${canAdd ? 'Clica em "Adicionar neste dia" pra criar uma tarefa.' : ''}</div>`
         : `<div class="day-panel-tasks">
             ${tasks.map(t=>{
-              const priorityBadge = t.priority === 'urgent' ? '<span class="priority-badge urgent">🔥 Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
+              const priorityBadge = t.priority === 'urgent' ? '<span class="priority-badge urgent">Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
               const assignee = o.projectId ? getAssigneeLabel(t) : null;
               return `
                 <div class="day-task ${taskColumnType(t)==='done'?'done':''}" style="--col-color:${taskColumnColor(t)}" onclick="openModal('${t.id}')">
@@ -4566,7 +4556,12 @@ function renderTable(){
     const s = state.filter.search.toLowerCase();
     filtered = filtered.filter(t=>(t.title||'').toLowerCase().includes(s) || (t.client||'').toLowerCase().includes(s) || (t.notes||'').toLowerCase().includes(s));
   }
-  filtered = sortByDateThenPriority(filtered);
+  // Aqui é o arquivo de tudo: o prazo mais recente em cima, descendo para as
+  // mais antigas. Sem prazo vai para o fim.
+  filtered = sortByDateThenPriority(filtered).sort((a, b)=>{
+    if(!a.date || !b.date) return (a.date ? 0 : 1) - (b.date ? 0 : 1);
+    return b.date.localeCompare(a.date);
+  });
 
   const myProjects = state.projects;
   const assigneeOptions = selectedProject ? [
