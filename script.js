@@ -195,23 +195,55 @@ function openSettings(){
   document.getElementById('s-historico-metas').textContent = nConcluidas ? `Ver histórico (${nConcluidas})` : 'Ver histórico';
   renderMyAvatar('settings-avatar-preview', getUserName());
   const grid = document.getElementById('theme-grid');
+  // Cada tema vira um quadro em miniatura: o fundo, três colunas nos tons
+  // dele e o accent no botão — mais fácil de reconhecer que cinco quadradinhos.
   grid.innerHTML = Object.entries(THEMES).map(([key, t])=>`
-    <button class="theme-card ${key===currentTheme?'selected':''}" data-theme="${key}" onclick="selectTheme('${key}')">
-      <div class="theme-card-name">${t.name}</div>
-      <div class="theme-swatches">
-        <div class="theme-swatch" style="background:${t.bg}"></div>
-        <div class="theme-swatch" style="background:${t.p5}"></div>
-        <div class="theme-swatch" style="background:${t.p6}"></div>
-        <div class="theme-swatch" style="background:${t.p8}"></div>
-        <div class="theme-swatch" style="background:${t.accent}"></div>
-      </div>
+    <button class="theme-card ${key===currentTheme?'selected':''}" role="radio" aria-checked="${key===currentTheme}" data-theme="${key}" onclick="selectTheme('${key}')">
+      <span class="theme-preview" style="background:${t.bg}" aria-hidden="true">
+        <span style="background:${t.p5}"></span><span style="background:${t.p6}"></span><span style="background:${t.p8}"></span>
+        <i style="background:${t.accent}"></i>
+      </span>
+      <span class="theme-card-name">${t.name}</span>
     </button>
   `).join('');
   renderSettingsColumnsList();
   renderSettingsRoutinesList();
   updateGoogleStatusUI();
+  abrirSecaoConfig(secaoConfig, false);
   document.getElementById('settings-modal').classList.add('open');
 }
+
+// Seção aberta nas Configurações; volta na mesma ao reabrir na mesma visita.
+let secaoConfig = 'conta';
+
+function abrirSecaoConfig(secao, focar){
+  secaoConfig = secao;
+  document.querySelectorAll('#settings-modal .set-aba').forEach(b=>{
+    const ativa = b.dataset.secao === secao;
+    b.setAttribute('aria-selected', ativa);
+    b.tabIndex = ativa ? 0 : -1;
+    if(ativa && focar) b.focus();
+  });
+  document.querySelectorAll('#settings-modal .set-painel').forEach(p=>{
+    p.hidden = p.id !== `set-${secao}`;
+  });
+  const ativa = document.querySelector(`#settings-modal .set-aba[data-secao="${secao}"]`);
+  if(ativa && ativa.scrollIntoView) ativa.scrollIntoView({block: 'nearest', inline: 'nearest'});
+  const paineis = document.querySelector('#settings-modal .set-paineis');
+  if(paineis) paineis.scrollTop = 0;
+}
+
+// Setas trocam de seção, como numa lista de abas de verdade.
+document.addEventListener('keydown', (e)=>{
+  const aba = e.target.closest && e.target.closest('#settings-modal .set-aba');
+  if(!aba || !['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+  const abas = Array.from(document.querySelectorAll('#settings-modal .set-aba'));
+  const i = abas.indexOf(aba);
+  const n = e.key === 'Home' ? 0 : e.key === 'End' ? abas.length - 1
+    : (i + (e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : -1) + abas.length) % abas.length;
+  e.preventDefault();
+  abrirSecaoConfig(abas[n].dataset.secao, true);
+});
 
 const DOW_LETTERS = ['D','S','T','Q','Q','S','S'];
 
@@ -340,7 +372,7 @@ function renderSettingsColumnsList(){
   const cols = getColumns();
   wrap.innerHTML = cols.map((c, i)=>`
     <div class="settings-col-item" draggable="true" data-key="${c.key}" ondragstart="colDragStart(event,'${c.key}')" ondragover="colDragOver(event)" ondragleave="colDragLeave(event)" ondrop="colDrop(event,'${c.key}')" ondragend="colDragEnd(event)">
-      <div class="settings-col-handle" aria-hidden="true" title="Arrastar para reordenar">⠿</div>
+      <div class="settings-col-handle" aria-hidden="true" title="Arrastar para reordenar"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></div>
       <div class="settings-col-dot" style="background:${corSegura(c.color)}"></div>
       <div class="settings-col-name">${esc(c.name)}</div>
       <button class="settings-col-edit" onclick="moveColumn('${c.key}', -1)" ${i === 0 ? 'disabled' : ''} title="Mover para cima" aria-label="Mover ${esc(c.name)} para cima">
@@ -406,6 +438,7 @@ function selectTheme(name){
   applyTheme(name);
   document.querySelectorAll('.theme-card').forEach(c=>{
     c.classList.toggle('selected', c.dataset.theme === name);
+    c.setAttribute('aria-checked', c.dataset.theme === name);
   });
 }
 
@@ -1397,13 +1430,13 @@ function updateGoogleStatusUI(){
   const syncBtn = document.getElementById('google-cal-sync-btn');
   if(isGoogleConnected()){
     const expiring = isGoogleExpiringSoon();
-    const hint = expiring ? ` <span style="color:var(--waiting);">· expira em breve, reconecte</span>` : '';
-    el.innerHTML = `<span style="color:var(--done);">● Conectado</span>${hint}`;
+    const hint = expiring ? ` <span style="color:var(--waiting);">Expira em breve, reconecte.</span>` : '';
+    el.innerHTML = `<span class="set-status ligado">Conectado</span>${hint}`;
     btn.textContent = 'Desconectar';
     btn.onclick = disconnectGoogleCalendar;
     if(syncBtn) syncBtn.style.display = '';
   } else {
-    el.innerHTML = `<span style="color:var(--text-muted);">○ Não conectado</span>`;
+    el.innerHTML = `<span class="set-status">Não conectado</span>`;
     btn.textContent = 'Conectar';
     btn.onclick = connectGoogleCalendar;
     if(syncBtn) syncBtn.style.display = 'none';
@@ -2457,12 +2490,14 @@ function updatePendingInvitesBadge(){
   const el = document.getElementById('pending-invites-badge');
   if(el){
     if(state.pendingInvites.length > 0){
-      el.innerHTML = `<span class="invite-dot-badge"></span> ${state.pendingInvites.length} convite${state.pendingInvites.length>1?'s':''}`;
-      el.style.color = 'var(--waiting)';
-      el.style.fontFamily = "'JetBrains Mono',monospace";
-      el.style.fontSize = '10.5px';
+      const n = state.pendingInvites.length;
+      el.className = 'set-aba-badge';
+      el.textContent = n;
+      el.setAttribute('aria-label', `${n} convite${n > 1 ? 's' : ''} pendente${n > 1 ? 's' : ''}`);
     } else {
+      el.className = '';
       el.textContent = '';
+      el.removeAttribute('aria-label');
     }
   }
   renderSidebarProjects();
