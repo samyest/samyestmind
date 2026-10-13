@@ -9,13 +9,12 @@ web
 ## Users
 
 - **Samir, o dono do app** (inferido do código): usa no dia a dia para tarefas de
-  clientes, rotinas e os recursos pessoais (Desafio de 88 dias e Metas), que só
-  existem na conta dele.
+  clientes, rotinas, Metas e o Desafio de 88 dias, que só existe na conta dele.
 - **Pessoas convidadas para projetos compartilhados** (inferido do código): editam
   ou só visualizam o quadro, o calendário e as notas de um projeto.
 - **Contas abertas pelo cadastro** (inferido do código): o cadastro por email e senha
-  está aberto; essas contas têm tarefas, rotinas, projetos e Google Calendar, mas não
-  os recursos pessoais.
+  está aberto; essas contas têm tarefas, rotinas, projetos, Metas e Google Calendar,
+  mas não o Desafio.
 
 ## Product Purpose
 
@@ -43,8 +42,9 @@ rotina. Nada disso vive em apps separados.
 
 - HTML, CSS e JavaScript puros, sem build (`index.html`, `styles.css`, `script.js`);
   funções da Vercel em `api/`; Supabase com RLS; SQL versionado em `supabase/`.
-- Recursos pessoais (Desafio, Metas) ficam restritos ao email do dono, inclusive nas
-  policies do banco — confirmado pelo usuário para as Metas.
+- O Desafio fica restrito ao email do dono, inclusive nas policies do banco. As Metas
+  começaram assim e foram abertas para todas as contas (cada uma só vê as próprias);
+  uma apresentação abre uma vez por conta, registrada em `profiles.novidades_vistas`.
 - Metas (decidido): quatro tipos — chegar a um número, criar um hábito, concluir em
   etapas, feito/não feito. Um hábito pode virar rotina e aparecer como tarefa nos
   dias marcados; concluir essa tarefa conta na meta. O Desafio fica dentro da seção

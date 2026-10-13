@@ -1,5 +1,5 @@
 -- ============================================================================
---  samyest.mind — Metas (seção da barra lateral, só da conta dona)
+--  samyest.mind — Metas (seção da barra lateral)
 -- ============================================================================
 --
 --  ONDE RODAR
@@ -18,9 +18,9 @@
 --    ou o dia marcado como feito (habito).
 --
 --  QUEM VÊ
---    Só a conta dona, como o Desafio (supabase/desafio.sql): as policies
---    exigem o próprio user_id E o email da conta. Outras contas não leem nem
---    gravam nada aqui, mesmo chamando a API direto.
+--    Cada conta só as próprias metas (policies pelo user_id). No começo era
+--    só da conta dona; supabase/metas_para_todos.sql abriu para todo mundo
+--    num banco que já tinha rodado a versão antiga deste arquivo.
 -- ============================================================================
 
 
@@ -52,8 +52,8 @@ drop policy if exists "own goals" on public.goals;
 create policy "own goals"
   on public.goals
   for all
-  using (auth.uid() = user_id and (auth.jwt() ->> 'email') = 'samirahmadpour@gmail.com')
-  with check (auth.uid() = user_id and (auth.jwt() ->> 'email') = 'samirahmadpour@gmail.com');
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 
 -- 2. Registros (um por meta por dia) -----------------------------------------
@@ -70,19 +70,15 @@ create table if not exists public.goal_entries (
 
 alter table public.goal_entries enable row level security;
 
--- Além do dono, o registro só pode apontar para uma meta que também é dele:
+-- Além da conta, o registro só pode apontar para uma meta que também é dela:
 -- sem o exists, daria para pendurar registros na meta de outra conta.
 drop policy if exists "own goal entries" on public.goal_entries;
 create policy "own goal entries"
   on public.goal_entries
   for all
-  using (
-    auth.uid() = user_id
-    and (auth.jwt() ->> 'email') = 'samirahmadpour@gmail.com'
-  )
+  using (auth.uid() = user_id)
   with check (
     auth.uid() = user_id
-    and (auth.jwt() ->> 'email') = 'samirahmadpour@gmail.com'
     and exists (select 1 from public.goals g where g.id = goal_id and g.user_id = auth.uid())
   );
 

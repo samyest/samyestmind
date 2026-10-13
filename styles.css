@@ -3115,7 +3115,7 @@
   }
 
   /* Desafio 88 dias ---------------------------------------------------------- */
-  #desafio-nav-group[hidden], #desafio-btn-mobile[hidden]{display:none !important;}
+  #desafio-nav-item[hidden], #desafio-btn-mobile[hidden]{display:none !important;}
 
 
   .desafio-bar{
@@ -4098,6 +4098,41 @@
   .meta-linha-nome{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .meta-linha-prog{flex-shrink:0;font-size:12.5px;color:var(--text-muted);font-variant-numeric:tabular-nums;}
   .meta-linha-icone{width:15px;height:15px;flex-shrink:0;color:var(--accent);}
+
+  /* Apresentação das Metas (abre uma vez por conta) */
+  .modal.metas-intro{max-width:480px;}
+  /* Aqui o título é a mensagem, não a etiqueta do modal. */
+  .metas-intro .modal-head-title{
+    font-family:'Space Grotesk';
+    font-weight:500;
+    font-size:20px;
+    line-height:1.25;
+    letter-spacing:-0.01em;
+    text-transform:none;
+    color:var(--text-strong);
+    outline:none;
+  }
+  .metas-intro-tipos{list-style:none;margin:18px 0 0;padding:0;}
+  .metas-intro-tipo{
+    display:grid;
+    grid-template-columns:22px minmax(0, 1fr);
+    gap:12px;
+    padding:12px 0;
+    border-top:1px solid var(--line);
+  }
+  .metas-intro-icone{width:20px;height:20px;margin-top:1px;color:var(--accent);}
+  .metas-intro-nome{font-family:'Space Grotesk';font-weight:500;font-size:14.5px;color:var(--text-strong);}
+  .metas-intro-desc{margin-top:2px;font-size:13px;line-height:1.45;color:var(--text-muted);}
+  .metas-intro-onde{
+    margin:6px 0 0;
+    padding:12px 14px;
+    border-radius:12px;
+    background:var(--glass-strong);
+    border:1px solid var(--glass-border-soft);
+    font-size:13px;
+    line-height:1.45;
+    color:var(--text);
+  }
 
   @media (max-width:900px){
     .meta-head{grid-template-columns:auto minmax(0, 1fr);gap:12px 14px;}

@@ -843,6 +843,7 @@ let state = {
   selecting: false,
   selected: new Set(),
   ignoredEvents: new Set(),
+  novidadesVistas: [],
   metas: {lista: [], registros: {}, modo: {}, carregado: false, precisaSql: false, atual: null, verConcluidas: false, viewAntes: null, calMes: null}
 };
 
@@ -1113,6 +1114,7 @@ async function checkAuth(){
     state.myAvatarUrl = myProfile.avatar_url || null;
     state.savedTheme = myProfile.theme || 'bluegray';
     state.soundEnabled = myProfile.sound_enabled !== false;
+    state.novidadesVistas = Array.isArray(myProfile.novidades_vistas) ? myProfile.novidades_vistas : [];
     applyTheme(state.savedTheme);
     state.columns = normalizarColunas(myProfile.kanban_columns) || JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
     document.getElementById('user-email').textContent = email || '';
@@ -1136,6 +1138,7 @@ async function checkAuth(){
       runGoogleSync();
     }
     await handleGoogleRedirect();
+    talvezApresentarMetas();
   } else {
     appEl.style.display = 'none';
     onbEl.classList.remove('show');
@@ -3088,19 +3091,13 @@ function renderProjectsList(){
         <button class="btn-secondary" onclick="openProjectsModal()">Gerenciar</button>
         <button class="btn-primary btn-com-icone" onclick="novoProjetoRapido()">${ICONE_MAIS}Novo projeto</button>
       </div>`;
-  // Com as metas no topo (só a conta dona) a tela vira "Metas e projetos", e
-  // os botões de projeto descem para junto da lista que eles afetam — no
-  // topo, separados dela por todas as metas, ficavam longe do que mudam.
-  if(isDesafioOwner()){
-    return `
-      <div class="view-header"><div><h1>Metas e projetos</h1></div></div>
-      ${renderMetasMobile()}
-      <div class="secao-head projetos-head"><h2 class="panel-title">Projetos</h2>${acoesProjetos}</div>
-      ${invitesHtml}
-      ${listHtml}`;
-  }
+  // Com as metas no topo a tela vira "Metas e projetos", e os botões de
+  // projeto descem para junto da lista que eles afetam — no topo, separados
+  // dela por todas as metas, ficavam longe do que mudam.
   return `
-    <div class="view-header"><div><h1>Projetos</h1></div>${acoesProjetos}</div>
+    <div class="view-header"><div><h1>Metas e projetos</h1></div></div>
+    ${renderMetasMobile()}
+    <div class="secao-head projetos-head"><h2 class="panel-title">Projetos</h2>${acoesProjetos}</div>
     ${invitesHtml}
     ${listHtml}`;
 }
@@ -3649,7 +3646,7 @@ function render(){
   else if(state.view === 'project') m.innerHTML = renderProjectPage();
   else if(state.view === 'projects') m.innerHTML = renderProjectsList();
   else if(state.view === 'desafio') m.innerHTML = isDesafioOwner() ? renderDesafio() : renderDashboard();
-  else if(state.view === 'meta') m.innerHTML = isDesafioOwner() ? renderMetaPage() : renderDashboard();
+  else if(state.view === 'meta') m.innerHTML = renderMetaPage();
 
   m.classList.toggle('no-entrance', sameView || skipEntranceOnce);
   skipEntranceOnce = false;
@@ -5173,6 +5170,7 @@ const FECHAR_MODAL = {
   'status-modal': ()=>closeStatusModal(),
   'projects-modal': ()=>closeProjectsModal(),
   'meta-modal': ()=>fecharNovaMeta(),
+  'metas-intro-modal': ()=>fecharApresentacaoMetas(),
   'confirm-modal': ()=>resolveDialog(null)
 };
 const SALVAR_MODAL = {
@@ -5366,11 +5364,13 @@ function isDesafioOwner(){
   return !!(session && session.user && (session.user.email || '').toLowerCase() === DESAFIO_EMAIL);
 }
 
+// As Metas são de todo mundo; só o Desafio, dentro da mesma seção, é da
+// conta dona.
 function setupDesafioNav(){
   const dono = isDesafioOwner();
-  const grupo = document.getElementById('desafio-nav-group');
+  const item = document.getElementById('desafio-nav-item');
   const mob = document.getElementById('desafio-btn-mobile');
-  if(grupo) grupo.hidden = !dono;
+  if(item) item.hidden = !dono;
   if(mob) mob.hidden = !dono;
 }
 
@@ -6379,7 +6379,6 @@ function metaLinha(r){
 }
 
 async function loadMetas(){
-  if(!isDesafioOwner()) return;
   const [metas, regs] = await Promise.all([
     sb.from('goals').select('*').order('created_at', {ascending: true}),
     sb.from('goal_entries').select('id, goal_id, date, value').order('date', {ascending: true})
@@ -6583,7 +6582,7 @@ function metaProgresso(g){
 
 function renderSidebarMetas(){
   const wrap = document.getElementById('sidebar-metas');
-  if(!wrap || !isDesafioOwner()) return;
+  if(!wrap) return;
   if(state.metas.precisaSql){
     wrap.innerHTML = `<div class="nav-empty">Falta rodar o supabase/metas.sql</div>`;
     return;
@@ -6616,7 +6615,7 @@ function renderSidebarMetas(){
 /* ---------- navegação ---------- */
 
 function abrirMeta(id){
-  if(!isDesafioOwner() || !metaPorId(id)) return;
+  if(!metaPorId(id)) return;
   flushNotesIfPending();
   if(state.view !== 'meta') state.metas.viewAntes = state.view;
   state.metas.atual = id;
@@ -6682,7 +6681,6 @@ function passosDaMeta(r){
 }
 
 function abrirNovaMeta(){
-  if(!isDesafioOwner()) return;
   if(state.metas.precisaSql){ showToast('Falta rodar o supabase/metas.sql no Supabase.', 'erro'); return; }
   metaEditandoId = null;
   metaRascunho = novoRascunhoMeta();
@@ -7644,7 +7642,6 @@ function renderMetaPage(){
 // Linhas compactas num painel só, a mesma leitura da barra lateral: um cartão
 // de vidro por meta, com número e barra, virava um painel de cards de métrica.
 function renderMetasMobile(){
-  if(!isDesafioOwner()) return '';
   const ativas = state.metas.lista.filter(g=>g.status === 'ativa');
   const desafio = desafioDiaAtual();
   const linha = (acao, marca, nome, progresso)=>`
@@ -7660,11 +7657,82 @@ function renderMetasMobile(){
         <h2 class="panel-title" id="metas-mobile-titulo">Metas</h2>
         <button class="btn-secondary btn-com-icone" onclick="abrirNovaMeta()">${ICONE_MAIS}Nova meta</button>
       </div>
-      ${linha('goDesafio()', trofeu, 'Desafio', desafio.dia ? `dia ${desafio.dia} de ${desafio.total}` : 'começa amanhã')}
+      ${isDesafioOwner() ? linha('goDesafio()', trofeu, 'Desafio', desafio.dia ? `dia ${desafio.dia} de ${desafio.total}` : 'começa amanhã') : ''}
       ${ativas.map(g=>linha(`abrirMeta('${g.id}')`, `<span class="sidebar-meta-dot" style="--area:${corDaArea(g.area)}" aria-hidden="true"></span>`, esc(g.title), esc(metaProgresso(g).longo))).join('')}
       ${!state.metas.lista.length && !state.metas.precisaSql ? '<p class="meta-vazio">Nenhuma meta ainda. Toque em Nova meta para criar a primeira.</p>' : ''}
       ${state.metas.precisaSql ? '<p class="meta-dica">Falta rodar o supabase/metas.sql no Supabase.</p>' : ''}
     </section>`;
+}
+
+/* ---------- apresentação das Metas (uma vez por conta) ---------- */
+
+// O que cada tipo faz, em uma linha: o exemplo do passo a passo diz o que dá
+// para pôr ali, isto diz o que o app faz com a meta depois.
+const APRESENTACAO_METAS = {
+  numero: 'Você registra o avanço e vê se está no ritmo para o prazo.',
+  habito: 'Vira rotina: a tarefa aparece sozinha nos dias que você marcar.',
+  etapas: 'Uma lista do que falta, riscada etapa por etapa.',
+  unica: 'Um prazo e a contagem até ele.'
+};
+
+function chaveNovidadeLocal(chave){
+  return `novidade_${chave}_${session.user.id}`;
+}
+
+// O perfil guarda a lista para valer em qualquer aparelho; o localStorage
+// segura enquanto o SQL da coluna não rodou ou se a gravação falhar.
+function novidadeVista(chave){
+  if(state.novidadesVistas.includes(chave)) return true;
+  try{ return localStorage.getItem(chaveNovidadeLocal(chave)) === '1'; }catch(e){ return false; }
+}
+
+async function marcarNovidadeVista(chave){
+  try{ localStorage.setItem(chaveNovidadeLocal(chave), '1'); }catch(e){}
+  if(state.novidadesVistas.includes(chave)) return;
+  state.novidadesVistas = [...state.novidadesVistas, chave];
+  const {error} = await sb.from('profiles').update({novidades_vistas: state.novidadesVistas}).eq('id', session.user.id);
+  if(error) console.warn('novidades_vistas não salvou (falta rodar o supabase/metas_para_todos.sql?)', error);
+}
+
+function talvezApresentarMetas(){
+  if(novidadeVista('metas') || state.metas.precisaSql) return;
+  // Quem já criou meta (a conta dona usa desde antes) não precisa do aviso.
+  if(state.metas.lista.length){ marcarNovidadeVista('metas'); return; }
+  setTimeout(()=>{
+    // Outro modal aberto (convite, retorno do Google): fica para a próxima visita.
+    if(!session || topOpenModal() || novidadeVista('metas')) return;
+    abrirApresentacaoMetas();
+  }, 700);
+}
+
+function abrirApresentacaoMetas(){
+  document.getElementById('metas-intro-tipos').innerHTML = Object.entries(META_TIPOS).map(([k, t])=>`
+    <li class="metas-intro-tipo">
+      <svg class="metas-intro-icone" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${t.icone}</svg>
+      <div>
+        <div class="metas-intro-nome">${t.nome}</div>
+        <div class="metas-intro-desc">${t.exemplo}. ${APRESENTACAO_METAS[k]}</div>
+      </div>
+    </li>`).join('');
+  document.getElementById('metas-intro-onde').textContent = window.matchMedia('(max-width:900px)').matches
+    ? 'Elas ficam na aba Projetos, acima dos seus projetos.'
+    : 'Elas ficam na barra lateral, em Metas. Para criar outra depois, passe o mouse no título e clique no +.';
+  document.getElementById('metas-intro-modal').classList.add('open');
+  // Abriu sozinho, sem clique: o foco vai para o título (lido primeiro pelo
+  // leitor de tela) em vez de acender o anel no botão de fechar.
+  setTimeout(()=>document.getElementById('metas-intro-title').focus(), 0);
+}
+
+function fecharApresentacaoMetas(){
+  document.getElementById('metas-intro-modal').classList.remove('open');
+  marcarNovidadeVista('metas');
+}
+
+function criarMetaDaApresentacao(){
+  fecharApresentacaoMetas();
+  // Depois do observador de foco devolver o foco do modal que fechou; senão o
+  // passo a passo guardaria o botão escondido como "onde o foco estava".
+  setTimeout(abrirNovaMeta, 0);
 }
 
 watchModalFocus();

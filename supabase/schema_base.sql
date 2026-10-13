@@ -51,7 +51,8 @@ create table if not exists public.profiles (
   updated_at     timestamptz default now(),
   theme          text default 'bluegray',
   kanban_columns jsonb,
-  sound_enabled  boolean default true
+  sound_enabled  boolean default true,
+  novidades_vistas text[] not null default '{}'
 );
 
 

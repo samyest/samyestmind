@@ -9,9 +9,9 @@ related_targets: ["index.html","styles.css"]
 
 Modo: Operate. Extensão do mundo visual existente (vidro, temas, Space Grotesk + Inter); nada de identidade nova.
 
-Público e tarefa: só a conta do dono. Criar uma meta em segundos a partir do + ao lado de "Metas" na barra lateral e registrar avanço em um toque na página dela. "Projetos" ganha o mesmo + (todas as contas).
+Público e tarefa: todas as contas (no começo era só a do dono). Criar uma meta em segundos a partir do + ao lado de "Metas" na barra lateral e registrar avanço em um toque na página dela. "Projetos" ganha o mesmo + (todas as contas).
 
-Decidido com o usuário: quatro tipos (número, hábito, etapas, feito/não feito); hábito vira rotina e as tarefas concluídas da rotina contam; Desafio entra como primeiro item de Metas; metas só na conta do dono (RLS por email).
+Decidido com o usuário: quatro tipos (número, hábito, etapas, feito/não feito); hábito vira rotina e as tarefas concluídas da rotina contam; Desafio entra como primeiro item de Metas e continua só na conta do dono; as metas abriram para todas as contas (RLS pelo user_id), com uma apresentação que abre uma vez por conta.
 
 Fora do escopo: as metas internas do Desafio; projetos além do +.
 
@@ -21,7 +21,7 @@ THESIS: Criar uma meta é responder poucas perguntas, uma por vez, tocando em re
 
 OWN-WORLD: O vidro do app (--modal-glass, blur, borda suave), Space Grotesk nos títulos e Inter no resto, o accent do tema só no que está selecionado e nas ações, e a cor da área da meta como único toque de cor por meta. Cartões de escolha grandes com ícone de traço, nome e um exemplo em texto suave; progresso como barra fina.
 
-STORY: O dono toca o + ao lado de Metas, escolhe o tipo, dá nome, define a medida e o prazo, revisa e cria. A meta entra na barra lateral com o progresso, e a página dela recebe o avanço em um toque.
+STORY: A pessoa toca o + ao lado de Metas, escolhe o tipo, dá nome, define a medida e o prazo, revisa e cria. A meta entra na barra lateral com o progresso, e a página dela recebe o avanço em um toque.
 
 FIRST VIEWPORT: Modal de vidro de 560px; no topo, "Nova meta" e os pontos de progresso; a pergunta em 20px Space Grotesk; grade 2×2 de cartões de tipo; rodapé com Voltar e Continuar (accent). No celular, folha inferior com a mesma grade.
 

@@ -64,14 +64,14 @@
         <svg aria-hidden="true" focusable="false" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
         Todas as tarefas
       </button>
-      <div id="desafio-nav-group" hidden>
+      <div id="metas-nav-group">
         <div class="nav-section-head">
           <div class="nav-label">Metas</div>
           <button class="nav-section-add" onclick="abrirNovaMeta()" title="Nova meta" aria-label="Nova meta">
             <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
         </div>
-        <button class="nav-item" data-view="desafio">
+        <button class="nav-item" id="desafio-nav-item" data-view="desafio" hidden>
           <svg aria-hidden="true" focusable="false" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 01-10 0V4z"/><path d="M17 5h3v2a3 3 0 01-3 3M7 5H4v2a3 3 0 003 3"/></svg>
           Desafio
         </button>
@@ -581,6 +581,29 @@
     <div class="modal-foot">
       <button class="btn-secondary" id="meta-voltar" onclick="voltarMeta()">Cancelar</button>
       <button class="btn-primary" id="meta-seguir" onclick="avancarMeta()">Continuar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="metas-intro-modal" role="dialog" aria-modal="true" aria-labelledby="metas-intro-title" aria-describedby="metas-intro-texto">
+  <div class="modal metas-intro">
+    <div class="modal-head">
+      <div class="modal-head-title" id="metas-intro-title" tabindex="-1">Agora dá pra criar metas</div>
+      <button class="modal-close" onclick="fecharApresentacaoMetas()" aria-label="Fechar">
+        <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="dialog-text" id="metas-intro-texto">Escolha o que quer alcançar e o app acompanha com você. Cada meta ganha uma página com o progresso e o que falta.</p>
+      <ul class="metas-intro-tipos" id="metas-intro-tipos"></ul>
+      <p class="metas-intro-onde" id="metas-intro-onde"></p>
+    </div>
+    <div class="modal-foot">
+      <div></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-secondary" onclick="fecharApresentacaoMetas()">Agora não</button>
+        <button class="btn-primary" onclick="criarMetaDaApresentacao()">Criar minha primeira meta</button>
+      </div>
     </div>
   </div>
 </div>
