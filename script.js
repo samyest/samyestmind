@@ -842,7 +842,8 @@ let state = {
   expandedCols: new Set(),
   selecting: false,
   selected: new Set(),
-  ignoredEvents: new Set()
+  ignoredEvents: new Set(),
+  metas: {lista: [], registros: {}, modo: {}, carregado: false, precisaSql: false, atual: null, verConcluidas: false, viewAntes: null}
 };
 
 // Eventos que o usuário já descartou uma vez. Sem isto, a sincronização completa
@@ -1123,7 +1124,7 @@ async function checkAuth(){
     restoreProjectsCache();
     // Em paralelo: uma consulta não precisa esperar a outra terminar. Só gerar
     // as rotinas precisa das tarefas e das rotinas já carregadas.
-    await Promise.all([loadTasks(), loadRoutines(), loadProjects(), loadIgnoredEvents(), loadDesafio(), loadGoogleSession()]);
+    await Promise.all([loadTasks(), loadRoutines(), loadProjects(), loadIgnoredEvents(), loadDesafio(), loadMetas(), loadGoogleSession()]);
     await generateRoutineInstances();
     setupRealtime();
     startRoutineCheckLoop();
@@ -2476,8 +2477,11 @@ function renderSidebarProjects(){
       </button>`;
   }
 
-  if(state.projects.length > 0){
-    html += `<div class="nav-label">Projetos</div>`;
+  // Sempre visível, mesmo sem projeto: o + no título é o caminho para criar.
+  html += cabecalhoSecaoNav('Projetos', 'novoProjetoRapido()', 'Novo projeto');
+  if(state.projects.length === 0){
+    html += `<button class="nav-empty-acao" onclick="novoProjetoRapido()">Criar o primeiro projeto</button>`;
+  } else {
     html += state.projects.map(p=>{
       const role = p.myRole === 'owner' ? 'Dono' : (myRoleInProject(p.id) === 'editor' ? 'Editor' : 'Vendo');
       const isActive = state.view === 'project' && state.currentProjectId === p.id;
@@ -2506,15 +2510,41 @@ function canEditProject(projectId){
   return role === 'owner' || role === 'editor';
 }
 
+// Título de seção da barra lateral com o + que só aparece ao passar o mouse
+// (ou ao chegar nele pelo Tab).
+function cabecalhoSecaoNav(nome, acao, rotulo){
+  return `
+    <div class="nav-section-head">
+      <div class="nav-label">${nome}</div>
+      <button class="nav-section-add" onclick="${acao}" title="${rotulo}" aria-label="${rotulo}">${ICONE_MAIS}</button>
+    </div>`;
+}
+
+async function criarProjetoRemoto(name){
+  const {data, error} = await sb.from('projects').insert({name, owner_id: session.user.id, owner_email: session.user.email}).select().single();
+  if(error){console.error(error);showToast('Não deu para criar o projeto. Tente de novo em instantes.', 'erro');return null;}
+  return data;
+}
+
 async function createProject(){
   const nameInput = document.getElementById('new-project-name');
   const name = nameInput.value.trim();
   if(!name){nameInput.focus();return;}
-  const {error} = await sb.from('projects').insert({name, owner_id: session.user.id, owner_email: session.user.email});
-  if(error){console.error(error);showToast('Não deu para criar o projeto. Tente de novo em instantes.', 'erro');return;}
+  if(!await criarProjetoRemoto(name)) return;
   nameInput.value = '';
   await loadProjects();
   renderProjectsModal();
+  showToast('Projeto criado');
+}
+
+// O + de Projetos na barra lateral: pede só o nome, cria e já abre o quadro.
+async function novoProjetoRapido(){
+  const name = await perguntar('Novo projeto', {label: 'Nome do projeto', placeholder: 'Ex: Lançamento da loja', okLabel: 'Criar projeto'});
+  if(!name) return;
+  const criado = await criarProjetoRemoto(name.slice(0, 80));
+  if(!criado) return;
+  await loadProjects();
+  openProjectView(criado.id);
   showToast('Projeto criado');
 }
 
@@ -3053,11 +3083,24 @@ function renderProjectsList(){
           </div>`;
       }).join('')}</div>`;
 
+  const acoesProjetos = `
+      <div class="projects-list-acoes">
+        <button class="btn-secondary" onclick="openProjectsModal()">Gerenciar</button>
+        <button class="btn-primary btn-com-icone" onclick="novoProjetoRapido()">${ICONE_MAIS}Novo projeto</button>
+      </div>`;
+  // Com as metas no topo (só a conta dona) a tela vira "Metas e projetos", e
+  // os botões de projeto descem para junto da lista que eles afetam — no
+  // topo, separados dela por todas as metas, ficavam longe do que mudam.
+  if(isDesafioOwner()){
+    return `
+      <div class="view-header"><div><h1>Metas e projetos</h1></div></div>
+      ${renderMetasMobile()}
+      <div class="secao-head projetos-head"><h2 class="panel-title">Projetos</h2>${acoesProjetos}</div>
+      ${invitesHtml}
+      ${listHtml}`;
+  }
   return `
-    <div class="view-header">
-      <div><div class="eyebrow">Trabalho em equipe</div><h1>Projetos</h1></div>
-      <button class="btn-secondary" onclick="openProjectsModal()">👥 Gerenciar</button>
-    </div>
+    <div class="view-header"><div><h1>Projetos</h1></div>${acoesProjetos}</div>
     ${invitesHtml}
     ${listHtml}`;
 }
@@ -3571,6 +3614,7 @@ function updateNav(){
   });
   state.recentClients = ordered;
   renderSidebarProjects();
+  renderSidebarMetas();
 }
 
 let skipEntranceOnce = false;
@@ -3583,7 +3627,8 @@ function render(){
   // A animação de entrada é para quando se troca de tela. Repetir ela a cada
   // atualização em lugar (sync, realtime, filtro, seleção) é o que faz a tela
   // piscar. Redesenhar a mesma tela também não deve perder a rolagem lateral.
-  const viewKey = state.view === 'project' ? `project:${state.currentProjectId}` : state.view;
+  const viewKey = state.view === 'project' ? `project:${state.currentProjectId}`
+    : state.view === 'meta' ? `meta:${state.metas.atual}` : state.view;
   const sameView = viewKey === lastRenderedView;
   lastRenderedView = viewKey;
   const keepScroll = sameView ? m.scrollLeft : 0;
@@ -3604,6 +3649,7 @@ function render(){
   else if(state.view === 'project') m.innerHTML = renderProjectPage();
   else if(state.view === 'projects') m.innerHTML = renderProjectsList();
   else if(state.view === 'desafio') m.innerHTML = isDesafioOwner() ? renderDesafio() : renderDashboard();
+  else if(state.view === 'meta') m.innerHTML = isDesafioOwner() ? renderMetaPage() : renderDashboard();
 
   m.classList.toggle('no-entrance', sameView || skipEntranceOnce);
   skipEntranceOnce = false;
@@ -5085,12 +5131,14 @@ const FECHAR_MODAL = {
   'routine-modal': ()=>closeRoutineModal(),
   'status-modal': ()=>closeStatusModal(),
   'projects-modal': ()=>closeProjectsModal(),
+  'meta-modal': ()=>fecharNovaMeta(),
   'confirm-modal': ()=>resolveDialog(null)
 };
 const SALVAR_MODAL = {
   'modal': ()=>saveTask(),
   'column-modal': ()=>saveColumn(),
   'routine-modal': ()=>saveRoutineModal(),
+  'meta-modal': ()=>avancarMeta(),
   'confirm-modal': ()=>submitDialog()
 };
 
@@ -6207,6 +6255,1229 @@ function renderDesafio(){
 
     <div role="tabpanel">${corpo}</div>
   `;
+}
+
+// ============================================================================
+//  Metas — seção da barra lateral, só da conta dona (como o Desafio).
+//  As tabelas barram outras contas no RLS (supabase/metas.sql).
+//  Criação em passos (tipo → nome → medida → prazo → revisão) e uma página
+//  por meta, que muda de forma conforme o tipo.
+// ============================================================================
+
+const META_TIPOS = {
+  numero: {nome:'Chegar a um número', exemplo:'Ler 12 livros, juntar R$\u00a010\u00a0mil', placeholder:'Ex: Ler 12 livros',
+    icone:'<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>'},
+  habito: {nome:'Criar um hábito', exemplo:'Treinar 4 vezes por semana', placeholder:'Ex: Treinar',
+    icone:'<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/>'},
+  etapas: {nome:'Concluir em etapas', exemplo:'Lançar o site, mudar de casa', placeholder:'Ex: Lançar o site',
+    icone:'<path d="M10 6h11M10 12h11M10 18h11"/><path d="M3 6l1.5 1.5L7 5"/><path d="M3 12l1.5 1.5L7 11"/><path d="M3 18l1.5 1.5L7 17"/>'},
+  unica: {nome:'Feito ou não feito', exemplo:'Tirar a CNH até março', placeholder:'Ex: Tirar a CNH',
+    icone:'<path d="M5 22V4"/><path d="M5 4h12l-2.5 4.5L17 13H5"/>'}
+};
+const META_AREAS = [
+  {key:'saude', nome:'Saúde', cor:'#5CA05A'},
+  {key:'dinheiro', nome:'Dinheiro', cor:'#D4A93F'},
+  {key:'carreira', nome:'Carreira', cor:'#7D9AB3'},
+  {key:'estudos', nome:'Estudos', cor:'#9B5FBF'},
+  {key:'casa', nome:'Casa', cor:'#D4826B'},
+  {key:'pessoal', nome:'Pessoal', cor:'#C9587A'}
+];
+const META_UNIDADES = ['livros', 'kg', 'R$', 'km', 'horas', 'páginas', '%'];
+// Unidades em que se registra "onde estou agora" (o peso de hoje), e não
+// quanto se somou desde a última vez (mais um livro lido).
+const META_UNIDADES_ABSOLUTAS = ['kg', '%'];
+const META_PRAZOS = [
+  {key:'1m', nome:'Em 1 mês'},
+  {key:'3m', nome:'Em 3 meses'},
+  {key:'6m', nome:'Em 6 meses'},
+  {key:'ano', nome:'Até o fim do ano'},
+  {key:'data', nome:'Escolher data'},
+  {key:'sem', nome:'Sem prazo'}
+];
+const ICONE_MAIS = '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+const ICONE_CHECK = '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+const ICONE_X = '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+const NUM_META = new Intl.NumberFormat(LOCALE_APP, {maximumFractionDigits: 2});
+
+/* ---------- dados ---------- */
+
+// Ids de etapa entram crus em onclick: só letras minúsculas e dígitos.
+function idEtapa(){
+  return Array.from(crypto.getRandomValues(new Uint8Array(8)), b=>(b % 36).toString(36)).join('');
+}
+
+function numMeta(v){
+  if(v === null || v === undefined || String(v).trim() === '') return null;
+  const n = Number(String(v).replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+function metaLinha(r){
+  const steps = Array.isArray(r.steps) ? r.steps : [];
+  return {
+    id: r.id,
+    kind: META_TIPOS[r.kind] ? r.kind : 'unica',
+    title: r.title || '',
+    area: META_AREAS.some(a=>a.key === r.area) ? r.area : null,
+    why: r.why || '',
+    unit: r.unit || '',
+    start: numMeta(r.start_value),
+    target: numMeta(r.target_value),
+    weekdays: Array.isArray(r.weekdays) ? r.weekdays.filter(d=>Number.isInteger(d) && d >= 0 && d <= 6) : [],
+    routineId: r.routine_id || null,
+    steps: steps.filter(s=>s && typeof s.t === 'string').map(s=>({
+      id: /^[a-z0-9]{1,16}$/.test(String(s.id)) ? String(s.id) : idEtapa(),
+      t: s.t.slice(0, 160),
+      ok: !!s.ok
+    })),
+    due: r.due_date || null,
+    status: r.status === 'concluida' ? 'concluida' : 'ativa',
+    completedAt: r.completed_at || null,
+    created: r.created_at || null
+  };
+}
+
+async function loadMetas(){
+  if(!isDesafioOwner()) return;
+  const [metas, regs] = await Promise.all([
+    sb.from('goals').select('*').order('created_at', {ascending: true}),
+    sb.from('goal_entries').select('id, goal_id, date, value').order('date', {ascending: true})
+  ]);
+  const erro = metas.error || regs.error;
+  if(erro){
+    console.error(erro);
+    // Tabela ainda não criada: a barra lateral diz onde rodar o SQL em vez
+    // de ficar vazia sem explicação.
+    state.metas.precisaSql = erro.code === '42P01' || erro.code === 'PGRST205' || /goals|goal_entries|schema cache/i.test(erro.message || '');
+    state.metas.carregado = false;
+    return;
+  }
+  state.metas.lista = (metas.data || []).map(metaLinha);
+  state.metas.registros = {};
+  (regs.data || []).forEach(r=>{
+    (state.metas.registros[r.goal_id] = state.metas.registros[r.goal_id] || [])
+      .push({id: r.id, date: r.date, value: numMeta(r.value)});
+  });
+  state.metas.precisaSql = false;
+  state.metas.carregado = true;
+}
+
+function metaPorId(id){ return state.metas.lista.find(g=>g.id === id) || null; }
+function metaRegistros(g){ return state.metas.registros[g.id] || []; }
+function corDaArea(area){ const a = META_AREAS.find(x=>x.key === area); return a ? a.cor : 'var(--accent)'; }
+function nomeDaArea(area){ const a = META_AREAS.find(x=>x.key === area); return a ? a.nome : ''; }
+
+/* ---------- contas ---------- */
+
+function fmtMetaValor(v, unit){
+  const n = NUM_META.format(Number(v) || 0);
+  if(unit === 'R$') return `R$ ${n}`;
+  if(unit === '%') return `${n}%`;
+  return unit ? `${n} ${unit}` : n;
+}
+
+function dataLonga(iso){
+  const [y, m, d] = iso.split('-').map(Number);
+  const ano = y !== new Date().getFullYear() ? ` de ${y}` : '';
+  return `${d} de ${MESES_LONGOS[m - 1]}${ano}`;
+}
+
+function diasAte(iso){
+  const [y, m, d] = iso.split('-').map(Number);
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  return Math.round((new Date(y, m - 1, d) - hoje) / 86400000);
+}
+
+function textoPrazo(dias){
+  if(dias < 0) return `O prazo passou há ${-dias} dia${dias !== -1 ? 's' : ''}`;
+  if(dias === 0) return 'O prazo é hoje';
+  return `Faltam ${dias} dia${dias !== 1 ? 's' : ''}`;
+}
+
+function dataDoPrazo(chave){
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  if(chave === '1m') d.setMonth(d.getMonth() + 1);
+  else if(chave === '3m') d.setMonth(d.getMonth() + 3);
+  else if(chave === '6m') d.setMonth(d.getMonth() + 6);
+  else if(chave === 'ano') return `${d.getFullYear()}-12-31`;
+  else return null;
+  return isoDateFromTimestamp(d.getTime());
+}
+
+function textoDias(ws){
+  const ds = [...new Set(ws)].sort((a, b)=>a - b);
+  if(ds.length === 7) return 'Todo dia';
+  if(ds.join() === '1,2,3,4,5') return 'Dias úteis';
+  if(ds.join() === '0,6') return 'Fins de semana';
+  if(!ds.length) return 'Nenhum dia marcado';
+  const nomes = ds.map(i=>DIAS_LONGOS[i].toLowerCase());
+  const lista = nomes.length > 1 ? `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]}` : nomes[0];
+  return capitaliza(lista);
+}
+
+function fraseMeta(g){
+  const prazo = g.due ? ` até ${dataLonga(g.due)}` : '';
+  if(g.kind === 'numero') return `De ${fmtMetaValor(g.start ?? 0, g.unit)} para ${fmtMetaValor(g.target ?? 0, g.unit)}${prazo}`;
+  if(g.kind === 'habito') return `${textoDias(g.weekdays)}${prazo}`;
+  if(g.kind === 'etapas') return `${g.steps.length} etapa${g.steps.length !== 1 ? 's' : ''}${prazo}`;
+  return g.due ? `Até ${dataLonga(g.due)}` : 'Sem prazo';
+}
+
+function metaValorAtual(g){
+  const regs = metaRegistros(g).filter(r=>r.value !== null);
+  return regs.length ? regs[regs.length - 1].value : (g.start ?? 0);
+}
+
+// Dias feitos de um hábito: os marcados à mão na meta mais os dias em que a
+// tarefa da rotina ligada foi concluída. É calculado, não copiado: concluir ou
+// reabrir a tarefa no Kanban já muda a meta, sem nada para sincronizar.
+function metaDiasFeitos(g){
+  const dias = new Set(metaRegistros(g).map(r=>r.date));
+  if(g.routineId){
+    state.tasks.forEach(t=>{
+      if(t.routine_id === g.routineId && t.date && taskColumnType(t) === 'done') dias.add(t.date);
+    });
+  }
+  return dias;
+}
+
+function metaSemana(g){
+  const ini = new Date();
+  ini.setHours(0, 0, 0, 0);
+  ini.setDate(ini.getDate() - ini.getDay());
+  const feitos = metaDiasFeitos(g);
+  const dias = [];
+  for(let i = 0; i < 7; i++){
+    const d = new Date(ini);
+    d.setDate(ini.getDate() + i);
+    const iso = isoDateFromTimestamp(d.getTime());
+    dias.push({iso, dow: i, previsto: g.weekdays.includes(i), feito: feitos.has(iso)});
+  }
+  return dias;
+}
+
+// Dias previstos seguidos que foram feitos, de hoje para trás. Hoje ainda em
+// aberto não quebra a sequência; ela só para no primeiro dia previsto perdido.
+function metaSequencia(g){
+  if(!g.weekdays.length) return 0;
+  const feitos = metaDiasFeitos(g);
+  const hoje = todayIso();
+  const inicio = g.created ? isoDateFromTimestamp(new Date(g.created).getTime()) : null;
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  let n = 0;
+  for(let i = 0; i < 400; i++){
+    const iso = isoDateFromTimestamp(d.getTime());
+    if(inicio && iso < inicio) break;
+    if(g.weekdays.includes(d.getDay())){
+      if(feitos.has(iso)) n++;
+      else if(iso !== hoje) break;
+    }
+    d.setDate(d.getDate() - 1);
+  }
+  return n;
+}
+
+function metaProgresso(g){
+  if(g.status === 'concluida') return {pct: 1, curto: 'feita', longo: 'Concluída'};
+  if(g.kind === 'numero'){
+    const atual = metaValorAtual(g);
+    const ini = g.start ?? 0;
+    const alvo = g.target ?? 0;
+    const pct = alvo === ini ? 0 : Math.max(0, Math.min(1, (atual - ini) / (alvo - ini)));
+    return {pct, curto: `${Math.round(pct * 100)}%`, longo: `${NUM_META.format(atual)} de ${fmtMetaValor(alvo, g.unit)}`};
+  }
+  if(g.kind === 'habito'){
+    const semana = metaSemana(g);
+    const previstos = semana.filter(d=>d.previsto).length;
+    const feitos = semana.filter(d=>d.previsto && d.feito).length;
+    return {pct: previstos ? feitos / previstos : 0, curto: `${feitos}/${previstos}`, longo: `${feitos} de ${previstos} nesta semana`};
+  }
+  if(g.kind === 'etapas'){
+    const total = g.steps.length;
+    const feitas = g.steps.filter(s=>s.ok).length;
+    return {pct: total ? feitas / total : 0, curto: `${feitas}/${total}`, longo: `${feitas} de ${total} etapas`};
+  }
+  const dias = g.due ? diasAte(g.due) : null;
+  return {
+    pct: 0,
+    // Na barra lateral o selo só aparece quando o prazo aperta: "40 dias" em
+    // toda meta sem urgência cortava o nome e não pedia nada de ninguém.
+    curto: dias === null || dias > 7 ? '' : (dias < 0 ? 'atrasada' : dias === 0 ? 'hoje' : `${dias}d`),
+    longo: dias === null ? 'Sem prazo' : textoPrazo(dias)
+  };
+}
+
+/* ---------- barra lateral ---------- */
+
+function renderSidebarMetas(){
+  const wrap = document.getElementById('sidebar-metas');
+  if(!wrap || !isDesafioOwner()) return;
+  if(state.metas.precisaSql){
+    wrap.innerHTML = `<div class="nav-empty">Falta rodar o supabase/metas.sql</div>`;
+    return;
+  }
+  const ativas = state.metas.lista.filter(g=>g.status === 'ativa');
+  const concluidas = state.metas.lista.filter(g=>g.status === 'concluida');
+  const item = (g)=>{
+    const p = metaProgresso(g);
+    const ativo = state.view === 'meta' && state.metas.atual === g.id;
+    return `
+      <button class="sidebar-project-item sidebar-meta-item ${ativo ? 'active' : ''}" onclick="abrirMeta('${g.id}')" title="${esc(g.title)}"${ativo ? ' aria-current="page"' : ''}>
+        <span class="sidebar-meta-dot" style="--area:${corDaArea(g.area)}"></span>
+        <span class="sidebar-project-name">${esc(g.title)}</span>
+        <span class="sidebar-project-role">${esc(p.curto)}</span>
+      </button>`;
+  };
+  let html = ativas.map(item).join('');
+  if(!state.metas.lista.length){
+    html += `<button class="nav-empty-acao" onclick="abrirNovaMeta()">Criar a primeira meta</button>`;
+  }else if(!ativas.length){
+    html += `<div class="nav-empty">Nenhuma meta em andamento</div>`;
+  }
+  if(concluidas.length){
+    html += `<button class="nav-concluidas" onclick="state.metas.verConcluidas=!state.metas.verConcluidas;renderSidebarMetas()" aria-expanded="${state.metas.verConcluidas}">${state.metas.verConcluidas ? 'Esconder concluídas' : `Concluídas (${concluidas.length})`}</button>`;
+    if(state.metas.verConcluidas) html += concluidas.map(item).join('');
+  }
+  wrap.innerHTML = html;
+}
+
+/* ---------- navegação ---------- */
+
+function abrirMeta(id){
+  if(!isDesafioOwner() || !metaPorId(id)) return;
+  flushNotesIfPending();
+  if(state.view !== 'meta') state.metas.viewAntes = state.view;
+  state.metas.atual = id;
+  state.view = 'meta';
+  state.selecting = false;
+  state.selected.clear();
+  render();
+  window.scrollTo(0, 0);
+}
+
+function voltarDaMeta(){
+  state.view = state.metas.viewAntes || 'dashboard';
+  state.metas.viewAntes = null;
+  render();
+  window.scrollTo(0, 0);
+}
+
+function metaRerender(){
+  skipEntranceOnce = true;
+  render();
+}
+
+/* ---------- criar e editar (passo a passo) ---------- */
+
+let metaRascunho = null;
+let metaPasso = 0;
+let metaDirecao = 1;
+let metaEditandoId = null;
+let salvandoMeta = false;
+
+function novoRascunhoMeta(){
+  return {
+    kind: null, title: '', area: null,
+    unit: '', unidadeOutra: false, start: '', target: '',
+    freq: 'todo-dia', weekdays: [1, 2, 3, 4, 5], virarRotina: true,
+    steps: [{id: idEtapa(), t: '', ok: false}],
+    prazo: '3m', prazoTocado: false, due: '', why: ''
+  };
+}
+
+function rascunhoDaMeta(g){
+  const r = novoRascunhoMeta();
+  Object.assign(r, {
+    kind: g.kind, title: g.title, area: g.area, why: g.why,
+    unit: g.unit, unidadeOutra: !!g.unit && !META_UNIDADES.includes(g.unit),
+    start: g.start === null ? '' : String(g.start),
+    target: g.target === null ? '' : String(g.target),
+    freq: g.weekdays.length === 7 ? 'todo-dia' : 'dias',
+    weekdays: g.weekdays.length ? [...g.weekdays] : [1, 2, 3, 4, 5],
+    virarRotina: !!g.routineId,
+    steps: g.steps.length ? g.steps.map(s=>({...s})) : r.steps,
+    prazo: g.due ? 'data' : 'sem', prazoTocado: true, due: g.due || ''
+  });
+  return r;
+}
+
+function passosDaMeta(r){
+  const p = metaEditandoId ? [] : ['tipo'];
+  p.push('nome');
+  if(r.kind !== 'unica') p.push('medida');
+  p.push('prazo', 'revisao');
+  return p;
+}
+
+function abrirNovaMeta(){
+  if(!isDesafioOwner()) return;
+  if(state.metas.precisaSql){ showToast('Falta rodar o supabase/metas.sql no Supabase.', 'erro'); return; }
+  metaEditandoId = null;
+  metaRascunho = novoRascunhoMeta();
+  metaPasso = 0;
+  metaDirecao = 1;
+  renderMetaWizard();
+  document.getElementById('meta-modal').classList.add('open');
+}
+
+function editarMeta(id){
+  const g = metaPorId(id);
+  if(!g) return;
+  metaEditandoId = id;
+  metaRascunho = rascunhoDaMeta(g);
+  metaPasso = 0;
+  metaDirecao = 1;
+  renderMetaWizard();
+  document.getElementById('meta-modal').classList.add('open');
+}
+
+function fecharNovaMeta(){
+  document.getElementById('meta-modal').classList.remove('open');
+  metaRascunho = null;
+  metaEditandoId = null;
+}
+
+function fichaMeta(campo, valor, texto, selecionada, cor){
+  return `<button type="button" role="radio" aria-checked="${selecionada}" class="meta-ficha ${selecionada ? 'selected' : ''}" data-campo="${campo}" data-valor="${esc(valor)}" onclick="escolherMeta('${campo}','${valor}')">${cor ? `<span class="meta-ficha-cor" style="background:${cor}" aria-hidden="true"></span>` : ''}${esc(texto)}</button>`;
+}
+
+function passoTipoMeta(r){
+  return `
+    <h2 class="meta-pergunta" id="meta-pergunta" tabindex="-1">Que tipo de meta?</h2>
+    <div class="meta-tipos" role="radiogroup" aria-labelledby="meta-pergunta">
+      ${Object.entries(META_TIPOS).map(([k, t])=>`
+        <button type="button" role="radio" aria-checked="${r.kind === k}" class="meta-tipo ${r.kind === k ? 'selected' : ''}" data-tipo="${k}" onclick="escolherTipoMeta('${k}')">
+          <svg class="meta-tipo-icone" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${t.icone}</svg>
+          <span class="meta-tipo-nome">${t.nome}</span>
+          <span class="meta-tipo-ex">${t.exemplo}</span>
+        </button>`).join('')}
+    </div>`;
+}
+
+function passoNomeMeta(r){
+  return `
+    <h2 class="meta-pergunta" id="meta-pergunta" tabindex="-1">Qual é a meta?</h2>
+    <div class="field">
+      <label class="sr-only" for="meta-titulo">Nome da meta</label>
+      <input type="text" class="input meta-input-grande" id="meta-titulo" maxlength="120" autocomplete="off" placeholder="${esc(META_TIPOS[r.kind].placeholder)}" value="${esc(r.title)}" oninput="metaRascunho.title=this.value">
+    </div>
+    <div class="field">
+      <label id="meta-area-rotulo">Área <span class="meta-opcional">opcional</span></label>
+      <div class="meta-fichas" role="radiogroup" aria-labelledby="meta-area-rotulo">
+        ${META_AREAS.map(a=>fichaMeta('area', a.key, a.nome, r.area === a.key, a.cor)).join('')}
+      </div>
+    </div>`;
+}
+
+function passoMedidaMeta(r){
+  if(r.kind === 'numero'){
+    const ini = numMeta(r.start), alvo = numMeta(r.target);
+    const dica = ini !== null && alvo !== null && alvo < ini
+      ? 'Meta de diminuir: o progresso conta o quanto você já desceu.'
+      : 'Dá para registrar somando (mais um livro) ou o valor do dia (o peso de hoje).';
+    return `
+      <h2 class="meta-pergunta" id="meta-pergunta" tabindex="-1">De quanto para quanto?</h2>
+      <div class="field-row">
+        <div class="field">
+          <label for="meta-inicio">Começo</label>
+          <input type="number" inputmode="decimal" step="any" class="input" id="meta-inicio" placeholder="0" value="${esc(r.start)}" oninput="metaRascunho.start=this.value">
+        </div>
+        <div class="field">
+          <label for="meta-alvo">Alvo</label>
+          <input type="number" inputmode="decimal" step="any" class="input" id="meta-alvo" placeholder="12" value="${esc(r.target)}" oninput="metaRascunho.target=this.value">
+        </div>
+      </div>
+      <div class="field">
+        <label id="meta-unid-rotulo">Unidade</label>
+        <div class="meta-fichas" role="radiogroup" aria-labelledby="meta-unid-rotulo">
+          ${META_UNIDADES.map(u=>fichaMeta('unit', u, u, !r.unidadeOutra && r.unit === u)).join('')}
+          ${fichaMeta('unit', 'outra', 'Outra', r.unidadeOutra)}
+        </div>
+        ${r.unidadeOutra ? `<input type="text" class="input meta-unid-outra" id="meta-unid-outra" maxlength="16" autocomplete="off" placeholder="Ex: treinos" aria-label="Nome da unidade" value="${esc(r.unit)}" oninput="metaRascunho.unit=this.value">` : ''}
+      </div>
+      <p class="meta-dica">${dica}</p>`;
+  }
+  if(r.kind === 'habito'){
+    return `
+      <h2 class="meta-pergunta" id="meta-pergunta" tabindex="-1">Com que frequência?</h2>
+      <div class="meta-fichas" role="radiogroup" aria-labelledby="meta-pergunta">
+        ${fichaMeta('freq', 'todo-dia', 'Todo dia', r.freq === 'todo-dia')}
+        ${fichaMeta('freq', 'dias', 'Dias da semana', r.freq === 'dias')}
+      </div>
+      ${r.freq === 'dias' ? `
+      <div class="weekday-picker meta-dias" role="group" aria-label="Dias da semana">
+        ${DOW_LETTERS.map((l, i)=>`<button type="button" class="weekday-btn ${r.weekdays.includes(i) ? 'selected' : ''}" aria-pressed="${r.weekdays.includes(i)}" aria-label="${DIAS_LONGOS[i]}" data-dia="${i}" onclick="alternarDiaRascunho(${i})">${l}</button>`).join('')}
+      </div>` : ''}
+      <div class="field meta-rotina">
+        <div class="field-label-row">
+          <label for="meta-rotina">Aparecer como tarefa nesses dias</label>
+          <label class="sound-toggle">
+            <input type="checkbox" id="meta-rotina" ${r.virarRotina ? 'checked' : ''} onchange="metaRascunho.virarRotina=this.checked">
+            <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
+          </label>
+        </div>
+        <p class="meta-dica">Cria uma rotina: a tarefa aparece no Kanban nos dias marcados, e concluí-la marca o dia aqui.</p>
+      </div>`;
+  }
+  // etapas
+  return `
+    <h2 class="meta-pergunta" id="meta-pergunta" tabindex="-1">Quais são as etapas?</h2>
+    <ol class="meta-etapas-edit">
+      ${r.steps.map((s, i)=>`
+        <li>
+          <span class="meta-etapa-n" aria-hidden="true">${i + 1}</span>
+          <input type="text" class="input" id="meta-etapa-${s.id}" maxlength="160" autocomplete="off" placeholder="${i === 0 ? 'Ex: Definir o que entra' : 'Próxima etapa'}" aria-label="Etapa ${i + 1}" value="${esc(s.t)}" oninput="textoEtapaRascunho('${s.id}', this.value)" onkeydown="teclaEtapaRascunho(event, '${s.id}')">
+          <button type="button" class="meta-etapa-tirar" onclick="tirarEtapaRascunho('${s.id}')" aria-label="Tirar a etapa ${i + 1}" title="Tirar etapa">${ICONE_X}</button>
+        </li>`).join('')}
+    </ol>
+    <button type="button" class="meta-add-etapa" onclick="adicionarEtapaRascunho()">${ICONE_MAIS}Adicionar etapa</button>
+    <p class="meta-dica">Enter cria a próxima etapa.</p>`;
+}
+
+function passoPrazoMeta(r){
+  const dataPronta = r.prazo !== 'sem' && r.prazo !== 'data' ? dataDoPrazo(r.prazo) : null;
+  return `
+    <h2 class="meta-pergunta" id="meta-pergunta" tabindex="-1">Até quando?</h2>
+    <div class="meta-fichas" role="radiogroup" aria-labelledby="meta-pergunta">
+      ${META_PRAZOS.map(p=>fichaMeta('prazo', p.key, p.nome, r.prazo === p.key)).join('')}
+    </div>
+    ${r.prazo === 'data' ? `<input type="date" class="input meta-data" id="meta-data" min="${todayIso()}" aria-label="Data do prazo" value="${esc(r.due)}" oninput="metaRascunho.due=this.value">` : ''}
+    ${dataPronta ? `<p class="meta-dica">Até ${dataLonga(dataPronta)}.</p>` : ''}
+    <div class="field meta-porque">
+      <label for="meta-porque">Por que isso importa? <span class="meta-opcional">opcional</span></label>
+      <textarea id="meta-porque" rows="2" maxlength="280" placeholder="Ex: Quero chegar ao fim do ano com mais fôlego" oninput="metaRascunho.why=this.value">${esc(r.why)}</textarea>
+    </div>`;
+}
+
+function metaDoRascunho(r){
+  const linha = linhaDaMeta(r);
+  return metaLinha(Object.assign({id: 'previa', created_at: new Date().toISOString()}, linha));
+}
+
+// O que a página da meta vai mostrar, em miniatura: a barra de um número, a
+// semana de um hábito, as etapas. É aqui que se vê que a página muda por tipo.
+function miniaturaMeta(g){
+  if(g.kind === 'numero'){
+    return `
+      <div class="meta-mini-placar"><span>${NUM_META.format(g.start ?? 0)}</span> de ${esc(fmtMetaValor(g.target ?? 0, g.unit))}</div>
+      ${barraMeta(0, null)}`;
+  }
+  if(g.kind === 'habito'){
+    return `<div class="meta-mini-semana">${DOW_LETTERS.map((l, i)=>`<span class="${g.weekdays.includes(i) ? 'previsto' : ''}">${l}</span>`).join('')}</div>`;
+  }
+  if(g.kind === 'etapas'){
+    const extra = g.steps.length > 4 ? `<li class="meta-mini-mais">mais ${g.steps.length - 4}</li>` : '';
+    return `<ol class="meta-mini-etapas">${g.steps.slice(0, 4).map(s=>`<li><span class="meta-etapa-box" aria-hidden="true"></span>${esc(s.t)}</li>`).join('')}${extra}</ol>`;
+  }
+  return '';
+}
+
+function passoRevisaoMeta(r){
+  const g = metaDoRascunho(r);
+  const editar = (passo, rotulo)=> passosDaMeta(r).includes(passo)
+    ? `<button type="button" class="meta-editar-passo" onclick="irParaPassoMeta('${passo}')">${rotulo || 'Editar'}</button>` : '';
+  const mini = miniaturaMeta(g);
+  return `
+    <h2 class="meta-pergunta" id="meta-pergunta" tabindex="-1">Tudo certo?</h2>
+    <div class="meta-previa">
+      <div class="meta-previa-topo">
+        <div class="meta-previa-titulo"><span class="sidebar-meta-dot" style="--area:${corDaArea(g.area)}" aria-hidden="true"></span>${esc(g.title)}</div>
+        ${editar('nome', 'Editar nome')}
+      </div>
+      ${mini ? `<div class="meta-previa-mini">${mini}</div>` : ''}
+      ${r.kind !== 'unica' ? `<div class="meta-previa-pe">${editar('medida', r.kind === 'etapas' ? 'Editar etapas' : r.kind === 'habito' ? 'Editar dias' : 'Editar medida')}</div>` : ''}
+    </div>
+    <dl class="meta-resumo">
+      <dt>Tipo</dt><dd><span>${META_TIPOS[r.kind].nome}</span>${editar('tipo')}</dd>
+      <dt>Área</dt><dd><span>${g.area ? nomeDaArea(g.area) : 'Nenhuma'}</span>${editar('nome')}</dd>
+      ${r.kind === 'habito' ? `<dt>Tarefa</dt><dd><span>${r.virarRotina ? 'Aparece no Kanban nos dias marcados' : 'Não vira tarefa'}</span>${editar('medida')}</dd>` : ''}
+      <dt>Prazo</dt><dd><span>${g.due ? dataLonga(g.due) : 'Sem prazo'}</span>${editar('prazo')}</dd>
+      ${g.why ? `<dt>Por quê</dt><dd><span>${esc(g.why)}</span>${editar('prazo')}</dd>` : ''}
+    </dl>`;
+}
+
+function renderMetaWizard(foco){
+  const r = metaRascunho;
+  if(!r) return;
+  const passos = passosDaMeta(r);
+  metaPasso = Math.max(0, Math.min(metaPasso, passos.length - 1));
+  const passo = passos[metaPasso];
+  document.getElementById('meta-modal-title').textContent = metaEditandoId ? 'Editar meta' : 'Nova meta';
+  const pontos = document.getElementById('meta-dots');
+  pontos.innerHTML = passos.map((p, i)=>`<span class="${i < metaPasso ? 'feito' : (i === metaPasso ? 'atual' : '')}"></span>`).join('');
+  pontos.setAttribute('aria-label', `Passo ${metaPasso + 1} de ${passos.length}`);
+
+  const conteudo = passo === 'tipo' ? passoTipoMeta(r)
+    : passo === 'nome' ? passoNomeMeta(r)
+    : passo === 'medida' ? passoMedidaMeta(r)
+    : passo === 'prazo' ? passoPrazoMeta(r)
+    : passoRevisaoMeta(r);
+  const anim = metaDirecao > 0 ? '' : (metaDirecao < 0 ? 'volta' : 'parado');
+  document.getElementById('meta-modal-body').innerHTML = `
+    <div class="meta-passo ${anim}">
+      ${conteudo}
+      <p class="meta-erro" id="meta-erro" role="alert"></p>
+    </div>`;
+
+  document.getElementById('meta-voltar').textContent = metaPasso === 0 ? 'Cancelar' : 'Voltar';
+  const seguir = document.getElementById('meta-seguir');
+  seguir.textContent = passo === 'revisao' ? (metaEditandoId ? 'Salvar meta' : 'Criar meta') : 'Continuar';
+  seguir.disabled = passo === 'tipo' && !r.kind;
+
+  // Depois do observador de foco dos modais: o foco vai para o que se
+  // responde neste passo, não para o botão de fechar.
+  // Sem tipo escolhido, o foco vai para a pergunta: no primeiro cartão, o
+  // anel de foco parecia uma seleção enquanto o Continuar seguia desabilitado.
+  const candidatos = passo === 'tipo' ? (r.kind ? ['.meta-tipo.selected'] : ['#meta-pergunta'])
+    : passo === 'revisao' ? ['#meta-pergunta']
+    : ['input:not([type=checkbox])', '.meta-ficha.selected', '.meta-ficha'];
+  setTimeout(()=>{
+    let alvo = foco ? document.querySelector(foco) : null;
+    for(const sel of candidatos){
+      if(alvo) break;
+      alvo = document.querySelector(`#meta-modal-body ${sel}`);
+    }
+    if(alvo) alvo.focus();
+  }, 40);
+}
+
+function erroMeta(msg, focoSel){
+  const el = document.getElementById('meta-erro');
+  if(el) el.textContent = msg;
+  if(focoSel){ const f = document.querySelector(focoSel); if(f) f.focus(); }
+}
+
+function rerenderPassoMeta(foco){
+  metaDirecao = 0;
+  renderMetaWizard(foco);
+}
+
+function escolherTipoMeta(k){
+  if(!META_TIPOS[k] || !metaRascunho) return;
+  metaRascunho.kind = k;
+  // Hábito costuma não ter data para acabar; o resto nasce com 3 meses.
+  if(!metaRascunho.prazoTocado) metaRascunho.prazo = k === 'habito' ? 'sem' : '3m';
+  avancarMeta();
+}
+
+const CAMPOS_ESCOLHA_META = {
+  area: META_AREAS.map(a=>a.key),
+  unit: [...META_UNIDADES, 'outra'],
+  freq: ['todo-dia', 'dias'],
+  prazo: META_PRAZOS.map(p=>p.key)
+};
+
+function escolherMeta(campo, valor){
+  const r = metaRascunho;
+  if(!r || !(CAMPOS_ESCOLHA_META[campo] || []).includes(valor)) return;
+  if(campo === 'area') r.area = r.area === valor ? null : valor;
+  else if(campo === 'unit'){
+    if(valor === 'outra'){
+      if(!r.unidadeOutra){ r.unidadeOutra = true; r.unit = ''; }
+    }else{ r.unidadeOutra = false; r.unit = valor; }
+  }
+  else if(campo === 'freq') r.freq = valor;
+  else if(campo === 'prazo'){ r.prazo = valor; r.prazoTocado = true; }
+  const foco = campo === 'unit' && valor === 'outra' ? '#meta-unid-outra'
+    : campo === 'prazo' && valor === 'data' ? '#meta-data'
+    : `.meta-ficha[data-campo="${campo}"][data-valor="${valor}"]`;
+  rerenderPassoMeta(foco);
+}
+
+function alternarDiaRascunho(i){
+  const r = metaRascunho;
+  if(!r || !Number.isInteger(i)) return;
+  r.weekdays = r.weekdays.includes(i) ? r.weekdays.filter(d=>d !== i) : [...r.weekdays, i];
+  rerenderPassoMeta(`.meta-dias [data-dia="${i}"]`);
+}
+
+function textoEtapaRascunho(id, texto){
+  const s = metaRascunho && metaRascunho.steps.find(x=>x.id === id);
+  if(s) s.t = texto;
+}
+
+function adicionarEtapaRascunho(depoisDe){
+  const r = metaRascunho;
+  if(!r) return;
+  const nova = {id: idEtapa(), t: '', ok: false};
+  const i = depoisDe ? r.steps.findIndex(s=>s.id === depoisDe) : -1;
+  if(i === -1) r.steps.push(nova); else r.steps.splice(i + 1, 0, nova);
+  rerenderPassoMeta(`#meta-etapa-${nova.id}`);
+}
+
+function tirarEtapaRascunho(id){
+  const r = metaRascunho;
+  if(!r) return;
+  const i = r.steps.findIndex(s=>s.id === id);
+  if(i === -1) return;
+  r.steps.splice(i, 1);
+  if(!r.steps.length) r.steps.push({id: idEtapa(), t: '', ok: false});
+  const vizinha = r.steps[Math.max(0, i - 1)];
+  rerenderPassoMeta(`#meta-etapa-${vizinha.id}`);
+}
+
+// Enter cria a próxima etapa logo abaixo; Backspace numa etapa vazia a tira.
+// O preventDefault faz o atalho global de Enter (que avança o passo) ignorar.
+function teclaEtapaRascunho(e, id){
+  if(e.isComposing) return;
+  if(e.key === 'Enter' && !e.metaKey && !e.ctrlKey){
+    e.preventDefault();
+    adicionarEtapaRascunho(id);
+  }else if(e.key === 'Backspace' && !e.target.value && metaRascunho.steps.length > 1){
+    e.preventDefault();
+    tirarEtapaRascunho(id);
+  }
+}
+
+function validarPassoMeta(passo){
+  const r = metaRascunho;
+  if(passo === 'tipo' && !r.kind) return ['Escolha um tipo de meta.'];
+  if(passo === 'nome' && !r.title.trim()) return ['Dê um nome para a meta.', '#meta-titulo'];
+  if(passo === 'medida'){
+    if(r.kind === 'numero'){
+      const ini = numMeta(r.start), alvo = numMeta(r.target);
+      if(alvo === null) return ['Diga o alvo: o número aonde você quer chegar.', '#meta-alvo'];
+      if((ini ?? 0) === alvo) return ['O alvo precisa ser diferente do começo.', '#meta-alvo'];
+      if(r.unidadeOutra && !r.unit.trim()) return ['Escreva a unidade ou escolha uma da lista.', '#meta-unid-outra'];
+    }
+    if(r.kind === 'habito' && r.freq === 'dias' && !r.weekdays.length) return ['Marque pelo menos um dia da semana.'];
+    if(r.kind === 'etapas' && !r.steps.some(s=>s.t.trim())) return ['Escreva pelo menos uma etapa.', '.meta-etapas-edit input'];
+  }
+  if(passo === 'prazo' && r.prazo === 'data' && !r.due) return ['Escolha a data do prazo.', '#meta-data'];
+  return null;
+}
+
+function avancarMeta(){
+  const r = metaRascunho;
+  if(!r) return;
+  const passos = passosDaMeta(r);
+  const passo = passos[metaPasso];
+  const erro = validarPassoMeta(passo);
+  if(erro){ erroMeta(erro[0], erro[1]); return; }
+  if(passo === 'revisao'){ salvarMeta(); return; }
+  metaPasso++;
+  metaDirecao = 1;
+  renderMetaWizard();
+}
+
+function voltarMeta(){
+  if(!metaRascunho) return;
+  if(metaPasso === 0){ fecharNovaMeta(); return; }
+  metaPasso--;
+  metaDirecao = -1;
+  renderMetaWizard();
+}
+
+function irParaPassoMeta(passo){
+  const i = passosDaMeta(metaRascunho).indexOf(passo);
+  if(i === -1) return;
+  metaPasso = i;
+  metaDirecao = -1;
+  renderMetaWizard();
+}
+
+function linhaDaMeta(r){
+  const due = r.prazo === 'sem' ? null : (r.prazo === 'data' ? (r.due || null) : dataDoPrazo(r.prazo));
+  const linha = {
+    kind: r.kind,
+    title: r.title.trim().slice(0, 120),
+    area: r.area,
+    why: r.why.trim().slice(0, 280) || null,
+    due_date: due,
+    unit: null, start_value: null, target_value: null, weekdays: null, steps: [],
+    updated_at: new Date().toISOString()
+  };
+  if(r.kind === 'numero'){
+    linha.unit = r.unit.trim().slice(0, 16) || null;
+    linha.start_value = numMeta(r.start) ?? 0;
+    linha.target_value = numMeta(r.target);
+  }
+  if(r.kind === 'habito') linha.weekdays = r.freq === 'todo-dia' ? [0, 1, 2, 3, 4, 5, 6] : [...r.weekdays].sort((a, b)=>a - b);
+  if(r.kind === 'etapas') linha.steps = r.steps.filter(s=>s.t.trim()).map(s=>({id: s.id, t: s.t.trim().slice(0, 160), ok: !!s.ok}));
+  return linha;
+}
+
+function rotinaDoHabito(linha, existente){
+  return {
+    title: linha.title,
+    client: existente ? existente.client : '',
+    status: existente && existente.status ? existente.status : getColumns()[0].key,
+    priority: existente ? existente.priority : 'normal',
+    time: existente ? existente.time : '',
+    weekdays: linha.weekdays
+  };
+}
+
+async function salvarMeta(){
+  if(salvandoMeta || !metaRascunho) return;
+  const btn = document.getElementById('meta-seguir');
+  const textoBtn = btn.textContent;
+  salvandoMeta = true;
+  btn.disabled = true;
+  btn.textContent = 'Salvando…';
+  try{
+    if(metaEditandoId) await atualizarMeta(metaRascunho);
+    else await criarMeta(metaRascunho);
+  }finally{
+    salvandoMeta = false;
+    btn.disabled = false;
+    if(btn.textContent === 'Salvando…') btn.textContent = textoBtn;
+  }
+}
+
+// A meta é gravada primeiro e a rotina depois: se a rotina falhar, a meta
+// existe e dá para ligar o "aparecer como tarefa" editando. Na ordem inversa,
+// uma falha deixava uma rotina órfã que já tinha criado a tarefa de hoje.
+async function criarMeta(r){
+  const linha = linhaDaMeta(r);
+  const {data, error} = await sb.from('goals').insert({...linha, user_id: session.user.id}).select().single();
+  if(error){
+    console.error(error);
+    erroMeta('Não deu para criar a meta. Confira a conexão e tente de novo.');
+    return false;
+  }
+  const g = metaLinha(data);
+  state.metas.lista.push(g);
+  let avisoRotina = '';
+  if(r.kind === 'habito' && r.virarRotina){
+    const rotina = await createRoutine(rotinaDoHabito(linha));
+    if(rotina){
+      const {error: errLiga} = await sb.from('goals').update({routine_id: rotina.id}).eq('id', g.id);
+      if(errLiga){ console.error(errLiga); avisoRotina = ' A rotina foi criada, mas não ficou ligada à meta.'; }
+      else g.routineId = rotina.id;
+    }else{
+      avisoRotina = ' A tarefa nos dias marcados não foi criada; ligue de novo em Editar.';
+    }
+  }
+  fecharNovaMeta();
+  abrirMeta(g.id);
+  showToast(`Meta criada.${avisoRotina}`, avisoRotina ? 'erro' : undefined);
+  return true;
+}
+
+async function atualizarMeta(r){
+  const g = metaPorId(metaEditandoId);
+  if(!g) return false;
+  const linha = linhaDaMeta(r);
+  let routineId = g.routineId;
+  if(g.kind === 'habito'){
+    const existente = routineId ? state.routines.find(x=>x.id === routineId) : null;
+    if(routineId && !existente) routineId = null;
+    if(r.virarRotina && routineId){
+      if(!await updateRoutineRemote(routineId, rotinaDoHabito(linha, existente))) return false;
+      await generateRoutineInstances();
+    }else if(r.virarRotina && !routineId){
+      const rotina = await createRoutine(rotinaDoHabito(linha));
+      if(!rotina) return false;
+      routineId = rotina.id;
+    }else if(!r.virarRotina && routineId){
+      if(!await deleteRoutineRemote(routineId)) return false;
+      routineId = null;
+    }
+  }
+  const {data, error} = await sb.from('goals').update({...linha, routine_id: routineId}).eq('id', g.id).select().single();
+  if(error){
+    console.error(error);
+    erroMeta('Não deu para salvar a meta. Confira a conexão e tente de novo.');
+    return false;
+  }
+  Object.assign(g, metaLinha(data));
+  fecharNovaMeta();
+  metaRerender();
+  showToast('Meta salva');
+  return true;
+}
+
+/* ---------- ações na página da meta ---------- */
+
+async function gravarMeta(g, patch, msgErro){
+  const {error} = await sb.from('goals').update({...patch, updated_at: new Date().toISOString()}).eq('id', g.id);
+  if(error){
+    console.error(error);
+    showToast(msgErro || 'Não deu para salvar. Tente de novo em instantes.', 'erro');
+    return false;
+  }
+  return true;
+}
+
+async function concluirMeta(id){
+  const g = metaPorId(id);
+  if(!g) return;
+  const agora = new Date().toISOString();
+  if(!await gravarMeta(g, {status: 'concluida', completed_at: agora}, 'Não deu para concluir a meta. Tente de novo em instantes.')) return;
+  g.status = 'concluida';
+  g.completedAt = agora;
+  metaRerender();
+  showToast('Meta concluída');
+}
+
+async function reabrirMeta(id){
+  const g = metaPorId(id);
+  if(!g) return;
+  if(!await gravarMeta(g, {status: 'ativa', completed_at: null}, 'Não deu para reabrir a meta. Tente de novo em instantes.')) return;
+  g.status = 'ativa';
+  g.completedAt = null;
+  metaRerender();
+  showToast('Meta reaberta');
+}
+
+async function excluirMeta(id){
+  const g = metaPorId(id);
+  if(!g) return;
+  const texto = g.routineId
+    ? 'Os registros dela somem junto, e a rotina ligada para de criar tarefas. As tarefas que já existem continuam.'
+    : 'Os registros dela somem junto. Não tem como desfazer.';
+  if(!await confirmar(texto, {title: 'Excluir esta meta?', okLabel: 'Excluir meta'})) return;
+  if(g.routineId && !await deleteRoutineRemote(g.routineId)) return;
+  const {error} = await sb.from('goals').delete().eq('id', g.id);
+  if(error){ console.error(error); showToast('Não deu para excluir a meta. Tente de novo em instantes.', 'erro'); return; }
+  state.metas.lista = state.metas.lista.filter(x=>x.id !== g.id);
+  delete state.metas.registros[g.id];
+  voltarDaMeta();
+  showToast('Meta excluída');
+}
+
+function modoRegistroMeta(id, absoluto){
+  state.metas.modo[id] = !!absoluto;
+  metaRerender();
+  setTimeout(()=>{ const i = document.getElementById('meta-valor'); if(i) i.focus(); }, 30);
+}
+
+function metaModoAbsoluto(g){
+  return g.id in state.metas.modo ? state.metas.modo[g.id] : META_UNIDADES_ABSOLUTAS.includes(g.unit);
+}
+
+async function gravarRegistroMeta(g, iso, value){
+  const {data, error} = await sb.from('goal_entries')
+    .upsert({goal_id: g.id, user_id: session.user.id, date: iso, value}, {onConflict: 'goal_id,date'})
+    .select('id, goal_id, date, value').single();
+  if(error){ console.error(error); showToast('Não deu para registrar. Confira a conexão e tente de novo.', 'erro'); return false; }
+  const lista = (state.metas.registros[g.id] || []).filter(r=>r.date !== iso);
+  lista.push({id: data.id, date: data.date, value: numMeta(data.value)});
+  lista.sort((a, b)=>a.date.localeCompare(b.date));
+  state.metas.registros[g.id] = lista;
+  return true;
+}
+
+async function registrarValorMeta(id){
+  const g = metaPorId(id);
+  const input = document.getElementById('meta-valor');
+  if(!g || !input) return;
+  const n = numMeta(input.value);
+  if(n === null){ showToast('Digite um número para registrar.', 'erro'); input.focus(); return; }
+  const absoluto = metaModoAbsoluto(g);
+  const novo = absoluto ? n : metaValorAtual(g) + n;
+  if(!await gravarRegistroMeta(g, todayIso(), novo)) return;
+  metaRerender();
+  showToast(`Registrado: ${fmtMetaValor(novo, g.unit)}`);
+}
+
+async function apagarRegistroMeta(goalId, regId){
+  const g = metaPorId(goalId);
+  if(!g) return;
+  const {error} = await sb.from('goal_entries').delete().eq('id', regId);
+  if(error){ console.error(error); showToast('Não deu para apagar o registro. Tente de novo em instantes.', 'erro'); return; }
+  state.metas.registros[g.id] = metaRegistros(g).filter(r=>r.id !== regId);
+  metaRerender();
+}
+
+async function alternarDiaHabito(goalId, iso){
+  const g = metaPorId(goalId);
+  if(!g || !/^\d{4}-\d{2}-\d{2}$/.test(iso) || iso > todayIso()) return;
+  const manual = metaRegistros(g).find(r=>r.date === iso);
+  if(manual){
+    const {error} = await sb.from('goal_entries').delete().eq('id', manual.id);
+    if(error){ console.error(error); showToast('Não deu para desmarcar o dia. Tente de novo em instantes.', 'erro'); return; }
+    state.metas.registros[g.id] = metaRegistros(g).filter(r=>r.id !== manual.id);
+  }else if(metaDiasFeitos(g).has(iso)){
+    // O dia conta pela tarefa concluída da rotina: desmarcar aqui não teria
+    // efeito, porque a tarefa continua concluída.
+    showToast('Esse dia conta pela tarefa da rotina. Reabra a tarefa no Kanban para desmarcar.');
+    return;
+  }else if(!await gravarRegistroMeta(g, iso, null)){
+    return;
+  }
+  metaRerender();
+  setTimeout(()=>{ const b = document.querySelector(`.meta-dia[data-dia="${iso}"]`); if(b) b.focus(); }, 30);
+}
+
+async function salvarEtapasMeta(g, novas, msgErro){
+  const antes = g.steps;
+  g.steps = novas;
+  metaRerender();
+  if(!await gravarMeta(g, {steps: novas}, msgErro)){
+    g.steps = antes;
+    metaRerender();
+    return false;
+  }
+  return true;
+}
+
+async function alternarEtapa(goalId, stepId){
+  const g = metaPorId(goalId);
+  if(!g) return;
+  const novas = g.steps.map(s=>s.id === stepId ? {...s, ok: !s.ok} : s);
+  await salvarEtapasMeta(g, novas, 'Não deu para marcar a etapa. Tente de novo em instantes.');
+  setTimeout(()=>{ const b = document.querySelector(`.meta-etapa-check[data-etapa="${stepId}"]`); if(b) b.focus(); }, 30);
+}
+
+async function adicionarEtapa(goalId){
+  const g = metaPorId(goalId);
+  const input = document.getElementById('meta-nova-etapa');
+  if(!g || !input) return;
+  const t = input.value.trim().slice(0, 160);
+  if(!t){ input.focus(); return; }
+  if(await salvarEtapasMeta(g, [...g.steps, {id: idEtapa(), t, ok: false}], 'Não deu para adicionar a etapa. Tente de novo em instantes.')){
+    setTimeout(()=>{ const i = document.getElementById('meta-nova-etapa'); if(i) i.focus(); }, 30);
+  }
+}
+
+async function tirarEtapa(goalId, stepId){
+  const g = metaPorId(goalId);
+  if(!g) return;
+  await salvarEtapasMeta(g, g.steps.filter(s=>s.id !== stepId), 'Não deu para apagar a etapa. Tente de novo em instantes.');
+}
+
+/* ---------- página da meta ---------- */
+
+// Onde o progresso deveria estar hoje, se o avanço fosse em linha reta da
+// criação até o prazo. null quando não há prazo para medir.
+function metaRitmoEsperado(g){
+  if(!g.due || !g.created) return null;
+  const ini = new Date(g.created).getTime();
+  const [y, m, d] = g.due.split('-').map(Number);
+  const fim = new Date(y, m - 1, d, 23, 59, 59).getTime();
+  if(!(fim > ini)) return null;
+  return Math.max(0, Math.min(1, (Date.now() - ini) / (fim - ini)));
+}
+
+function barraMeta(pct, esperado){
+  const p = Math.max(0, Math.min(1, pct));
+  const marca = esperado === null ? '' : `<i class="meta-barra-ritmo" style="left:${(esperado * 100).toFixed(1)}%" title="Onde o ritmo pedia que você estivesse hoje"></i>`;
+  const texto = esperado === null ? '' : ` aria-valuetext="${Math.round(p * 100)}%; o ritmo pedia ${Math.round(esperado * 100)}% hoje"`;
+  return `<div class="meta-barra" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(p * 100)}"${texto}><span style="width:${(p * 100).toFixed(1)}%"></span>${marca}</div>`;
+}
+
+function textoRitmo(g, p){
+  const esperado = metaRitmoEsperado(g);
+  if(esperado === null || p.pct >= 1 || g.status === 'concluida') return '';
+  const diff = Math.round((p.pct - esperado) * 100);
+  const quando = Math.abs(diff) <= 2 ? 'No ritmo' : diff > 0 ? 'À frente do ritmo' : 'Atrás do ritmo';
+  return `<p class="meta-dica">${quando}: a marca na barra é onde você deveria estar hoje.</p>`;
+}
+
+function renderMetaChegou(g, p){
+  if(g.status === 'concluida' || p.pct < 1) return '';
+  return `
+    <div class="meta-chegou">
+      <span>Você chegou ao alvo.</span>
+      <button class="btn-primary" onclick="concluirMeta('${g.id}')">Concluir meta</button>
+    </div>`;
+}
+
+function renderMetaNumero(g, p){
+  const atual = metaValorAtual(g);
+  const alvo = g.target ?? 0;
+  const falta = Math.max(0, (g.target ?? 0) > (g.start ?? 0) ? alvo - atual : atual - alvo);
+  let ritmo;
+  if(p.pct >= 1) ritmo = 'Alvo alcançado.';
+  else if(g.due){
+    const dias = diasAte(g.due);
+    if(dias > 0){
+      const porSemana = falta / Math.max(dias / 7, 1);
+      ritmo = `Faltam ${fmtMetaValor(falta, g.unit)} em ${dias} dia${dias !== 1 ? 's' : ''}: cerca de ${fmtMetaValor(porSemana, g.unit)} por semana.`;
+    }else ritmo = `${textoPrazo(dias)}, e faltam ${fmtMetaValor(falta, g.unit)}.`;
+  }else ritmo = `Faltam ${fmtMetaValor(falta, g.unit)}.`;
+  const absoluto = metaModoAbsoluto(g);
+  // Cada registro guarda o total do dia; a lista mostra quanto ele mudou em
+  // relação ao anterior. Só o total ("5 livros", "3 livros") parecia soma.
+  const todos = metaRegistros(g).filter(r=>r.value !== null);
+  const regs = todos.map((r, i)=>({...r, delta: r.value - (i ? todos[i - 1].value : (g.start ?? 0))})).slice(-8).reverse();
+  const fmtDelta = (v)=> v === 0 ? 'sem mudança' : `${v > 0 ? '+' : '−'}${fmtMetaValor(Math.abs(v), g.unit)}`;
+  return `
+    <div class="meta-placar">
+      <div class="meta-placar-num"><span class="meta-atual">${NUM_META.format(atual)}</span><span class="meta-alvo">de ${esc(fmtMetaValor(alvo, g.unit))}</span></div>
+      <div class="meta-pct">${Math.round(p.pct * 100)}%</div>
+    </div>
+    ${barraMeta(p.pct, g.status === 'concluida' ? null : metaRitmoEsperado(g))}
+    <p class="meta-ritmo">${esc(ritmo)}</p>
+    ${textoRitmo(g, p)}
+    ${renderMetaChegou(g, p)}
+    ${g.status === 'concluida' ? '' : `
+    <div class="meta-registro">
+      <div class="meta-modo" role="group" aria-label="Como registrar">
+        <button type="button" class="${absoluto ? '' : 'ativo'}" aria-pressed="${!absoluto}" onclick="modoRegistroMeta('${g.id}', false)">Somar</button>
+        <button type="button" class="${absoluto ? 'ativo' : ''}" aria-pressed="${absoluto}" onclick="modoRegistroMeta('${g.id}', true)">Valor de hoje</button>
+      </div>
+      <input type="number" inputmode="decimal" step="any" class="input" id="meta-valor" autocomplete="off" placeholder="${absoluto ? `Ex: ${NUM_META.format(atual)}` : 'Ex: 1'}" aria-label="${absoluto ? 'Valor de hoje' : 'Quanto somar'}" onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();registrarValorMeta('${g.id}')}">
+      <button class="btn-primary" onclick="registrarValorMeta('${g.id}')">Registrar</button>
+    </div>`}
+    <h2 class="meta-sub">Registros</h2>
+    ${regs.length ? `<ul class="meta-historico">${regs.map(r=>`
+      <li>
+        <span class="meta-reg-data">${fmtDate(r.date)}</span>
+        <span class="meta-reg-valor">${esc(fmtDelta(r.delta))}</span>
+        <span class="meta-reg-total">total ${esc(fmtMetaValor(r.value, g.unit))}</span>
+        <button class="meta-etapa-tirar" onclick="apagarRegistroMeta('${g.id}','${r.id}')" aria-label="Apagar o registro de ${fmtDate(r.date)}" title="Apagar registro">${ICONE_X}</button>
+      </li>`).join('')}</ul>`
+      : `<p class="meta-vazio">Nenhum registro ainda. O primeiro valor que você registrar aparece aqui.</p>`}`;
+}
+
+function renderMetaHabito(g, p){
+  const hoje = todayIso();
+  const semana = metaSemana(g);
+  const seq = metaSequencia(g);
+  const previstos = semana.filter(d=>d.previsto).length;
+  const feitos = semana.filter(d=>d.previsto && d.feito).length;
+  // Grade com uma coluna por semana, domingo no topo. Começa na semana em que
+  // a meta nasceu (até ~6 meses atrás, ou 12 semanas no celular): antes dela
+  // não existia dia previsto, e colunas vazias à esquerda só confundiam.
+  const feitosSet = metaDiasFeitos(g);
+  const criada = g.created ? isoDateFromTimestamp(new Date(g.created).getTime()) : hoje;
+  const semanaAtual = new Date();
+  semanaAtual.setHours(0, 0, 0, 0);
+  semanaAtual.setDate(semanaAtual.getDate() - semanaAtual.getDay());
+  const [cy, cm, cd] = criada.split('-').map(Number);
+  const semanaCriada = new Date(cy, cm - 1, cd);
+  semanaCriada.setDate(semanaCriada.getDate() - semanaCriada.getDay());
+  const maxSemanas = window.innerWidth < 700 ? 12 : 26;
+  const semanas = Math.max(1, Math.min(maxSemanas, Math.round((semanaAtual - semanaCriada) / (7 * 86400000)) + 1));
+  const ini = new Date(semanaAtual);
+  ini.setDate(ini.getDate() - 7 * (semanas - 1));
+  let celulas = '', totalPrev = 0, totalFeitos = 0;
+  for(let i = 0; i < semanas * 7; i++){
+    const d = new Date(ini);
+    d.setDate(ini.getDate() + i);
+    const iso = isoDateFromTimestamp(d.getTime());
+    const previsto = g.weekdays.includes(d.getDay()) && iso >= criada;
+    const feito = feitosSet.has(iso);
+    if(iso <= hoje && previsto){ totalPrev++; if(feito) totalFeitos++; }
+    celulas += `<span class="${iso > hoje ? 'futuro' : feito ? 'feito' : previsto ? 'previsto' : 'livre'}"></span>`;
+  }
+  const tituloGrade = semanas === 1 ? 'Esta semana'
+    : semanas < maxSemanas ? `Desde que a meta começou, há ${semanas} semanas`
+    : maxSemanas === 26 ? 'Últimos 6 meses' : `Últimas ${maxSemanas} semanas`;
+  return `
+    <div class="meta-semana" role="group" aria-label="Esta semana">
+      ${semana.map(d=>`
+        <button type="button" class="meta-dia ${d.previsto ? 'previsto' : ''} ${d.feito ? 'feito' : ''} ${d.iso === hoje ? 'hoje' : ''}" data-dia="${d.iso}" aria-pressed="${d.feito}" aria-label="${DIAS_LONGOS[d.dow]}, ${fmtDate(d.iso)}${d.previsto ? '' : ', fora dos dias marcados'}" ${d.iso > hoje || g.status === 'concluida' ? 'disabled' : ''} onclick="alternarDiaHabito('${g.id}','${d.iso}')">
+          <span class="meta-dia-letra">${DOW_LETTERS[d.dow]}</span>
+          <span class="meta-dia-marca">${d.feito ? ICONE_CHECK : ''}</span>
+        </button>`).join('')}
+    </div>
+    <div class="meta-habito-numeros">
+      <div><strong>${seq}</strong>${seq === 1 ? 'dia seguido' : 'dias seguidos'}</div>
+      <div><strong>${feitos} de ${previstos}</strong>nesta semana</div>
+    </div>
+    <h2 class="meta-sub">${tituloGrade}</h2>
+    <div class="meta-grade-wrap" aria-hidden="true">
+      <div class="meta-grade-dias">${DOW_LETTERS.map(l=>`<span>${l}</span>`).join('')}</div>
+      <div class="meta-grade">${celulas}</div>
+    </div>
+    <p class="sr-only">${totalFeitos} de ${totalPrev} dias marcados feitos nesse período.</p>
+    <p class="meta-dica meta-dica-pe">${g.routineId
+      ? 'Aparece como tarefa nos dias marcados; concluir a tarefa marca o dia aqui.'
+      : 'Marque aqui os dias feitos. Para virar tarefa nos dias marcados, ligue em Editar.'}</p>`;
+}
+
+function renderMetaEtapas(g, p){
+  const feitas = g.steps.filter(s=>s.ok).length;
+  const aberta = g.status !== 'concluida';
+  return `
+    <div class="meta-placar">
+      <div class="meta-placar-num"><span class="meta-atual">${feitas}</span><span class="meta-alvo">de ${g.steps.length} etapa${g.steps.length !== 1 ? 's' : ''}</span></div>
+      <div class="meta-pct">${Math.round(p.pct * 100)}%</div>
+    </div>
+    ${barraMeta(p.pct, aberta ? metaRitmoEsperado(g) : null)}
+    ${textoRitmo(g, p)}
+    ${renderMetaChegou(g, p)}
+    ${g.steps.length ? `<ol class="meta-etapas">${g.steps.map(s=>`
+      <li class="${s.ok ? 'ok' : ''}">
+        <button type="button" class="meta-etapa-check" role="checkbox" aria-checked="${s.ok}" data-etapa="${s.id}" aria-label="${esc(s.t)}" ${aberta ? '' : 'disabled'} onclick="alternarEtapa('${g.id}','${s.id}')"><span class="meta-etapa-box" aria-hidden="true">${s.ok ? ICONE_CHECK : ''}</span></button>
+        <span class="meta-etapa-texto">${esc(s.t)}</span>
+        ${aberta ? `<button type="button" class="meta-etapa-tirar" onclick="tirarEtapa('${g.id}','${s.id}')" aria-label="Apagar a etapa: ${esc(s.t)}" title="Apagar etapa">${ICONE_X}</button>` : ''}
+      </li>`).join('')}</ol>` : `<p class="meta-vazio">Nenhuma etapa. Escreva a primeira abaixo.</p>`}
+    ${aberta ? `
+    <div class="meta-add-linha">
+      <input type="text" class="input" id="meta-nova-etapa" maxlength="160" autocomplete="off" placeholder="Nova etapa" aria-label="Nova etapa" onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();adicionarEtapa('${g.id}')}">
+      <button class="btn-secondary" onclick="adicionarEtapa('${g.id}')">Adicionar</button>
+    </div>` : ''}`;
+}
+
+function renderMetaUnica(g){
+  const concluida = g.status === 'concluida';
+  return `
+    <div class="meta-unica">
+      <p class="meta-unica-prazo">${concluida ? 'Feita.' : esc(g.due ? textoPrazo(diasAte(g.due)) : 'Sem prazo')}</p>
+      ${g.due && !concluida ? `<p class="meta-dica">Prazo: ${dataLonga(g.due)}.</p>` : ''}
+      ${concluida ? '' : `<button class="btn-primary" onclick="concluirMeta('${g.id}')">Marcar como concluída</button>`}
+    </div>`;
+}
+
+function renderMetaPage(){
+  const g = metaPorId(state.metas.atual);
+  if(!g){
+    return `<div class="empty"><strong>Essa meta não existe mais.</strong><button class="btn-secondary" style="margin-top:12px;" onclick="voltarDaMeta()">Voltar</button></div>`;
+  }
+  const p = metaProgresso(g);
+  const concluida = g.status === 'concluida';
+  const corpo = g.kind === 'numero' ? renderMetaNumero(g, p)
+    : g.kind === 'habito' ? renderMetaHabito(g, p)
+    : g.kind === 'etapas' ? renderMetaEtapas(g, p)
+    : renderMetaUnica(g);
+  return `
+    <header class="meta-head">
+      <button class="btn-back" onclick="voltarDaMeta()" title="Voltar" aria-label="Voltar">
+        <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      </button>
+      <div class="meta-head-main">
+        <h1 class="meta-titulo"><span class="meta-area-marca" style="--area:${corDaArea(g.area)}" aria-hidden="true"></span>${esc(g.title)}</h1>
+        <p class="meta-frase">${META_TIPOS[g.kind].nome} · ${esc(fraseMeta(g))}${g.area ? ` · ${nomeDaArea(g.area)}` : ''}</p>
+      </div>
+      <div class="meta-head-acoes">
+        <button class="btn-secondary" onclick="editarMeta('${g.id}')">Editar</button>
+        ${concluida
+          ? `<button class="btn-secondary" onclick="reabrirMeta('${g.id}')">Reabrir</button>`
+          : (g.kind === 'unica' ? '' : `<button class="btn-secondary" onclick="concluirMeta('${g.id}')">Concluir</button>`)}
+        <button class="btn-icone-perigo" onclick="excluirMeta('${g.id}')" title="Excluir meta" aria-label="Excluir meta">
+          <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>
+        </button>
+      </div>
+    </header>
+    ${concluida && g.completedAt ? `<p class="meta-concluida-faixa">Concluída em ${dataLonga(isoDateFromTimestamp(new Date(g.completedAt).getTime()))}</p>` : ''}
+    <section class="glass panel meta-painel" aria-label="Progresso">${corpo}</section>
+    ${g.why ? `<blockquote class="meta-porque-citacao"><p>${esc(g.why)}</p></blockquote>` : ''}`;
+}
+
+/* ---------- celular: metas na aba Projetos ---------- */
+
+// Linhas compactas num painel só, a mesma leitura da barra lateral: um cartão
+// de vidro por meta, com número e barra, virava um painel de cards de métrica.
+function renderMetasMobile(){
+  if(!isDesafioOwner()) return '';
+  const ativas = state.metas.lista.filter(g=>g.status === 'ativa');
+  const desafio = desafioDiaAtual();
+  const linha = (acao, marca, nome, progresso)=>`
+    <button class="meta-linha" onclick="${acao}">
+      ${marca}
+      <span class="meta-linha-nome">${nome}</span>
+      <span class="meta-linha-prog">${progresso}</span>
+    </button>`;
+  const trofeu = '<svg class="meta-linha-icone" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 01-10 0V4z"/><path d="M17 5h3v2a3 3 0 01-3 3M7 5H4v2a3 3 0 003 3"/></svg>';
+  return `
+    <section class="glass panel metas-mobile" aria-labelledby="metas-mobile-titulo">
+      <div class="secao-head">
+        <h2 class="panel-title" id="metas-mobile-titulo">Metas</h2>
+        <button class="btn-secondary btn-com-icone" onclick="abrirNovaMeta()">${ICONE_MAIS}Nova meta</button>
+      </div>
+      ${linha('goDesafio()', trofeu, 'Desafio', desafio.dia ? `dia ${desafio.dia} de ${desafio.total}` : 'começa amanhã')}
+      ${ativas.map(g=>linha(`abrirMeta('${g.id}')`, `<span class="sidebar-meta-dot" style="--area:${corDaArea(g.area)}" aria-hidden="true"></span>`, esc(g.title), esc(metaProgresso(g).longo))).join('')}
+      ${!state.metas.lista.length && !state.metas.precisaSql ? '<p class="meta-vazio">Nenhuma meta ainda. Toque em Nova meta para criar a primeira.</p>' : ''}
+      ${state.metas.precisaSql ? '<p class="meta-dica">Falta rodar o supabase/metas.sql no Supabase.</p>' : ''}
+    </section>`;
 }
 
 watchModalFocus();

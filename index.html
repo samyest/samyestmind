@@ -65,11 +65,17 @@
         Todas as tarefas
       </button>
       <div id="desafio-nav-group" hidden>
-        <div class="nav-label">Pessoal</div>
+        <div class="nav-section-head">
+          <div class="nav-label">Metas</div>
+          <button class="nav-section-add" onclick="abrirNovaMeta()" title="Nova meta" aria-label="Nova meta">
+            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+        </div>
         <button class="nav-item" data-view="desafio">
           <svg aria-hidden="true" focusable="false" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 01-10 0V4z"/><path d="M17 5h3v2a3 3 0 01-3 3M7 5H4v2a3 3 0 003 3"/></svg>
           Desafio
         </button>
+        <div id="sidebar-metas"></div>
       </div>
       <div id="sidebar-projects"></div>
       <button class="settings-btn" onclick="openSettings()">
@@ -556,6 +562,25 @@
         <button class="btn-secondary" id="m-cancel" onclick="closeModal()">Cancelar</button>
         <button class="btn-primary" id="m-save" onclick="saveTask()" title="Salvar (Ctrl+Enter)">Salvar</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="meta-modal" role="dialog" aria-modal="true" aria-labelledby="meta-modal-title">
+  <div class="modal meta-modal">
+    <div class="modal-head">
+      <div class="meta-modal-titulo">
+        <div class="modal-head-title" id="meta-modal-title">Nova meta</div>
+        <div class="meta-dots" id="meta-dots" role="img" aria-label="Passo 1 de 5"></div>
+      </div>
+      <button class="modal-close" onclick="fecharNovaMeta()" aria-label="Fechar">
+        <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="meta-modal-body"></div>
+    <div class="modal-foot">
+      <button class="btn-secondary" id="meta-voltar" onclick="voltarMeta()">Cancelar</button>
+      <button class="btn-primary" id="meta-seguir" onclick="avancarMeta()">Continuar</button>
     </div>
   </div>
 </div>
