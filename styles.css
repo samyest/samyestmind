@@ -4343,7 +4343,7 @@
      ficam abaixo de 4,5:1 sobre o vidro, e o fundo padrão dos campos é a mesma
      cor do modal. Os tons daqui saem do --text de cada tema, então valem nos
      claros e nos escuros. */
-  .tk-modal{
+  .tk-modal, .set-modal{
     --tk-rotulo:color-mix(in srgb, var(--text) 86%, var(--text-muted));
     --tk-apoio:color-mix(in srgb, var(--text) 74%, var(--text-muted));
     --tk-campo:color-mix(in srgb, var(--text) 6%, transparent);
@@ -4388,3 +4388,35 @@
   .tk-modal .tk-opcoes,
   .tk-modal .tk-opcao + .tk-opcao,
   .tk-modal .field.tk-notas{border-color:color-mix(in srgb, var(--text) 12%, transparent);}
+
+  /* Configurações: os mesmos tons do modal de tarefa. */
+  .set-aba{color:var(--tk-rotulo);}
+  .set-aba svg{color:var(--tk-apoio);}
+  .set-aba[aria-selected="true"]{color:var(--text-strong);}
+  .set-painel-desc,
+  .set-modal .set-linha-desc,
+  .set-link,
+  .set-status{color:var(--tk-apoio);}
+  .set-link:hover{color:var(--text-strong);}
+  .set-rotulo{color:var(--tk-rotulo);font-size:13px;}
+  .set-modal .input{background:var(--tk-campo);border-color:transparent;color:var(--text-strong);}
+  .set-modal .input:hover:not(:disabled){background:var(--tk-campo-hover);}
+  .set-modal .input:focus{background:var(--tk-campo);border-color:var(--accent);}
+  .set-modal .input::placeholder{color:var(--tk-apoio);}
+  .set-modal .theme-card-name{color:var(--tk-rotulo);}
+  .set-modal .theme-card.selected .theme-card-name{color:var(--text-strong);}
+  .set-modal .sound-toggle-track{background:color-mix(in srgb, var(--text) 20%, transparent);}
+  .set-modal .sound-toggle input:checked + .sound-toggle-track{background:var(--accent);}
+  .set-modal .settings-col-name{color:var(--text-strong);}
+  /* Letras dos dias da rotina vêm com cor inline (--text-muted). */
+  #settings-routines-list .settings-col-name div{color:var(--tk-apoio) !important;}
+  .set-modal .settings-col-edit{color:var(--tk-apoio);}
+  .set-modal .settings-col-handle{color:var(--tk-apoio);}
+  .set-modal .btn-danger{
+    color:color-mix(in srgb, var(--danger) 45%, var(--text-strong));
+    background:color-mix(in srgb, var(--danger) 12%, transparent);
+  }
+  .set-modal .btn-danger:hover{background:color-mix(in srgb, var(--danger) 20%, transparent);}
+  .set-modal .set-linha,
+  .set-modal .set-lista,
+  .set-modal .set-nav{border-color:color-mix(in srgb, var(--text) 12%, transparent);}
