@@ -4413,3 +4413,191 @@
   .set-modal .set-linha,
   .set-modal .set-lista,
   .set-modal .set-nav{border-color:color-mix(in srgb, var(--text) 12%, transparent);}
+
+  /* Frase do dia --------------------------------------------------------- */
+  /* Tela cheia na primeira abertura do dia. Uma sequência só: o fundo
+     desfoca, a saudação sobe letra por letra, a data aparece com um traço que
+     cresce, e a frase sobe palavra por palavra. Tudo sai de trás de máscaras
+     (overflow escondido), com a mesma curva. */
+  .frase-dia{
+    --fd-curva:cubic-bezier(.16, 1, .3, 1);
+    --fd-letra:26ms;
+    --fd-palavra:70ms;
+    position:fixed;
+    inset:0;
+    z-index:400;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    gap:32px;
+    padding:clamp(28px, 6vw, 88px);
+    background:color-mix(in srgb, var(--bg-base, #E9EDF1) 80%, transparent);
+    backdrop-filter:blur(30px) saturate(140%);
+    -webkit-backdrop-filter:blur(30px) saturate(140%);
+    color:var(--text-strong);
+    overflow-y:auto;
+    animation:fdFundo .7s ease-out both;
+  }
+  .frase-dia[hidden]{display:none;}
+  .frase-dia.saindo{animation:fdSai .4s ease-in forwards;}
+  .frase-dia.saindo > *{animation:none;transition:transform .4s ease-in, opacity .3s ease-in;transform:translateY(-14px);opacity:0;}
+  @keyframes fdFundo{
+    from{
+      background:color-mix(in srgb, var(--bg-base, #E9EDF1) 0%, transparent);
+      backdrop-filter:blur(0) saturate(100%);
+      -webkit-backdrop-filter:blur(0) saturate(100%);
+    }
+  }
+  @keyframes fdSai{
+    to{
+      background:color-mix(in srgb, var(--bg-base, #E9EDF1) 0%, transparent);
+      backdrop-filter:blur(0) saturate(100%);
+      -webkit-backdrop-filter:blur(0) saturate(100%);
+    }
+  }
+
+  /* Máscara: o pedaço sobe de baixo dela. O respiro embaixo deixa as
+     descendentes (g, p, ç) inteiras. */
+  .fd-mascara{
+    display:inline-block;
+    overflow:hidden;
+    padding-bottom:0.14em;
+    margin-bottom:-0.14em;
+    vertical-align:top;
+  }
+  @keyframes fdSobe{
+    from{transform:translateY(110%) rotate(4deg);}
+  }
+
+  .frase-dia-topo{margin:0;}
+  .frase-dia-saudacao{
+    margin:0;
+    font-family:'Space Grotesk';
+    font-weight:600;
+    font-size:clamp(34px, 4.6vw, 64px);
+    line-height:1.05;
+    letter-spacing:-0.035em;
+    color:var(--text-strong);
+  }
+  .fd-letra{
+    display:inline-block;
+    transform-origin:left bottom;
+    animation:fdSobe .9s var(--fd-curva) both;
+    animation-delay:calc(var(--i) * var(--fd-letra) + 250ms);
+  }
+  .frase-dia-data{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin:14px 0 0;
+    font-size:clamp(14px, 1.3vw, 17px);
+    color:color-mix(in srgb, var(--text) 78%, var(--text-muted));
+    animation:fdAparece .8s var(--fd-curva) both;
+    animation-delay:calc(var(--letras) * var(--fd-letra) + 500ms);
+  }
+  .frase-dia-traco{
+    width:40px;
+    height:2px;
+    border-radius:2px;
+    background:var(--accent);
+    transform-origin:left center;
+    animation:fdTraco .9s var(--fd-curva) both;
+    animation-delay:calc(var(--letras) * var(--fd-letra) + 450ms);
+  }
+  @keyframes fdTraco{from{transform:scaleX(0);}}
+  @keyframes fdAparece{from{opacity:0;transform:translateY(8px);}}
+
+  .frase-dia-corpo{
+    --fd-frase:calc(var(--letras) * var(--fd-letra) + 900ms);
+    margin:0;
+    max-width:min(880px, 100%);
+  }
+  .frase-dia-aspas{
+    display:block;
+    height:0.55em;
+    font-family:'Space Grotesk';
+    font-size:clamp(76px, 9vw, 132px);
+    line-height:1;
+    color:var(--accent);
+    transform-origin:left bottom;
+    animation:fdAspas 1s var(--fd-curva) both;
+    animation-delay:var(--fd-frase);
+  }
+  @keyframes fdAspas{from{opacity:0;transform:scale(.4) rotate(-12deg);}}
+  .frase-dia-texto{
+    margin:0;
+    font-family:'Space Grotesk';
+    font-weight:500;
+    font-size:clamp(26px, 3.5vw, 48px);
+    line-height:1.18;
+    letter-spacing:-0.022em;
+    color:var(--text-strong);
+    text-wrap:balance;
+  }
+  .frase-palavra{
+    display:inline-block;
+    animation:fdSobe 1s var(--fd-curva) both;
+    animation-delay:calc(var(--fd-frase) + 120ms + var(--i) * var(--fd-palavra));
+  }
+  .frase-dia-fonte{
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    margin-top:clamp(20px, 3vw, 36px);
+    animation:fdAparece .8s var(--fd-curva) both;
+    animation-delay:calc(var(--fd-frase) + 300ms + var(--fim) * var(--fd-palavra));
+  }
+  .frase-dia-autor{font-size:17px;font-weight:600;color:var(--text-strong);}
+  .frase-dia-obra{font-size:14px;color:color-mix(in srgb, var(--text) 74%, var(--text-muted));}
+
+  .frase-dia-acoes{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    animation:fdAparece .8s var(--fd-curva) both;
+    animation-delay:1.2s;
+  }
+  .frase-dia-ok{display:inline-flex;align-items:center;justify-content:center;padding:12px 22px;font-size:14px;}
+  .frase-dia-dica{font-size:13px;color:color-mix(in srgb, var(--text) 74%, var(--text-muted));}
+
+  @media (prefers-reduced-motion: reduce){
+    .frase-dia, .frase-dia.saindo, .fd-letra, .frase-dia-data, .frase-dia-traco,
+    .frase-dia-aspas, .frase-palavra, .frase-dia-fonte, .frase-dia-acoes{animation:none;}
+    .frase-dia.saindo > *{transition:none;}
+  }
+  @media (max-width:900px){
+    .frase-dia{gap:24px;}
+    .frase-dia-dica{display:none;}
+    .frase-dia-ok{width:100%;}
+  }
+
+  /* A frase do dia fica no canto de baixo da barra lateral. */
+  .side-frase{
+    margin-top:auto;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    width:100%;
+    padding:12px 10px;
+    border-radius:12px;
+    text-align:left;
+    transition:background-color .15s ease;
+  }
+  .side-frase:hover{background:var(--glass-strong);}
+  .side-frase[hidden]{display:none;}
+  .side-frase-texto{
+    display:-webkit-box;
+    -webkit-line-clamp:5;
+    -webkit-box-orient:vertical;
+    overflow:hidden;
+    font-size:12.5px;
+    line-height:1.5;
+    color:var(--text);
+  }
+  .side-frase-autor{font-size:11.5px;font-weight:500;color:color-mix(in srgb, var(--text) 70%, var(--text-muted));}
+  .side-frase:not([hidden]) + .side-footer{margin-top:4px;}
+  /* Em tela baixa a barra lateral não tem sobra: a frase cede o espaço. */
+  @media (max-height:760px){
+    .side-frase{display:none;}
+    .side-frase:not([hidden]) + .side-footer{margin-top:auto;}
+  }

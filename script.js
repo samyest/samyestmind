@@ -1179,6 +1179,7 @@ async function checkAuth(){
       runGoogleSync();
     }
     await handleGoogleRedirect();
+    talvezMostrarFraseDoDia();
     talvezApresentarMetas();
   } else {
     appEl.style.display = 'none';
@@ -3658,6 +3659,7 @@ function updateNav(){
   state.recentClients = ordered;
   renderSidebarProjects();
   renderSidebarMetas();
+  renderFraseLateral();
 }
 
 let skipEntranceOnce = false;
@@ -7789,8 +7791,8 @@ function talvezApresentarMetas(){
   // Quem já criou meta (a conta dona usa desde antes) não precisa do aviso.
   if(state.metas.lista.length){ marcarNovidadeVista('metas'); return; }
   setTimeout(()=>{
-    // Outro modal aberto (convite, retorno do Google): fica para a próxima visita.
-    if(!session || topOpenModal() || novidadeVista('metas')) return;
+    // Outro modal ou a frase do dia aberta: fica para a próxima visita.
+    if(!session || topOpenModal() || fraseDoDiaAberta() || novidadeVista('metas')) return;
     abrirApresentacaoMetas();
   }, 700);
 }
@@ -7823,6 +7825,161 @@ function criarMetaDaApresentacao(){
   // Depois do observador de foco devolver o foco do modal que fechou; senão o
   // passo a passo guardaria o botão escondido como "onde o foco estava".
   setTimeout(abrirNovaMeta, 0);
+}
+
+/* ---------- frase do dia ---------- */
+
+// Só frases com fonte conhecida (livro, carta, discurso, entrevista). Muita
+// frase famosa circula com o autor errado (Einstein e Da Vinci são os
+// campeões); essas ficaram de fora em vez de entrar com a atribuição duvidosa.
+// As do Steve Jobs têm lista própria: aparecem primeiro e com mais frequência.
+const FRASES_JOBS = [
+  {t:'A única maneira de fazer um ótimo trabalho é amar o que você faz.', a:'Steve Jobs', o:'Discurso em Stanford, 2005'},
+  {t:'Seu tempo é limitado, então não o desperdice vivendo a vida de outra pessoa.', a:'Steve Jobs', o:'Discurso em Stanford, 2005'},
+  {t:'Você não consegue ligar os pontos olhando para a frente; só consegue ligá-los olhando para trás.', a:'Steve Jobs', o:'Discurso em Stanford, 2005'},
+  {t:'Design não é só a aparência e a sensação. Design é como funciona.', a:'Steve Jobs', o:'The New York Times Magazine, 2003'},
+  {t:'Se você ainda não encontrou, continue procurando. Não se acomode.', a:'Steve Jobs', o:'Discurso em Stanford, 2005'},
+  {t:'Foco é saber dizer não.', a:'Steve Jobs', o:'WWDC, 1997'},
+  {t:'Tenha a coragem de seguir seu coração e sua intuição. Eles de algum jeito já sabem o que você realmente quer se tornar.', a:'Steve Jobs', o:'Discurso em Stanford, 2005'},
+  {t:'Muitas vezes, as pessoas não sabem o que querem até você mostrar a elas.', a:'Steve Jobs', o:'Entrevista à BusinessWeek, 1998'},
+  {t:'Ir dormir dizendo que fizemos algo incrível: é isso que importa para mim.', a:'Steve Jobs', o:'The Wall Street Journal, 1993'},
+  {t:'Continue com fome. Continue tolo.', a:'Steve Jobs', o:'Discurso em Stanford, 2005, citando o Whole Earth Catalog'},
+  {t:'É melhor ser um pirata do que entrar para a Marinha.', a:'Steve Jobs', o:'Retiro da equipe do Macintosh, 1982'}
+];
+const FRASES_DO_DIA = [
+  {t:'Não é que tenhamos pouco tempo; é que perdemos muito dele.', a:'Sêneca', o:'Sobre a brevidade da vida'},
+  {t:'O que impede a ação faz a ação avançar. O que fica no caminho vira o caminho.', a:'Marco Aurélio', o:'Meditações'},
+  {t:'O que precisamos aprender a fazer, aprendemos fazendo.', a:'Aristóteles', o:'Ética a Nicômaco'},
+  {t:'A imaginação é mais importante que o conhecimento.', a:'Albert Einstein', o:'Entrevista ao Saturday Evening Post, 1929'},
+  {t:'Uma jornada de mil léguas começa com um passo.', a:'Lao-Tsé', o:'Tao Te Ching'},
+  {t:'O primeiro princípio é não enganar a si mesmo, e você é a pessoa mais fácil de enganar.', a:'Richard Feynman', o:'Cargo Cult Science, 1974'},
+  {t:'Primeiro diga a si mesmo o que você quer ser; depois faça o que tem que fazer.', a:'Epicteto', o:'Discursos'},
+  {t:'Se eu vi mais longe, foi por estar sobre ombros de gigantes.', a:'Isaac Newton', o:'Carta a Robert Hooke, 1676'},
+  {t:'Saber não basta; é preciso aplicar. Querer não basta; é preciso fazer.', a:'Goethe', o:'Os anos de peregrinação de Wilhelm Meister'},
+  {t:'Enquanto a gente adia, a vida passa.', a:'Sêneca', o:'Cartas a Lucílio'},
+  {t:'A vida é como andar de bicicleta: para manter o equilíbrio, é preciso continuar em movimento.', a:'Albert Einstein', o:'Carta ao filho Eduard, 1930'},
+  {t:'O começo é a parte mais importante do trabalho.', a:'Platão', o:'A República'},
+  {t:'A vida não é fácil para nenhum de nós. E daí? Precisamos ter persistência e, acima de tudo, confiança em nós mesmos.', a:'Marie Curie', o:'Citada por Ève Curie em Madame Curie'},
+  {t:'Pare de discutir como deve ser um homem bom. Seja um.', a:'Marco Aurélio', o:'Meditações'},
+  {t:'No campo da observação, o acaso só favorece a mente preparada.', a:'Louis Pasteur', o:'Aula em Lille, 1854'},
+  {t:'A melhor maneira de prever o futuro é inventá-lo.', a:'Alan Kay', o:'Xerox PARC, 1971'},
+  {t:'Não é porque as coisas são difíceis que não ousamos; é porque não ousamos que elas são difíceis.', a:'Sêneca', o:'Cartas a Lucílio'},
+  {t:'Quem conhece os outros é sábio; quem conhece a si mesmo é iluminado.', a:'Lao-Tsé', o:'Tao Te Ching'},
+  {t:'Gênio é um por cento inspiração e noventa e nove por cento transpiração.', a:'Thomas Edison', o:'Harper’s Monthly, 1932'},
+  {t:'Uma vida sem exame não vale a pena ser vivida.', a:'Sócrates', o:'Apologia, de Platão'},
+  {t:'O que perturba as pessoas não são as coisas, mas as opiniões que elas têm sobre as coisas.', a:'Epicteto', o:'Manual'},
+  {t:'Somos o que fazemos repetidamente. A excelência, então, não é um ato, mas um hábito.', a:'Will Durant', o:'A história da filosofia, resumindo Aristóteles'},
+  {t:'O importante é não parar de questionar.', a:'Albert Einstein', o:'Entrevista à revista Life, 1955'},
+  {t:'Quem ousa desperdiçar uma hora ainda não descobriu o valor da vida.', a:'Charles Darwin', o:'Carta à irmã Susan, 1836'},
+  {t:'Saber o que se sabe e saber o que não se sabe: isso é o verdadeiro saber.', a:'Confúcio', o:'Analectos'},
+  {t:'Para quem não sabe a que porto vai, nenhum vento é favorável.', a:'Sêneca', o:'Cartas a Lucílio'},
+  {t:'A alma ganha a cor dos seus pensamentos.', a:'Marco Aurélio', o:'Meditações'},
+  {t:'Uma andorinha só não faz verão, nem um único dia.', a:'Aristóteles', o:'Ética a Nicômaco'}
+];
+
+// A conta começa no dia em que a frase do dia entrou no app. Nos primeiros
+// dias passam todas as do Jobs, uma por dia; depois é dia sim, dia não: Jobs
+// num, outro pensador no outro. Mesma frase o dia inteiro e em qualquer
+// aparelho, porque o índice sai só da data.
+const FRASE_DIA_INICIO = Date.UTC(2026, 9, 13);
+function fraseDoDia(){
+  const [y, m, d] = todayIso().split('-').map(Number);
+  const n = Math.max(0, Math.round((Date.UTC(y, m - 1, d) - FRASE_DIA_INICIO) / 86400000));
+  if(n < FRASES_JOBS.length) return FRASES_JOBS[n];
+  const k = n - FRASES_JOBS.length;
+  return k % 2 === 0
+    ? FRASES_JOBS[(k / 2) % FRASES_JOBS.length]
+    : FRASES_DO_DIA[((k - 1) / 2) % FRASES_DO_DIA.length];
+}
+
+function chaveFraseVista(){
+  return `fraseVista_${session.user.id}`;
+}
+
+function fraseDoDiaAberta(){
+  const el = document.getElementById('frase-dia');
+  return !!(el && !el.hidden);
+}
+
+// Na primeira abertura do dia neste aparelho. Também ao voltar para a aba no
+// dia seguinte, já que o app costuma ficar aberto de um dia para o outro.
+function talvezMostrarFraseDoDia(){
+  if(!session || fraseDoDiaAberta()) return;
+  let vista = null;
+  try{ vista = localStorage.getItem(chaveFraseVista()); }catch(e){}
+  if(vista === todayIso() || topOpenModal()) return;
+  abrirFraseDoDia();
+}
+
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible' && state.myName) talvezMostrarFraseDoDia();
+});
+
+function abrirFraseDoDia(){
+  const el = document.getElementById('frase-dia');
+  if(!el) return;
+  const f = fraseDoDia();
+  const hrs = new Date().getHours();
+  const saudacao = hrs < 12 ? 'Bom dia' : hrs < 18 ? 'Boa tarde' : 'Boa noite';
+  const agora = new Date();
+  const data = `${DIAS_LONGOS[agora.getDay()]}, ${agora.getDate()} de ${MESES_LONGOS[agora.getMonth()]}`;
+  const titulo = `${saudacao}, ${getUserName()}`;
+  // A saudação sobe letra por letra; a frase, palavra por palavra, depois
+  // dela. Cada pedaço sai de trás de uma máscara, então nada pisca nem pula.
+  let letra = 0;
+  const letras = titulo.split(' ').map(p=>`<span class="fd-mascara">${Array.from(p).map(ch=>`<span class="fd-letra" style="--i:${letra++}">${esc(ch)}</span>`).join('')}</span>`).join(' ');
+  const palavras = f.t.split(' ');
+  el.innerHTML = `
+    <div class="frase-dia-topo" style="--letras:${letra}">
+      <h2 class="frase-dia-saudacao" aria-label="${esc(titulo)}"><span aria-hidden="true">${letras}</span></h2>
+      <p class="frase-dia-data"><span class="frase-dia-traco" aria-hidden="true"></span>${esc(data)}</p>
+    </div>
+    <figure class="frase-dia-corpo" style="--letras:${letra};--fim:${palavras.length}">
+      <span class="frase-dia-aspas" aria-hidden="true">“</span>
+      <blockquote class="frase-dia-texto" id="frase-dia-texto">${palavras.map((p, i)=>`<span class="fd-mascara"><span class="frase-palavra" style="--i:${i}">${esc(p)}</span></span>`).join(' ')}</blockquote>
+      <figcaption class="frase-dia-fonte">
+        <span class="frase-dia-autor">${esc(f.a)}</span>
+        <span class="frase-dia-obra">${esc(f.o)}</span>
+      </figcaption>
+    </figure>
+    <div class="frase-dia-acoes">
+      <button class="btn-primary frase-dia-ok" onclick="fecharFraseDoDia()">Começar o dia</button>
+      <span class="frase-dia-dica">ou tecle Enter</span>
+    </div>`;
+  el.hidden = false;
+  el.classList.remove('saindo');
+  document.addEventListener('keydown', teclasFraseDoDia, true);
+  setTimeout(()=>{ const b = el.querySelector('.frase-dia-ok'); if(b) b.focus({preventScroll: true, focusVisible: false}); }, 30);
+}
+
+function fecharFraseDoDia(){
+  const el = document.getElementById('frase-dia');
+  if(!el || el.hidden) return;
+  try{ localStorage.setItem(chaveFraseVista(), todayIso()); }catch(e){}
+  document.removeEventListener('keydown', teclasFraseDoDia, true);
+  const reduzir = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  el.classList.add('saindo');
+  setTimeout(()=>{ el.hidden = true; el.classList.remove('saindo'); el.innerHTML = ''; }, reduzir ? 0 : 400);
+}
+
+// Enquanto a frase está na tela, os atalhos do app (N, setas, Enter dos modais)
+// não passam para trás dela.
+function teclasFraseDoDia(e){
+  if(e.key === 'Enter' || e.key === 'Escape'){
+    e.preventDefault();
+    fecharFraseDoDia();
+  }else if(e.key === 'Tab'){
+    e.preventDefault();
+  }
+  e.stopImmediatePropagation();
+}
+
+function renderFraseLateral(){
+  const el = document.getElementById('side-frase');
+  if(!el) return;
+  const f = fraseDoDia();
+  el.innerHTML = `<span class="side-frase-texto">“${esc(f.t)}”</span><span class="side-frase-autor">${esc(f.a)}</span>`;
+  el.hidden = false;
 }
 
 watchModalFocus();
