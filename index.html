@@ -505,6 +505,16 @@
       <input type="text" class="tk-titulo" id="m-title" placeholder="O que precisa ser feito?" autocomplete="off">
 
       <div class="tk-props">
+        <div class="tk-prop" id="m-kind-field" style="display:none;">
+          <span class="tk-prop-nome"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Tipo</span>
+          <div class="tk-prop-valor">
+            <div class="tk-tipo" role="radiogroup" aria-label="Tipo">
+              <button type="button" role="radio" class="tk-tipo-btn" data-kind="tarefa" onclick="escolherTipoItem('tarefa')">Tarefa</button>
+              <button type="button" role="radio" class="tk-tipo-btn" data-kind="evento" onclick="escolherTipoItem('evento')">Evento</button>
+            </div>
+            <p class="tk-tipo-dica" id="m-kind-hint"></p>
+          </div>
+        </div>
         <div class="tk-prop">
           <label class="tk-prop-nome" for="m-client"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>Cliente</label>
           <div class="tk-prop-valor">
@@ -512,7 +522,7 @@
             <div id="client-suggestions" class="client-suggestions"></div>
           </div>
         </div>
-        <div class="tk-prop">
+        <div class="tk-prop" id="m-status-field">
           <label class="tk-prop-nome" for="m-status"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="14" rx="1.5"/></svg>Status</label>
           <div class="tk-prop-valor">
             <select class="select" id="m-status">
@@ -535,7 +545,7 @@
             </div>
           </div>
         </div>
-        <div class="tk-prop">
+        <div class="tk-prop" id="m-priority-field">
           <label class="tk-prop-nome" for="m-priority"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22V4"/><path d="M5 4h12l-2.5 4.5L17 13H5"/></svg>Prioridade</label>
           <div class="tk-prop-valor">
             <select class="select" id="m-priority">

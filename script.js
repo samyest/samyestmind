@@ -1083,11 +1083,18 @@ function lastSunday(){
 // continua mostrando tudo, atribuído ou não.
 function isVisibleInPersonalViews(t){
   if(!t.project_id) return true;
+  if(ehEvento(t)) return false;
   return t.assigned_to === session.user.id;
 }
 
 function personalTasks(){
   return state.tasks.filter(isVisibleInPersonalViews);
+}
+
+// Evento (reunião, call) de um projeto: tem dia e hora, aparece no Início e
+// no Calendário do projeto, mas não é trabalho a mover pelo quadro.
+function ehEvento(t){
+  return t.kind === 'evento';
 }
 
 function isHiddenFromKanban(t){
@@ -2174,6 +2181,9 @@ function getUserName(){
 async function loadTasks(){
   const {data, error} = await sb.from('tasks').select('*').order('created_at', {ascending: true});
   if(error){console.error(error);state.tasks = [];render();return;}
+  // A coluna kind vem do supabase/eventos_projeto.sql. Sem ela (ou sem nenhuma
+  // tarefa para conferir) a opção "Evento" fica escondida em vez de falhar.
+  if(data.length) state.temTipoEvento = 'kind' in data[0];
   state.tasks = data.map(t => ({
     id: t.id,
     title: t.title,
@@ -2192,6 +2202,7 @@ async function loadTasks(){
     assigned_to: t.assigned_to || null,
     routine_id: t.routine_id || null,
     tags: Array.isArray(t.tags) ? t.tags : [],
+    kind: t.kind === 'evento' ? 'evento' : 'tarefa',
     owner_id: t.user_id,
     created: new Date(t.created_at).getTime()
   }));
@@ -2220,6 +2231,8 @@ async function createTaskRemote(data, opts){
   // Só manda a coluna quando a tarefa tem tag: assim criar tarefa continua
   // funcionando mesmo antes do supabase/task_tags.sql ser aplicado.
   if(data.tags && data.tags.length) linha.tags = data.tags;
+  // Mesma ideia para o tipo: só vai quando é evento.
+  if(data.kind === 'evento') linha.kind = 'evento';
   const {data: task, error} = await sb.from('tasks').insert(linha).select().single();
   if(error){
     // 23505 = violou o índice único (tarefa já criada por outro aparelho).
@@ -2244,6 +2257,7 @@ async function createTaskRemote(data, opts){
     assigned_to: task.assigned_to || null,
     routine_id: task.routine_id || null,
     tags: Array.isArray(task.tags) ? task.tags : [],
+    kind: task.kind === 'evento' ? 'evento' : 'tarefa',
     owner_id: task.user_id,
     created: new Date(task.created_at).getTime()
   };
@@ -2407,6 +2421,7 @@ async function updateTaskRemote(id, data){
   if('project_id' in data) payload.project_id = data.project_id || null;
   if('assigned_to' in data) payload.assigned_to = data.assigned_to || null;
   if('tags' in data) payload.tags = data.tags || [];
+  if('kind' in data) payload.kind = data.kind === 'evento' ? 'evento' : 'tarefa';
   const {error} = await sb.from('tasks').update(payload).eq('id', id);
   if(error){console.error(error);showToast('Não deu para atualizar. Tente de novo em instantes.', 'erro');return false;}
   return true;
@@ -2741,6 +2756,7 @@ function openProjectView(projectId){
   flushNotesIfPending();
   if(state.currentProjectId !== projectId) state.projCalSelectedDate = null;
   if(state.view !== 'project') state.viewBeforeProject = state.view;
+  if(state.currentProjectId !== projectId || state.view !== 'project') state.projectTasksView = visaoProjetoSalva(projectId);
   state.currentProjectId = projectId;
   state.view = 'project';
   render();
@@ -2840,19 +2856,21 @@ async function insertProjectImage(){
 
 // Quadro, calendário ou notas na página do projeto. Vale para todos os
 // projetos e fica salvo no aparelho, como a aba do Desafio.
-const VISOES_PROJETO = ['kanban', 'calendar', 'notes'];
-function visaoProjetoSalva(){
+// Cada projeto lembra a última aba; o primeiro acesso abre no Início.
+const VISOES_PROJETO = ['inicio', 'kanban', 'calendar', 'notes'];
+function visaoProjetoSalva(pid){
+  if(!pid) return 'inicio';
   try{
-    const v = localStorage.getItem('projectTasksView');
-    return VISOES_PROJETO.includes(v) ? v : 'kanban';
-  }catch(e){ return 'kanban'; }
+    const v = localStorage.getItem(`projectView:${pid}`);
+    return VISOES_PROJETO.includes(v) ? v : 'inicio';
+  }catch(e){ return 'inicio'; }
 }
 
 function setProjectTasksView(visao){
   // Sair das notas com um salvamento agendado perdia o que acabou de ser digitado.
   flushNotesIfPending();
   state.projectTasksView = visao;
-  try{ localStorage.setItem('projectTasksView', visao); }catch(e){}
+  try{ if(state.currentProjectId) localStorage.setItem(`projectView:${state.currentProjectId}`, visao); }catch(e){}
   skipEntranceOnce = true;
   render();
 }
@@ -2897,6 +2915,7 @@ function renderProjectNotes(p, canEdit){
   }
   // Sem a tabela nova (SQL ainda não rodou), continua a nota única de antes.
   if(n.semTabela) return renderNotaUnicaProjeto(p, canEdit);
+  if(n.erro) return `<div class="glass proj-surface proj-vazio"><strong>Não deu para carregar as notas.</strong>${esc(n.erro)}<button class="btn-secondary" style="margin-top:12px;" onclick="delete state.notasProjeto['${p.id}'];render()">Tentar de novo</button></div>`;
   return renderNotasProjeto(p, canEdit, n);
 }
 
@@ -2941,7 +2960,9 @@ function renderProjectPage(){
   const role = myRoleInProject(p.id);
   const canEdit = isOwner || role === 'editor';
   const roleLabel = isOwner ? 'Dono' : (role === 'editor' ? 'Editor' : 'Visualizador');
-  const projectTasks = state.tasks.filter(t=>t.project_id===p.id);
+  // Itens = tarefas e eventos; o quadro e as contagens são só das tarefas.
+  const projectItems = state.tasks.filter(t=>t.project_id===p.id);
+  const projectTasks = projectItems.filter(t=>!ehEvento(t));
   const cols = getProjectColumns(p);
   const doneCount = projectTasks.filter(t=>taskColumnType(t)==='done').length;
   const openCount = projectTasks.length - doneCount;
@@ -2949,6 +2970,7 @@ function renderProjectPage(){
   const visao = state.projectTasksView;
   const asCalendar = visao === 'calendar';
   const asNotes = visao === 'notes';
+  const asInicio = visao === 'inicio';
   const clientOptions = [...new Set(projectTasks.map(t=>t.client).filter(Boolean))].sort();
   const assigneeOptions = [
     {id:'', label:'Todas as pessoas'},
@@ -2960,7 +2982,8 @@ function renderProjectPage(){
   // é o filtro que está escondendo o trabalho.
   const filtrando = !!(state.filter.kanbanSearch || state.filter.kanbanClient || state.filter.kanbanTag || state.filter.kanbanAssignee
     || (!asCalendar && state.filter.kanbanDate && state.filter.kanbanDate !== 'all'));
-  const filteredProjectTasks = projectTasks.filter(t=>{
+  // O calendário mostra tarefas e eventos; o quadro filtra os eventos fora.
+  const filteredProjectTasks = projectItems.filter(t=>{
     if(state.filter.kanbanClient && t.client !== state.filter.kanbanClient) return false;
     if(state.filter.kanbanTag && !taskHasTag(t, state.filter.kanbanTag)) return false;
     if(state.filter.kanbanAssignee){
@@ -2981,12 +3004,13 @@ function renderProjectPage(){
     : `${openCount} em aberto · ${doneCount} concluída${doneCount!==1?'s':''}`;
 
   const abas = [
+    {key:'inicio', label:'Início'},
     {key:'kanban', label:'Quadro'},
     {key:'calendar', label:'Calendário'},
     {key:'notes', label:'Notas', marca: !asNotes && (state.notasProjeto[p.id] && !state.notasProjeto[p.id].semTabela ? state.notasProjeto[p.id].lista.length > 0 : projectHasNotes(p))}
   ];
 
-  const filtros = asNotes ? '' : `
+  const filtros = (asNotes || asInicio) ? '' : `
       <div class="proj-filtros">
         <div class="search-box">
           <svg class="search-box-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -3013,7 +3037,9 @@ function renderProjectPage(){
       </div>`;
 
   let corpo;
-  if(asNotes){
+  if(asInicio){
+    corpo = renderProjectInicio(p, canEdit, projectItems, projectTasks, cols);
+  } else if(asNotes){
     corpo = renderProjectNotes(p, canEdit);
   } else if(!asCalendar && !canEdit && projectTasks.length === 0){
     corpo = `<div class="glass proj-surface proj-vazio"><strong>Nenhuma tarefa neste projeto ainda.</strong>Quem edita o projeto cria as tarefas aqui; elas aparecem para você assim que forem criadas.</div>`;
@@ -3024,7 +3050,7 @@ function renderProjectPage(){
     corpo = `
       <div class="kanban kanban-projeto">
         ${cols.map(col=>{
-          const list = sortByDateThenPriority(filteredProjectTasks.filter(t=>statusVisivel(t, cols)===col.key && !isHiddenFromKanban(t)));
+          const list = sortByDateThenPriority(filteredProjectTasks.filter(t=>!ehEvento(t) && statusVisivel(t, cols)===col.key && !isHiddenFromKanban(t)));
           const collapsed = col.hidden && !state.expandedCols.has(col.key);
           if(collapsed){
             return `
@@ -3083,7 +3109,7 @@ function renderProjectPage(){
         </button>
         ${isOwner ? `<button class="btn-secondary btn-com-icone" onclick="convidarNoProjeto('${p.id}')"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg>Convidar</button>` : ''}
         ${canEdit && visao === 'kanban' ? `<button class="btn-secondary" onclick="openColumnModal(null, '${p.id}')">+ Nova coluna</button>` : ''}
-        ${canEdit ? `<button class="btn-primary" onclick="openModal(null, '', '${p.id}')">+ Nova tarefa</button>` : ''}
+        ${canEdit ? renderMenuNovo() : ''}
       </div>
     </header>
 
@@ -4057,7 +4083,7 @@ function renderKanban(){
   // As colunas compartilhadas abaixo mostram o quadro inteiro do projeto —
   // atribuído a mim ou não — por isso partem de state.tasks, não de
   // personalTasks() (que só traz o que é meu).
-  const sharedFilteredTasks = state.tasks.filter(t=>t.project_id && matchesKanbanFilters(t));
+  const sharedFilteredTasks = state.tasks.filter(t=>t.project_id && !ehEvento(t) && matchesKanbanFilters(t));
   const normalColsHtml = cols.map(col=>{
     const list = sortByDateThenPriority(filteredTasks.filter(t=>statusVisivel(t, cols)===col.key && !isHiddenFromKanban(t) && !t.project_id));
     const collapsed = col.hidden && !state.expandedCols.has(col.key);
@@ -4491,7 +4517,7 @@ function renderDayPanel(iso, tasks, opts){
       <div class="day-panel-head">
         <div class="day-panel-date">${dateLabel}</div>
         <div class="day-panel-actions">
-          ${canAdd ? `<button class="btn-primary" onclick="openModal(null,'${iso}'${o.projectId ? `,'${o.projectId}'` : ''})">+ Adicionar neste dia</button>` : ''}
+          ${canAdd ? `<button class="btn-primary" onclick="openModal(null,'${iso}'${o.projectId ? `,'${o.projectId}','evento'` : ''})">+ Adicionar neste dia</button>` : ''}
           <button class="day-panel-close" onclick="selectCalDay(null)" title="Fechar">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
@@ -4557,7 +4583,7 @@ function renderTable(){
 
   let baseTasks;
   if(selectedProject){
-    baseTasks = state.tasks.filter(t=>t.project_id===selectedProject.id);
+    baseTasks = state.tasks.filter(t=>t.project_id===selectedProject.id && !ehEvento(t));
   } else {
     baseTasks = personalTasks();
   }
@@ -4922,8 +4948,48 @@ function hideTagSuggestions(){
   if(wrap){ wrap.classList.remove('open'); wrap.innerHTML = ''; }
 }
 
-function openModal(id, prefillDate, prefillProjectId){
+// Tarefa ou evento, só dentro de projeto. Fora de projeto é sempre tarefa.
+let tipoItemModal = 'tarefa';
+
+function escolherTipoItem(k){
+  tipoItemModal = k === 'evento' ? 'evento' : 'tarefa';
+  aplicarTipoItem();
+}
+
+function aplicarTipoItem(){
+  const projeto = document.getElementById('m-project').value || null;
+  const disponivel = !!projeto && state.temTipoEvento !== false;
+  if(!disponivel) tipoItemModal = 'tarefa';
+  const evento = tipoItemModal === 'evento';
+  document.getElementById('m-kind-field').style.display = disponivel ? '' : 'none';
+  document.querySelectorAll('#m-kind-field .tk-tipo-btn').forEach(b=>{
+    const sel = b.dataset.kind === tipoItemModal;
+    b.classList.toggle('selected', sel);
+    b.setAttribute('aria-checked', sel);
+  });
+  document.getElementById('m-kind-hint').textContent = evento
+    ? 'Aparece no Início e no Calendário do projeto, fora do quadro.'
+    : 'Vai para o quadro do projeto.';
+  // Evento não tem coluna, prioridade nem responsável.
+  document.getElementById('m-status-field').style.display = evento ? 'none' : '';
+  document.getElementById('m-priority-field').style.display = evento ? 'none' : '';
+  if(evento) document.getElementById('m-assignee-field').style.display = 'none';
+  else if(projeto) populateAssigneeSelect(projeto, document.getElementById('m-assignee').value || null);
+  document.getElementById('m-title').placeholder = evento ? 'Nome do evento (ex: Reunião de heads)' : 'O que precisa ser feito?';
+  const rotuloData = document.querySelector('label[for="m-date"]');
+  if(rotuloData && rotuloData.lastChild) rotuloData.lastChild.textContent = evento ? 'Quando' : 'Prazo';
+  const titulo = document.getElementById('modal-title');
+  const novo = !state.editingId;
+  const somenteLeitura = document.getElementById('m-save').style.display === 'none';
+  titulo.textContent = evento
+    ? (somenteLeitura ? 'Evento' : novo ? 'Novo evento' : 'Editar evento')
+    : (somenteLeitura ? 'Tarefa' : novo ? 'Nova tarefa' : 'Editar tarefa');
+}
+
+function openModal(id, prefillDate, prefillProjectId, prefillKind){
   state.editingId = id || null;
+  const tarefaAberta = id ? state.tasks.find(x=>x.id===id) : null;
+  tipoItemModal = tarefaAberta ? (tarefaAberta.kind || 'tarefa') : (prefillKind === 'evento' ? 'evento' : 'tarefa');
   const modal = document.getElementById('modal');
   const title = document.getElementById('modal-title');
   const delBtn = document.getElementById('m-delete');
@@ -4956,7 +5022,7 @@ function openModal(id, prefillDate, prefillProjectId){
     document.getElementById('m-save').style.display = canEdit ? '' : 'none';
     document.getElementById('m-cancel').textContent = canEdit ? 'Cancelar' : 'Fechar';
     title.textContent = canEdit ? 'Editar tarefa' : 'Tarefa';
-    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn, #modal .tag-chip-remove').forEach(el=>{el.disabled = !canEdit;});
+    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn, #modal .tag-chip-remove, #modal .tk-tipo-btn').forEach(el=>{el.disabled = !canEdit;});
     setupGcalToggle(t, canEdit);
     commentsField.style.display = '';
     currentCommentTaskId = id;
@@ -4984,7 +5050,7 @@ function openModal(id, prefillDate, prefillProjectId){
     delBtn.style.display = 'none';
     document.getElementById('m-save').style.display = '';
     document.getElementById('m-cancel').textContent = 'Cancelar';
-    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn, #modal .tag-chip-remove').forEach(el=>{el.disabled = false;});
+    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn, #modal .tag-chip-remove, #modal .tk-tipo-btn').forEach(el=>{el.disabled = false;});
     setupGcalToggle(null, true);
     commentsField.style.display = 'none';
     currentCommentTaskId = null;
@@ -4994,7 +5060,9 @@ function openModal(id, prefillDate, prefillProjectId){
     populateAssigneeSelect(e.target.value || null, null);
     // Rotina é só pra tarefa pessoal — escolher um projeto desliga e some com a opção.
     resetRepeatField(!id && !e.target.value);
+    aplicarTipoItem();
   };
+  aplicarTipoItem();
   modal.classList.add('open');
   setTimeout(()=>document.getElementById('m-title').focus(), 50);
 }
@@ -5145,10 +5213,20 @@ async function salvarTarefaDoModal(title){
 
   // Barreira final: mesmo que algo acima falhe, a tarefa nao vai para o banco
   // sem status — era isso que a fazia sumir.
-  const statusEscolhido = document.getElementById('m-status').value;
-  const newStatus = statusEscolhido || colunasDe(document.getElementById('m-project').value || null)[0].key;
-  const existingTask = state.editingId ? state.tasks.find(x=>x.id===state.editingId) : null;
   const projetoEscolhido = document.getElementById('m-project').value || null;
+  const kind = projetoEscolhido && tipoItemModal === 'evento' ? 'evento' : 'tarefa';
+  if(kind === 'evento' && !document.getElementById('m-date').value){
+    showToast('Escolha o dia do evento.', 'erro');
+    document.getElementById('m-date').focus();
+    return;
+  }
+  const existingTask = state.editingId ? state.tasks.find(x=>x.id===state.editingId) : null;
+  // Evento fica na primeira coluna do projeto só para o banco ter um status;
+  // ele não aparece no quadro.
+  const statusEscolhido = kind === 'evento'
+    ? (existingTask ? existingTask.status : colunasDe(projetoEscolhido)[0].key)
+    : document.getElementById('m-status').value;
+  const newStatus = statusEscolhido || colunasDe(projetoEscolhido)[0].key;
   const gcalInput = document.getElementById('m-gcal');
   // Sem Calendar conectado o interruptor fica escondido: aí a tarefa guarda a
   // escolha que já tinha (ou "sim", para quando a conexão vier depois).
@@ -5163,12 +5241,12 @@ async function salvarTarefaDoModal(title){
     status: newStatus,
     date: document.getElementById('m-date').value,
     time: document.getElementById('m-time').value,
-    priority: document.getElementById('m-priority').value,
+    priority: kind === 'evento' ? 'normal' : document.getElementById('m-priority').value,
     notes: document.getElementById('m-notes').value.trim(),
     color_id: selectedTaskColor,
     sync_google: wantsGcal,
     project_id: projetoEscolhido,
-    assigned_to: document.getElementById('m-assignee').value || null,
+    assigned_to: kind === 'evento' ? null : (document.getElementById('m-assignee').value || null),
     completed_at: resolveCompletedAt(
       newStatus,
       existingTask ? existingTask.status : null,
@@ -5178,6 +5256,7 @@ async function salvarTarefaDoModal(title){
     )
   };
   if(selectedTaskTags.length || (existingTask && existingTask.tags && existingTask.tags.length)) data.tags = [...selectedTaskTags];
+  if(state.temTipoEvento !== false) data.kind = kind;
   const isNew = !state.editingId;
   let savedTask = null;
   if(state.editingId){
@@ -5194,7 +5273,7 @@ async function salvarTarefaDoModal(title){
   // o "Tarefa criada" cobria o toast de erro — falha com cara de sucesso.
   if(!savedTask) return;
   closeModal();render();
-  showToast(isNew ? 'Tarefa criada' : 'Alterações salvas');
+  showToast(isNew ? (kind === 'evento' ? 'Evento criado' : 'Tarefa criada') : 'Alterações salvas');
   // Desmarcar o interruptor tem que limpar o evento que ficou para trás —
   // syncTaskToGoogle já ignora a tarefa daqui em diante. Vale a mesma regra de
   // apagar a tarefa: se ela veio do Google, o compromisso real fica de pé.
@@ -8020,6 +8099,7 @@ function notaVazia(nt){
 }
 
 let canalNotas = null;
+let criarNotaAoCarregar = null;
 const notasCarregando = new Set();
 async function carregarNotasProjeto(pid){
   const anterior = state.notasProjeto[pid];
@@ -8028,16 +8108,25 @@ async function carregarNotasProjeto(pid){
   notasCarregando.delete(pid);
   if(error){
     console.error(error);
-    const semTabela = error.code === '42P01' || error.code === 'PGRST205' || /project_notes|schema cache/i.test(error.message || '');
-    state.notasProjeto[pid] = {lista: [], semTabela, aberta: null, lendo: false};
-    if(!semTabela) showToast('Não deu para carregar as notas. Confira a conexão e tente de novo.', 'erro');
+    // Só "tabela não existe" volta para a nota única. Qualquer outro erro
+    // (permissão, por exemplo) aparece na tela com o código, em vez de se
+    // disfarçar de "o SQL não rodou".
+    const semTabela = error.code === '42P01' || error.code === 'PGRST205';
+    state.notasProjeto[pid] = {lista: [], semTabela, aberta: null, lendo: false, erro: semTabela ? null : `${error.code || 'erro'}: ${error.message || ''}`};
+    if(semTabela) console.warn('Notas do projeto: a tabela project_notes não foi encontrada (rode supabase/notas_projeto.sql). Usando a nota única.', error);
+    else showToast('Não deu para carregar as notas. Confira a conexão e tente de novo.', 'erro');
   }else{
     const lista = (data || []).map(notaProjetoLinha);
     const aberta = anterior && lista.some(x=>x.id === anterior.aberta) ? anterior.aberta : (lista[0] ? lista[0].id : null);
     state.notasProjeto[pid] = {lista, semTabela: false, aberta, lendo: !!(anterior && anterior.lendo && aberta === anterior.aberta)};
     ligarRealtimeNotas();
   }
-  if(state.view === 'project' && state.currentProjectId === pid && state.projectTasksView === 'notes'){
+  if(!error && criarNotaAoCarregar === pid){
+    criarNotaAoCarregar = null;
+    novaNotaProjeto();
+    return;
+  }
+  if(state.view === 'project' && state.currentProjectId === pid && (state.projectTasksView === 'notes' || state.projectTasksView === 'inicio')){
     skipEntranceOnce = true;
     safeRerender();
   }
@@ -8220,6 +8309,168 @@ function renderNotasProjeto(p, canEdit, n){
       <div id="project-notes-editor" class="project-notes-editor" data-nota="${nota.id}" role="textbox" aria-multiline="true" aria-label="Texto da nota" ${canEdit ? 'contenteditable="true"' : 'aria-readonly="true"'} oninput="scheduleProjectNotesSave()" data-placeholder="${canEdit ? 'Escreva aqui: pauta, decisões, quem faz o quê…' : ''}">${sanitizeNotesHtml(nota.body)}</div>
     </div>`;
   return `<div class="glass proj-surface proj-notas proj-notas-v2 ${n.lendo && nota ? 'lendo' : ''}">${lista}${doc}</div>`;
+}
+
+/* ---------- Início do projeto ---------- */
+
+function isoMaisDias(iso, n){
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+}
+
+function rotuloDia(iso){
+  const hoje = todayIso();
+  if(iso === hoje) return 'Hoje';
+  if(iso === isoMaisDias(hoje, 1)) return 'Amanhã';
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return `${DIAS_LONGOS[dt.getDay()]}, ${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}`;
+}
+
+// Ao abrir o projeto: o que vem nos próximos 7 dias (eventos e tarefas
+// juntos, por dia e hora), as notas mais recentes, o quadro em números e o
+// que está com quem está olhando.
+function renderProjectInicio(p, canEdit, itens, tarefas, cols){
+  const hoje = todayIso();
+  const limite = isoMaisDias(hoje, 6);
+  const aberta = t=>ehEvento(t) || taskColumnType(t) !== 'done';
+  const porHora = (a, b)=>(a.date || '').localeCompare(b.date || '') || (a.time || '99').localeCompare(b.time || '99');
+  const atrasadas = tarefas.filter(t=>t.date && t.date < hoje && taskColumnType(t) !== 'done').sort(porHora);
+  const proximos = itens.filter(t=>t.date && t.date >= hoje && t.date <= limite && aberta(t)).sort(porHora);
+
+  const linha = (t)=>{
+    const evento = ehEvento(t);
+    const quem = !evento ? getAssigneeLabel(t) : null;
+    return `
+      <button class="pi-item ${evento ? 'evento' : ''}" onclick="openModal('${t.id}')" style="--col-color:${evento ? 'var(--accent)' : taskColumnColor(t)}">
+        <span class="pi-hora">${t.time ? esc(t.time.slice(0, 5)) : ''}</span>
+        <span class="pi-marca" aria-hidden="true"></span>
+        <span class="pi-titulo">${esc(t.title)}</span>
+        <span class="pi-tipo">${evento ? 'Evento' : esc(quem || 'Tarefa')}</span>
+      </button>`;
+  };
+  const dias = [];
+  proximos.forEach(t=>{
+    let g = dias.find(x=>x.iso === t.date);
+    if(!g){ g = {iso: t.date, itens: []}; dias.push(g); }
+    g.itens.push(t);
+  });
+  const agenda = (atrasadas.length || dias.length) ? `
+    ${atrasadas.length ? `<div class="pi-dia atrasado"><h3 class="pi-dia-titulo">Atrasadas<span>${atrasadas.length}</span></h3>${atrasadas.slice(0, 5).map(linha).join('')}</div>` : ''}
+    ${dias.map(g=>`<div class="pi-dia ${g.iso === hoje ? 'hoje' : ''}"><h3 class="pi-dia-titulo">${rotuloDia(g.iso)}<span>${g.itens.length}</span></h3>${g.itens.map(linha).join('')}</div>`).join('')}`
+    : `<div class="pi-vazio"><p>Nada marcado para os próximos 7 dias.</p>${canEdit ? `<div class="pi-vazio-acoes">${state.temTipoEvento !== false ? `<button class="btn-secondary" onclick="novoNoProjeto('evento')">Novo evento</button>` : ''}<button class="btn-secondary" onclick="novoNoProjeto('tarefa')">Nova tarefa</button></div>` : ''}</div>`;
+
+  // Notas: as três mexidas por último.
+  const n = state.notasProjeto[p.id];
+  if(!n && !notasCarregando.has(p.id)) carregarNotasProjeto(p.id);
+  let notas;
+  if(!n) notas = `<p class="pi-suave" role="status">Carregando…</p>`;
+  else if(n.semTabela || n.erro) notas = `<p class="pi-suave">${projectHasNotes(p) ? 'Este projeto tem notas.' : 'Nenhuma nota ainda.'}</p>`;
+  else if(!n.lista.length) notas = `<p class="pi-suave">Nenhuma nota ainda.${canEdit ? ' Anote a próxima reunião aqui.' : ''}</p>`;
+  else notas = [...n.lista].sort((a, b)=>(b.updated || '').localeCompare(a.updated || '')).slice(0, 3).map(x=>`
+      <button class="pi-nota" onclick="abrirNotaDoInicio('${x.id}')">
+        <span class="pi-nota-titulo">${esc(x.title.trim() || 'Sem título')}</span>
+        <span class="pi-nota-meta">${esc(dataNota(x.updated || x.created))} · ${esc(autorNota(p, x))}</span>
+        <span class="pi-nota-previa">${esc(previaNota(x))}</span>
+      </button>`).join('');
+
+  // Quadro em números.
+  const contagem = cols.map(c=>({c, n: tarefas.filter(t=>statusVisivel(t, cols) === c.key && !isHiddenFromKanban(t)).length}));
+  const quadro = `
+    <div class="pi-colunas">
+      ${contagem.map(({c, n})=>`<div class="pi-coluna"><span class="kb-col-dot" style="background:${corSegura(c.color)}"></span><span class="pi-coluna-nome">${esc(c.name)}</span><span class="pi-coluna-n">${n}</span></div>`).join('')}
+    </div>
+    ${atrasadas.length ? `<p class="pi-alerta">${atrasadas.length === 1 ? '1 tarefa atrasada' : `${atrasadas.length} tarefas atrasadas`}</p>` : ''}`;
+
+  // Comigo.
+  const minhas = tarefas.filter(t=>t.assigned_to === session.user.id && taskColumnType(t) !== 'done').sort(porHora);
+  const comigo = minhas.length
+    ? minhas.slice(0, 4).map(t=>`
+      <button class="pi-item" onclick="openModal('${t.id}')" style="--col-color:${taskColumnColor(t)}">
+        <span class="pi-marca" aria-hidden="true"></span>
+        <span class="pi-titulo">${esc(t.title)}</span>
+        <span class="pi-tipo">${t.date ? esc(rotuloDia(t.date)) : 'sem prazo'}</span>
+      </button>`).join('') + (minhas.length > 4 ? `<p class="pi-suave">e mais ${minhas.length - 4}</p>` : '')
+    : `<p class="pi-suave">Nada atribuído a você.</p>`;
+
+  return `
+    <div class="pi-grade">
+      <section class="glass proj-surface pi-painel pi-agenda" aria-labelledby="pi-agenda-t">
+        <div class="pi-head"><h2 class="panel-title" id="pi-agenda-t">Próximos 7 dias</h2><button class="dash-link" onclick="setProjectTasksView('calendar')">Abrir calendário</button></div>
+        ${agenda}
+      </section>
+      <section class="glass proj-surface pi-painel" aria-labelledby="pi-notas-t">
+        <div class="pi-head"><h2 class="panel-title" id="pi-notas-t">Notas recentes</h2><button class="dash-link" onclick="setProjectTasksView('notes')">Ver todas</button></div>
+        ${canEdit && n && !n.semTabela && !n.erro ? `<button class="btn-secondary btn-com-icone pi-nova-nota" onclick="novoNoProjeto('nota')">${ICONE_MAIS}Nova nota</button>` : ''}
+        ${notas}
+      </section>
+      <section class="glass proj-surface pi-painel" aria-labelledby="pi-quadro-t">
+        <div class="pi-head"><h2 class="panel-title" id="pi-quadro-t">Quadro</h2><button class="dash-link" onclick="setProjectTasksView('kanban')">Abrir quadro</button></div>
+        ${quadro}
+      </section>
+      <section class="glass proj-surface pi-painel" aria-labelledby="pi-comigo-t">
+        <div class="pi-head"><h2 class="panel-title" id="pi-comigo-t">Com você</h2></div>
+        ${comigo}
+      </section>
+    </div>`;
+}
+
+function abrirNotaDoInicio(id){
+  setProjectTasksView('notes');
+  abrirNotaProjeto(id);
+}
+
+/* ---------- + Novo (tarefa, evento, nota) ---------- */
+
+function renderMenuNovo(){
+  const item = (k, nome, desc)=>`<button role="menuitem" class="novo-menu-item" onclick="novoNoProjeto('${k}')"><span class="novo-menu-nome">${nome}</span><span class="novo-menu-desc">${desc}</span></button>`;
+  return `
+    <div class="novo-menu">
+      <button class="btn-primary novo-menu-btn" aria-haspopup="menu" aria-expanded="false" onclick="alternarMenuNovo(this)">+ Novo</button>
+      <div class="novo-menu-lista" role="menu" hidden>
+        ${item('tarefa', 'Tarefa', 'Vai para o quadro')}
+        ${state.temTipoEvento !== false ? item('evento', 'Evento', 'Reunião, call, entrega com hora') : ''}
+        ${item('nota', 'Nota', 'Anotações do time')}
+      </div>
+    </div>`;
+}
+
+function alternarMenuNovo(btn, fechar){
+  const lista = btn.nextElementSibling;
+  const abrir = !fechar && lista.hidden;
+  lista.hidden = !abrir;
+  btn.setAttribute('aria-expanded', abrir);
+  if(abrir){ const primeiro = lista.querySelector('button'); if(primeiro) primeiro.focus(); }
+}
+
+document.addEventListener('click', (e)=>{
+  document.querySelectorAll('.novo-menu').forEach(m=>{
+    if(!m.contains(e.target)){
+      const b = m.querySelector('.novo-menu-btn');
+      if(b && b.getAttribute('aria-expanded') === 'true') alternarMenuNovo(b, true);
+    }
+  });
+});
+document.addEventListener('keydown', (e)=>{
+  if(e.key !== 'Escape') return;
+  const b = document.querySelector('.novo-menu-btn[aria-expanded="true"]');
+  if(b){ e.stopPropagation(); alternarMenuNovo(b, true); b.focus(); }
+}, true);
+
+function novoNoProjeto(k){
+  const pid = state.currentProjectId;
+  const b = document.querySelector('.novo-menu-btn[aria-expanded="true"]');
+  if(b) alternarMenuNovo(b, true);
+  if(!pid) return;
+  if(k === 'evento') openModal(null, todayIso(), pid, 'evento');
+  else if(k === 'nota'){
+    setProjectTasksView('notes');
+    const n = state.notasProjeto[pid];
+    if(n && !n.semTabela) novaNotaProjeto();
+    else if(!n) criarNotaAoCarregar = pid;
+  }
+  else openModal(null, '', pid);
 }
 
 watchModalFocus();
