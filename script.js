@@ -7255,10 +7255,18 @@ async function reabrirMeta(id){
 async function excluirMeta(id){
   const g = metaPorId(id);
   if(!g) return;
+  // As tarefas que a rotina do hábito criou saem junto: sem a meta elas
+  // ficavam soltas no Kanban. Precisa ser antes de apagar a rotina, que no
+  // banco zera o routine_id delas (on delete set null) e o vínculo se perde.
+  const daRotina = g.routineId ? state.tasks.filter(t=>t.routine_id === g.routineId) : [];
   const texto = g.routineId
-    ? 'Os registros dela somem junto, e a rotina ligada para de criar tarefas. As tarefas que já existem continuam.'
+    ? `Os registros dela, a rotina ligada e ${daRotina.length === 1 ? 'a tarefa que ela criou somem' : `as ${daRotina.length} tarefas que ela criou somem`} junto. Não tem como desfazer.`
     : 'Os registros dela somem junto. Não tem como desfazer.';
   if(!await confirmar(texto, {title: 'Excluir esta meta?', okLabel: 'Excluir meta'})) return;
+  for(const t of daRotina){
+    await forgetTaskInGoogle(t);
+    if(await deleteTaskRemote(t.id)) state.tasks = state.tasks.filter(x=>x.id !== t.id);
+  }
   if(g.routineId && !await deleteRoutineRemote(g.routineId)) return;
   const {error} = await sb.from('goals').delete().eq('id', g.id);
   if(error){ console.error(error); showToast('Não deu para excluir a meta. Tente de novo em instantes.', 'erro'); return; }
