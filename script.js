@@ -886,6 +886,9 @@ let state = {
   selected: new Set(),
   ignoredEvents: new Set(),
   novidadesVistas: [],
+  // Notas de cada projeto, carregadas quando a aba Notas abre:
+  // {lista, semTabela, aberta (id), lendo (no celular, a nota ocupa a tela)}
+  notasProjeto: {},
   metas: {lista: [], registros: {}, modo: {}, carregado: false, precisaSql: false, atual: null, viewAntes: null, calMes: null}
 };
 
@@ -1881,7 +1884,8 @@ let realtimeDebounceTimer = null;
 let isRefreshing = false;
 
 function isEditingNotes(){
-  return document.activeElement && document.activeElement.id === 'project-notes-editor';
+  const id = document.activeElement && document.activeElement.id;
+  return id === 'project-notes-editor' || id === 'project-note-title';
 }
 
 function safeRerender(){
@@ -1906,6 +1910,9 @@ async function refreshAll(kind, silent){
     if(!kind || kind === 'tasks') cargas.push(loadTasks());
     if(!kind || kind === 'projects') cargas.push(loadProjects());
     if(!kind) cargas.push(loadDesafio());
+    if((!kind || kind === 'notes') && state.view === 'project' && state.projectTasksView === 'notes' && state.currentProjectId && !isEditingNotes()){
+      cargas.push(carregarNotasProjeto(state.currentProjectId));
+    }
     await Promise.all(cargas);
     safeRerender();
     if(!silent) showToast('Atualizado');
@@ -2761,6 +2768,7 @@ function scheduleProjectNotesSave(){
 async function saveProjectNotes(){
   const el = document.getElementById('project-notes-editor');
   if(!el) return;
+  if(el.dataset.nota) return salvarNotaProjeto(el);
   const p = state.projects.find(x=>x.id===state.currentProjectId);
   if(!p) return;
   const html = sanitizeNotesHtml(el.innerHTML);
@@ -2882,6 +2890,17 @@ function renderProjectCalendar(p, tasks){
 }
 
 function renderProjectNotes(p, canEdit){
+  const n = state.notasProjeto[p.id];
+  if(!n){
+    if(!notasCarregando.has(p.id)) carregarNotasProjeto(p.id);
+    return `<div class="glass proj-surface proj-vazio" role="status">Carregando as notas…</div>`;
+  }
+  // Sem a tabela nova (SQL ainda não rodou), continua a nota única de antes.
+  if(n.semTabela) return renderNotaUnicaProjeto(p, canEdit);
+  return renderNotasProjeto(p, canEdit, n);
+}
+
+function renderNotaUnicaProjeto(p, canEdit){
   const temNotas = projectHasNotes(p);
   if(!canEdit && !temNotas){
     return `<div class="glass proj-surface proj-vazio"><strong>Ninguém escreveu notas neste projeto ainda.</strong>Quem edita o projeto pode registrar aqui contexto, links e decisões.</div>`;
@@ -2964,7 +2983,7 @@ function renderProjectPage(){
   const abas = [
     {key:'kanban', label:'Quadro'},
     {key:'calendar', label:'Calendário'},
-    {key:'notes', label:'Notas', marca: !asNotes && projectHasNotes(p)}
+    {key:'notes', label:'Notas', marca: !asNotes && (state.notasProjeto[p.id] && !state.notasProjeto[p.id].semTabela ? state.notasProjeto[p.id].lista.length > 0 : projectHasNotes(p))}
   ];
 
   const filtros = asNotes ? '' : `
@@ -7988,6 +8007,219 @@ function renderFraseLateral(){
   const f = fraseDoDia();
   el.innerHTML = `<span class="side-frase-texto">“${esc(f.t)}”</span><span class="side-frase-autor">${esc(f.a)}</span>`;
   el.hidden = false;
+}
+
+/* ---------- notas do projeto (várias, com título) ---------- */
+
+function notaProjetoLinha(r){
+  return {id: r.id, projectId: r.project_id, authorId: r.author_id, title: r.title || '', body: r.body || '', created: r.created_at, updated: r.updated_at};
+}
+
+function notaVazia(nt){
+  return !nt.title.trim() && !/<img\b/i.test(nt.body) && !nt.body.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+}
+
+let canalNotas = null;
+const notasCarregando = new Set();
+async function carregarNotasProjeto(pid){
+  const anterior = state.notasProjeto[pid];
+  notasCarregando.add(pid);
+  const {data, error} = await sb.from('project_notes').select('*').eq('project_id', pid).order('created_at', {ascending: false});
+  notasCarregando.delete(pid);
+  if(error){
+    console.error(error);
+    const semTabela = error.code === '42P01' || error.code === 'PGRST205' || /project_notes|schema cache/i.test(error.message || '');
+    state.notasProjeto[pid] = {lista: [], semTabela, aberta: null, lendo: false};
+    if(!semTabela) showToast('Não deu para carregar as notas. Confira a conexão e tente de novo.', 'erro');
+  }else{
+    const lista = (data || []).map(notaProjetoLinha);
+    const aberta = anterior && lista.some(x=>x.id === anterior.aberta) ? anterior.aberta : (lista[0] ? lista[0].id : null);
+    state.notasProjeto[pid] = {lista, semTabela: false, aberta, lendo: !!(anterior && anterior.lendo && aberta === anterior.aberta)};
+    ligarRealtimeNotas();
+  }
+  if(state.view === 'project' && state.currentProjectId === pid && state.projectTasksView === 'notes'){
+    skipEntranceOnce = true;
+    safeRerender();
+  }
+}
+
+// Canal próprio, ligado só depois que a tabela respondeu: assinar uma tabela
+// que ainda não existe derrubaria o canal das tarefas junto.
+function ligarRealtimeNotas(){
+  if(canalNotas) return;
+  canalNotas = sb.channel('notas-projeto')
+    .on('postgres_changes', {event:'*', schema:'public', table:'project_notes'}, (payload)=>{
+      const pid = (payload.new && payload.new.project_id) || (payload.old && payload.old.project_id);
+      if(pid && state.notasProjeto[pid] && !isEditingNotes()) carregarNotasProjeto(pid);
+    })
+    .subscribe();
+}
+
+function notasDoProjetoAtual(){
+  return state.notasProjeto[state.currentProjectId] || null;
+}
+
+function abrirNotaProjeto(id){
+  flushNotesIfPending();
+  const n = notasDoProjetoAtual();
+  if(!n) return;
+  n.aberta = id;
+  n.lendo = true;
+  skipEntranceOnce = true;
+  render();
+}
+
+function voltarListaNotas(){
+  flushNotesIfPending();
+  const n = notasDoProjetoAtual();
+  if(n) n.lendo = false;
+  skipEntranceOnce = true;
+  render();
+}
+
+async function novaNotaProjeto(){
+  flushNotesIfPending();
+  const pid = state.currentProjectId;
+  const n = notasDoProjetoAtual();
+  if(!pid || !n) return;
+  // Uma nota em branco minha já aberta serve: não empilha várias vazias.
+  const vazia = n.lista.find(x=>x.authorId === session.user.id && notaVazia(x));
+  let nota = vazia;
+  if(!nota){
+    const {data, error} = await sb.from('project_notes').insert({project_id: pid, author_id: session.user.id, title: '', body: ''}).select().single();
+    if(error){ console.error(error); showToast('Não deu para criar a nota. Confira a conexão e tente de novo.', 'erro'); return; }
+    nota = notaProjetoLinha(data);
+    n.lista.unshift(nota);
+  }
+  n.aberta = nota.id;
+  n.lendo = true;
+  skipEntranceOnce = true;
+  render();
+  setTimeout(()=>{ const t = document.getElementById('project-note-title'); if(t) t.focus(); }, 30);
+}
+
+async function excluirNotaProjeto(id){
+  const n = notasDoProjetoAtual();
+  const nota = n && n.lista.find(x=>x.id === id);
+  if(!nota) return;
+  const nome = nota.title.trim() ? `“${nota.title.trim()}”` : 'esta nota';
+  if(!notaVazia(nota) && !await confirmar(`Ela some para todo mundo do projeto. Não tem como desfazer.`, {title: `Apagar ${nome}?`, okLabel: 'Apagar nota'})) return;
+  if(notesSaveTimer){ clearTimeout(notesSaveTimer); notesSaveTimer = null; }
+  const {error} = await sb.from('project_notes').delete().eq('id', id);
+  if(error){ console.error(error); showToast('Não deu para apagar a nota. Tente de novo em instantes.', 'erro'); return; }
+  n.lista = n.lista.filter(x=>x.id !== id);
+  n.aberta = n.lista[0] ? n.lista[0].id : null;
+  n.lendo = false;
+  skipEntranceOnce = true;
+  render();
+  showToast('Nota apagada');
+}
+
+async function salvarNotaProjeto(el){
+  const n = notasDoProjetoAtual();
+  const nota = n && n.lista.find(x=>x.id === el.dataset.nota);
+  if(!nota) return;
+  const tituloEl = document.getElementById('project-note-title');
+  const title = tituloEl ? tituloEl.value.slice(0, 160) : nota.title;
+  const body = sanitizeNotesHtml(el.innerHTML);
+  const agora = new Date().toISOString();
+  const {error} = await sb.from('project_notes').update({title, body, updated_at: agora}).eq('id', nota.id);
+  const indicator = document.getElementById('notes-save-indicator');
+  if(error){
+    console.error(error);
+    if(indicator){ indicator.textContent = 'Não salvou — edite de novo'; indicator.classList.add('erro'); }
+    showToast('A nota não foi salva. Confira a conexão e edite de novo.', 'erro');
+    return;
+  }
+  nota.title = title;
+  nota.body = body;
+  nota.updated = agora;
+  // A lista ao lado acompanha o título e a prévia sem redesenhar o editor.
+  const item = document.querySelector(`.pn-item[data-nota="${nota.id}"]`);
+  if(item){
+    item.querySelector('.pn-item-titulo').textContent = title.trim() || 'Sem título';
+    item.querySelector('.pn-item-previa').textContent = previaNota(nota);
+  }
+  if(indicator){
+    indicator.textContent = 'Salvo agora';
+    setTimeout(()=>{
+      const atual = document.getElementById('notes-save-indicator');
+      if(atual && atual.textContent === 'Salvo agora') atual.textContent = 'Salvo automaticamente';
+    }, 2500);
+  }
+}
+
+function previaNota(nota){
+  // Espaço no fim de cada bloco: sem ele os itens de lista grudavam ("offVendas").
+  const doc = new DOMParser().parseFromString(nota.body.replace(/<\/(p|div|li|h[1-6])>|<br\s*\/?>/gi, ' $&'), 'text/html');
+  const texto = (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+  return texto ? texto.slice(0, 90) : (/<img\b/i.test(nota.body) ? 'Imagem' : 'Sem texto');
+}
+
+function dataNota(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  const mesmoAno = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(LOCALE_APP, mesmoAno ? {day: '2-digit', month: '2-digit'} : {day: '2-digit', month: '2-digit', year: 'numeric'});
+}
+
+function autorNota(p, nota){
+  if(nota.authorId === session.user.id) return 'você';
+  const pe = projectPeople(p).find(x=>x.id === nota.authorId);
+  return pe ? pe.label : 'alguém que saiu do projeto';
+}
+
+function renderNotasProjeto(p, canEdit, n){
+  const nota = n.lista.find(x=>x.id === n.aberta) || null;
+  const itens = n.lista.map(x=>`
+    <button class="pn-item ${nota && x.id === nota.id ? 'ativa' : ''}" data-nota="${x.id}" onclick="abrirNotaProjeto('${x.id}')"${nota && x.id === nota.id ? ' aria-current="true"' : ''}>
+      <span class="pn-item-titulo">${esc(x.title.trim() || 'Sem título')}</span>
+      <span class="pn-item-meta">${esc(dataNota(x.created))} · ${esc(autorNota(p, x))}</span>
+      <span class="pn-item-previa">${esc(previaNota(x))}</span>
+    </button>`).join('');
+  const lista = `
+    <div class="pn-lista">
+      ${canEdit ? `<button class="btn-primary btn-com-icone pn-nova" onclick="novaNotaProjeto()">${ICONE_MAIS}Nova nota</button>` : ''}
+      ${n.lista.length ? `<div class="pn-itens">${itens}</div>` : `<p class="pn-lista-vazia">${canEdit ? 'Nenhuma nota ainda. Crie uma para a próxima reunião, um combinado ou uma ideia.' : 'Ninguém escreveu notas neste projeto ainda.'}</p>`}
+    </div>`;
+  const ferramenta = (cmd, label, conteudo, valor)=>`<button class="proj-nota-btn" data-cmd="${cmd}" onmousedown="event.preventDefault()" onclick="execEditorCmd('${cmd}'${valor ? `,'${valor}'` : ''})" title="${label}" aria-label="${label}" aria-pressed="false">${conteudo}</button>`;
+  const doc = !nota ? `
+    <div class="pn-doc pn-doc-vazio">
+      <p>${canEdit ? 'Escolha uma nota na lista ou crie uma nova.' : 'Escolha uma nota na lista.'}</p>
+    </div>` : `
+    <div class="pn-doc">
+      <button class="pn-voltar" onclick="voltarListaNotas()">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"/></svg>Todas as notas
+      </button>
+      <div class="pn-doc-topo">
+        ${canEdit
+          ? `<input type="text" class="pn-titulo" id="project-note-title" maxlength="160" autocomplete="off" placeholder="Título da nota (ex: Reunião de heads ${esc(dataNota(new Date().toISOString()))})" aria-label="Título da nota" value="${esc(nota.title)}" oninput="scheduleProjectNotesSave()" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('project-notes-editor').focus();}">`
+          : `<h3 class="pn-titulo">${esc(nota.title.trim() || 'Sem título')}</h3>`}
+        <p class="pn-doc-meta">Criada por ${esc(autorNota(p, nota))} em ${esc(dataNota(nota.created))}</p>
+      </div>
+      ${canEdit ? `
+      <div class="proj-notas-head">
+        <div class="proj-notas-ferramentas" role="toolbar" aria-label="Formatação da nota">
+          ${ferramenta('formatBlock', 'Título', '<span aria-hidden="true" class="proj-nota-h">T</span>', 'H3')}
+          <span class="proj-nota-sep" aria-hidden="true"></span>
+          ${ferramenta('bold', 'Negrito', '<b aria-hidden="true">B</b>')}
+          ${ferramenta('italic', 'Itálico', '<i aria-hidden="true">I</i>')}
+          <span class="proj-nota-sep" aria-hidden="true"></span>
+          ${ferramenta('insertUnorderedList', 'Lista', '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg>')}
+          ${ferramenta('insertOrderedList', 'Lista numerada', '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="10" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>')}
+          <span class="proj-nota-sep" aria-hidden="true"></span>
+          <button class="proj-nota-btn" onmousedown="event.preventDefault()" onclick="insertProjectImage()" title="Inserir imagem" aria-label="Inserir imagem">
+            <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          </button>
+        </div>
+        <span id="notes-save-indicator" class="proj-notas-salvo" role="status">Salvo automaticamente</span>
+        <button class="pn-apagar" onclick="excluirNotaProjeto('${nota.id}')" title="Apagar nota" aria-label="Apagar nota">
+          <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+        </button>
+      </div>` : ''}
+      <div id="project-notes-editor" class="project-notes-editor" data-nota="${nota.id}" role="textbox" aria-multiline="true" aria-label="Texto da nota" ${canEdit ? 'contenteditable="true"' : 'aria-readonly="true"'} oninput="scheduleProjectNotesSave()" data-placeholder="${canEdit ? 'Escreva aqui: pauta, decisões, quem faz o quê…' : ''}">${sanitizeNotesHtml(nota.body)}</div>
+    </div>`;
+  return `<div class="glass proj-surface proj-notas proj-notas-v2 ${n.lendo && nota ? 'lendo' : ''}">${lista}${doc}</div>`;
 }
 
 watchModalFocus();
