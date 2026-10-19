@@ -3389,17 +3389,17 @@ function renderProjectsModal(){
               </select>
               <button class="btn-secondary" style="flex-shrink:0;padding:0 14px;" onclick="inviteToProject('${p.id}')">Convidar</button>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
-              <div style="flex:1;height:1px;background:var(--line);"></div>
-              <span style="font-size:10.5px;color:var(--text-soft);font-family:'JetBrains Mono',monospace;">ou</span>
-              <div style="flex:1;height:1px;background:var(--line);"></div>
-            </div>
-            <div class="invite-row">
-              <select id="code-role-${p.id}" style="flex:1;">
-                <option value="editor">Gerar código — Editor</option>
-                <option value="viewer">Gerar código — Visualizador</option>
+            <div class="invite-ou"><span>ou</span></div>
+            <div class="invite-code-row">
+              <div class="invite-code-text">
+                <div class="invite-code-title">Código de convite</div>
+                <div class="invite-code-hint">Pra quem já tem login no app.</div>
+              </div>
+              <select id="code-role-${p.id}" aria-label="Papel de quem entrar pelo código">
+                <option value="editor">Editor</option>
+                <option value="viewer">Visualizador</option>
               </select>
-              <button class="btn-secondary" style="flex-shrink:0;padding:0 14px;" onclick="generateInviteCode('${p.id}')">Gerar</button>
+              <button class="btn-secondary" style="flex-shrink:0;padding:0 14px;" onclick="generateInviteCode('${p.id}')">Gerar código</button>
             </div>
             <button class="btn-danger" style="width:100%;margin-top:10px;" onclick="deleteProject('${p.id}')">Excluir projeto</button>
           ` : `
