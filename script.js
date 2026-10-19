@@ -1189,13 +1189,24 @@ async function checkAuth(){
       runGoogleSync();
     }
     await handleGoogleRedirect();
+    await aceitarConvitePendente();
     talvezMostrarFraseDoDia();
     talvezApresentarMetas();
   } else {
     appEl.style.display = 'none';
     onbEl.classList.remove('show');
     authEl.classList.add('show');
+    document.getElementById('auth-sub').textContent = subtituloAuth();
   }
+}
+
+function subtituloAuth(){
+  if(lerConvitePendente()){
+    return authMode === 'signin'
+      ? 'Você recebeu um convite para um projeto. Entre pra participar.'
+      : 'Você recebeu um convite para um projeto. Crie sua conta pra participar.';
+  }
+  return authMode === 'signin' ? 'Acesse sua conta pra continuar de onde parou' : 'Crie sua conta em segundos';
 }
 
 async function saveOnboarding(){
@@ -1217,7 +1228,7 @@ async function saveOnboarding(){
 function toggleAuthMode(){
   authMode = authMode === 'signin' ? 'signup' : 'signin';
   document.getElementById('auth-title').textContent = authMode === 'signin' ? 'Entrar' : 'Criar conta';
-  document.getElementById('auth-sub').textContent = authMode === 'signin' ? 'Acesse sua conta pra continuar de onde parou' : 'Crie sua conta em segundos';
+  document.getElementById('auth-sub').textContent = subtituloAuth();
   document.getElementById('auth-btn').textContent = authMode === 'signin' ? 'Entrar' : 'Criar conta';
   document.getElementById('auth-switch-text').textContent = authMode === 'signin' ? 'Não tem conta?' : 'Já tem conta?';
   document.getElementById('auth-switch-btn').textContent = authMode === 'signin' ? 'Cadastrar' : 'Entrar';
@@ -1243,7 +1254,7 @@ async function doAuth(){
   const fn = authMode === 'signin' ? 'signInWithPassword' : 'signUp';
   const {data, error} = await sb.auth[fn](
     authMode === 'signup'
-      ? {email, password, options:{emailRedirectTo: location.origin}}
+      ? {email, password, options:{emailRedirectTo: lerConvitePendente() ? linkDoConvite(lerConvitePendente()) : location.origin}}
       : {email, password}
   );
   btn.disabled = false;
@@ -1413,6 +1424,68 @@ async function disconnectGoogleCalendar(){
   showToast('Google Calendar desconectado');
   updateGoogleStatusUI();
   safeRerender();
+}
+
+// Link de convite: ?convite=CODIGO. O código fica guardado até a pessoa entrar,
+// porque login e cadastro (com a confirmação por email) podem levar a outra
+// carga da página, que já não tem o parâmetro.
+const CONVITE_KEY = 'convitePendente';
+
+function capturarConviteDaUrl(){
+  const params = new URLSearchParams(location.search);
+  if(!params.has('convite')) return;
+  const code = codigoDoConvite(params.get('convite'));
+  params.delete('convite');
+  const q = params.toString();
+  history.replaceState({}, '', location.pathname + (q ? '?' + q : ''));
+  if(code) try{ localStorage.setItem(CONVITE_KEY, code); }catch(e){}
+}
+function lerConvitePendente(){
+  try{ return localStorage.getItem(CONVITE_KEY); }catch(e){ return null; }
+}
+function limparConvitePendente(){
+  try{ localStorage.removeItem(CONVITE_KEY); }catch(e){}
+}
+
+function linkDoConvite(code){
+  return `${location.origin}/?convite=${encodeURIComponent(code)}`;
+}
+
+// Aceita o código puro ("7F3K2A") ou o link inteiro colado no campo.
+function codigoDoConvite(texto){
+  const t = String(texto || '').trim();
+  const m = t.match(/[?&]convite=([A-Za-z0-9]+)/);
+  return (m ? m[1] : t).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+// Roda depois do login: pergunta antes de entrar, pra quem está com a conta
+// errada aberta não entrar no projeto com ela.
+async function aceitarConvitePendente(){
+  const code = lerConvitePendente();
+  if(!code) return;
+  const ok = await confirmar(`Você vai entrar no projeto com a conta ${session.user.email}. Se o convite era para outra conta, saia e abra o link de novo.`, {title: 'Aceitar o convite?', okLabel: 'Entrar no projeto', danger: false});
+  limparConvitePendente();
+  if(!ok) return;
+  const {data, error} = await sb.rpc('accept_invite_by_code', {p_code: code});
+  if(error){console.error(error);showToast('Não deu para aceitar o convite. Peça o link de novo para quem te convidou.', 'erro');return;}
+  if(!data || !data.success){
+    showToast('Esse link de convite já foi usado ou não vale mais. Peça um novo para quem te convidou.', 'erro');
+    return;
+  }
+  await loadProjects();
+  showToast(data.already_member ? 'Você já era membro desse projeto' : 'Você entrou no projeto!');
+  if(state.projects.some(p=>p.id === data.project_id)) openProjectView(data.project_id);
+  else render();
+}
+
+async function copiarLinkConvite(code){
+  const link = linkDoConvite(code);
+  try{
+    await navigator.clipboard.writeText(link);
+    showToast('Link copiado. Ele vale para uma pessoa só.');
+  }catch(e){
+    showToast(`Não deu para copiar. O link é ${link}`, 'erro');
+  }
 }
 
 // Lê o ?google=... com que o callback devolve o usuário ao app.
@@ -2624,6 +2697,7 @@ async function inviteToProject(projectId){
   const roleSelect = document.getElementById(`invite-role-${projectId}`);
   const email = emailInput.value.trim().toLowerCase();
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){showToast('Confira o email — falta algo como nome@dominio.com.', 'erro');emailInput.focus();return;}
+  if(email === (session.user.email || '').toLowerCase()){showToast('Esse é o seu email — você já está no projeto.', 'erro');return;}
   const p = state.projects.find(x=>x.id===projectId);
   if(p && p.members.some(m=>m.invited_email === email)){showToast('Essa pessoa já foi convidada para este projeto.', 'erro');return;}
   const {error} = await sb.from('project_members').insert({
@@ -2663,12 +2737,17 @@ async function generateInviteCode(projectId){
   if(error){console.error(error);showToast('Não deu para gerar o código. Tente de novo em instantes.', 'erro');return;}
   await loadProjects();
   renderProjectsModal();
-  showToast(`Código gerado: ${code}`);
+  try{
+    await navigator.clipboard.writeText(linkDoConvite(code));
+    showToast(`Código ${code} gerado e link copiado. Mande para uma pessoa.`);
+  }catch(e){
+    showToast(`Código gerado: ${code}. Use "Copiar link" ao lado dele.`);
+  }
 }
 
 async function joinByCode(){
   const input = document.getElementById('join-code-input');
-  const code = input.value.trim().toUpperCase();
+  const code = codigoDoConvite(input.value);
   if(!code){input.focus();return;}
   const {data, error} = await sb.rpc('accept_invite_by_code', {p_code: code});
   if(error){console.error(error);showToast('Não deu para concluir a ação. Tente de novo em instantes.', 'erro');return;}
@@ -3323,11 +3402,12 @@ function renderProjectsModal(){
 
   html += `
     <div class="field" style="margin-bottom:18px;">
-      <label>Entrar com código de convite</label>
+      <label for="join-code-input">Entrar com código de convite</label>
       <div class="invite-row">
-        <input type="text" class="input" id="join-code-input" placeholder="Ex: 7F3K2A" maxlength="6" style="text-transform:uppercase;letter-spacing:0.1em;" onkeypress="if(event.key==='Enter')joinByCode()">
+        <input type="text" class="input" id="join-code-input" placeholder="Código ou link, ex: 7F3K2A" autocomplete="off" spellcheck="false" autocapitalize="characters" onkeypress="if(event.key==='Enter')joinByCode()">
         <button class="btn-primary" style="flex-shrink:0;padding:0 16px;" onclick="joinByCode()">Entrar</button>
       </div>
+      <div class="invite-conta">Convites por email chegam para <strong>${esc(session.user.email || '')}</strong>. Se esperava um convite e ele não aparece, confira se entrou com a conta certa.</div>
     </div>
   `;
 
@@ -3360,10 +3440,12 @@ function renderProjectsModal(){
                 ? `Código: <span style="color:var(--text-strong);font-family:'JetBrains Mono',monospace;letter-spacing:0.08em;">${esc(m.code)}</span>`
                 : `<span style="color:var(--text-soft);">Convite por código, ainda não usado</span>`)
             : esc((m.profile && m.profile.name) || m.invited_email || '—');
+          const codeSeguro = m.code ? String(m.code).replace(/[^A-Z0-9]/gi, '') : '';
           return `
           <div class="member-row">
             ${avatarChip(m.profile, (m.invited_email||'?')[0])}
             <div class="member-email">${label}</div>
+            ${isOwner && codeSeguro ? `<button class="member-copy" onclick="copiarLinkConvite('${codeSeguro}')">Copiar link</button>` : ''}
             <div class="member-status ${m.status}">${m.status === 'accepted' ? 'Ativo' : 'Pendente'} · ${m.role === 'editor' ? 'Editor' : 'Visualizador'}</div>
             ${isOwner ? `<button class="member-remove" onclick="removeMember('${m.id}')" title="Remover"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>` : ''}
           </div>`;
@@ -8474,4 +8556,5 @@ function novoNoProjeto(k){
 }
 
 watchModalFocus();
+capturarConviteDaUrl();
 checkAuth();

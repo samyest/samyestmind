@@ -2655,6 +2655,16 @@
   }
   .invite-row select:focus, .invite-code-row select:focus{border-color:var(--accent);outline:none;}
   .invite-row select:focus-visible, .invite-code-row select:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+  .invite-conta{font-size:11.5px;color:var(--text-soft);margin-top:6px;line-height:1.45;}
+  .invite-conta strong{color:var(--text-muted);font-weight:500;}
+  .member-copy{
+    flex-shrink:0;
+    font-size:11.5px;
+    color:var(--accent);
+    padding:3px 8px;
+    border-radius:6px;
+  }
+  .member-copy:hover{background:var(--glass-hover);}
   .invite-ou{display:flex;align-items:center;gap:8px;margin-top:10px;}
   .invite-ou::before, .invite-ou::after{content:'';flex:1;height:1px;background:var(--line);}
   .invite-ou span{font-size:10.5px;color:var(--text-soft);font-family:'JetBrains Mono',monospace;}
