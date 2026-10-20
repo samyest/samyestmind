@@ -44,6 +44,13 @@ confirmação de email do Supabase ("Confirm email", nas configurações do prov
 Email em Authentication). Sem ela, alguém poderia criar conta com o email de outra pessoa
 e aceitar os convites dela.
 
+O "Esqueci minha senha" da tela de login usa o email "Reset Password" do Supabase
+(Authentication → Emails → Templates); o template padrão já serve. O link volta
+para a raiz do app, então a origem dele (`https://SEU-APP.vercel.app` e, para testar,
+`http://localhost:8000`) precisa estar em **Redirect URLs**, em Authentication → URL
+Configuration. Fora da lista, o Supabase manda a pessoa para a Site URL e o app não
+abre o formulário de senha nova.
+
 Rode `supabase/google_credentials.sql` no SQL Editor do Supabase. A tabela fica
 com RLS ligado e **sem policies**, então nada no navegador consegue ler os
 refresh tokens — só as funções em `api/`, que usam a service role key.

@@ -47,6 +47,12 @@ let gcalConnectedAt = null;
 // Contas de teste do Google (não verificadas) têm o refresh token expirado pelo
 // próprio Google 7 dias após a conexão, não importa o que o app faça — ver README.
 const GOOGLE_TEST_TOKEN_LIFETIME_DAYS = 7;
+// Lido antes do createClient: o supabase-js consome o hash do link do email e
+// limpa a URL. Quem volta pelo link de redefinir senha já chega com sessão, e o
+// checkAuth não pode jogar a pessoa direto no app sem ela escolher a senha nova.
+const hashDaUrl = new URLSearchParams(location.hash.slice(1));
+let recuperandoSenha = hashDaUrl.get('type') === 'recovery';
+const linkDoEmailInvalido = hashDaUrl.has('error_description');
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let session = null;
 let authMode = 'signin';
@@ -56,6 +62,10 @@ let authMode = 'signin';
 // 401 e o sync com o Google parava em silêncio — com a aba aberta o dia todo.
 sb.auth.onAuthStateChange((event, novaSessao)=>{
   if(novaSessao) session = novaSessao;
+  if(event === 'PASSWORD_RECOVERY' && !recuperandoSenha){
+    recuperandoSenha = true;
+    checkAuth();
+  }
   // Saiu em outra aba (ou o refresh token morreu): esta aba não pode seguir
   // mostrando dados de uma sessão que não existe mais.
   if(event === 'SIGNED_OUT' && session && document.getElementById('app').style.display !== 'none'){
@@ -1148,6 +1158,13 @@ async function checkAuth(){
   if(!ALLOW_SIGNUP){
     document.querySelector('.auth-switch').style.display = 'none';
   }
+  if(session && recuperandoSenha){
+    appEl.style.display = 'none';
+    onbEl.classList.remove('show');
+    authEl.classList.add('show');
+    mostrarNovaSenha();
+    return;
+  }
   if(session){
     authEl.classList.remove('show');
     const {data: myProfile} = await sb.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
@@ -1197,6 +1214,10 @@ async function checkAuth(){
     onbEl.classList.remove('show');
     authEl.classList.add('show');
     document.getElementById('auth-sub').textContent = subtituloAuth();
+    if(linkDoEmailInvalido && location.hash){
+      showAuthMessage('Esse link expirou ou já foi usado. Peça um novo.');
+      history.replaceState(null, '', location.pathname + location.search);
+    }
   }
 }
 
@@ -1232,7 +1253,57 @@ function toggleAuthMode(){
   document.getElementById('auth-btn').textContent = authMode === 'signin' ? 'Entrar' : 'Criar conta';
   document.getElementById('auth-switch-text').textContent = authMode === 'signin' ? 'Não tem conta?' : 'Já tem conta?';
   document.getElementById('auth-switch-btn').textContent = authMode === 'signin' ? 'Cadastrar' : 'Entrar';
+  document.getElementById('auth-forgot').hidden = authMode !== 'signin';
   document.getElementById('auth-error').classList.remove('show');
+}
+
+// A mensagem é a mesma exista o email ou não, para a tela não servir de
+// consulta de quem tem conta.
+async function esqueciSenha(){
+  const email = document.getElementById('auth-email').value.trim();
+  const btn = document.getElementById('auth-forgot-btn');
+  document.getElementById('auth-error').classList.remove('show');
+  if(!email){showAuthMessage('Digite seu email acima pra receber o link.');document.getElementById('auth-email').focus();return;}
+  btn.disabled = true;
+  const {error} = await sb.auth.resetPasswordForEmail(email, {redirectTo: location.origin});
+  btn.disabled = false;
+  // Nem o erro aparece: o limite de envios do Supabase, por exemplo, é contado
+  // por conta, e só dispara para email que existe.
+  if(error) console.warn('resetPasswordForEmail:', error.message);
+  showAuthMessage(`Se existir uma conta com ${email}, enviamos um link pra redefinir a senha.`, true);
+}
+
+function mostrarNovaSenha(){
+  document.getElementById('auth-title').textContent = 'Nova senha';
+  document.getElementById('auth-sub').textContent = 'Escolha uma senha nova pra sua conta';
+  document.querySelector('#auth-screen form:not(#auth-recovery-form)').hidden = true;
+  document.querySelector('.auth-switch').hidden = true;
+  document.getElementById('auth-recovery-form').hidden = false;
+  document.getElementById('auth-recovery-email').value = session.user.email || '';
+  document.getElementById('auth-error').classList.remove('show');
+  setTimeout(()=>document.getElementById('auth-new-password').focus(), 60);
+}
+
+async function salvarNovaSenha(){
+  const password = document.getElementById('auth-new-password').value;
+  const confirmacao = document.getElementById('auth-new-password-confirm').value;
+  const btn = document.getElementById('auth-recovery-btn');
+  document.getElementById('auth-error').classList.remove('show');
+  if(!password || !confirmacao){showAuthMessage('Preencha os dois campos.');return;}
+  if(password.length < 6){showAuthMessage('A senha precisa ter pelo menos 6 caracteres.');return;}
+  if(password !== confirmacao){showAuthMessage('As senhas não batem.');return;}
+  btn.disabled = true;
+  btn.textContent = 'Salvando…';
+  const {error} = await sb.auth.updateUser({password});
+  btn.disabled = false;
+  btn.textContent = 'Salvar senha';
+  if(error){showAuthMessage(error.message);return;}
+  recuperandoSenha = false;
+  document.getElementById('auth-recovery-form').hidden = true;
+  document.querySelector('#auth-screen form:not(#auth-recovery-form)').hidden = false;
+  document.querySelector('.auth-switch').hidden = false;
+  document.getElementById('auth-title').textContent = 'Entrar';
+  await checkAuth();
 }
 
 function showAuthMessage(text, isSuccess){

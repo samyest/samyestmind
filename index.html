@@ -168,7 +168,22 @@
         <label class="sr-only" for="auth-password">Senha</label>
         <input type="password" class="input" id="auth-password" name="password" placeholder="Senha" autocomplete="current-password" spellcheck="false">
       </div>
+      <div class="auth-forgot" id="auth-forgot">
+        <button type="button" onclick="esqueciSenha()" id="auth-forgot-btn">Esqueci minha senha</button>
+      </div>
       <button class="auth-btn" id="auth-btn" type="submit">Entrar</button>
+    </form>
+    <form id="auth-recovery-form" hidden onsubmit="event.preventDefault();salvarNovaSenha();">
+      <input type="email" id="auth-recovery-email" name="email" autocomplete="username" hidden>
+      <div class="auth-field">
+        <label class="sr-only" for="auth-new-password">Nova senha</label>
+        <input type="password" class="input" id="auth-new-password" name="new-password" placeholder="Nova senha" autocomplete="new-password" spellcheck="false">
+      </div>
+      <div class="auth-field">
+        <label class="sr-only" for="auth-new-password-confirm">Confirme a nova senha</label>
+        <input type="password" class="input" id="auth-new-password-confirm" name="new-password-confirm" placeholder="Confirme a nova senha" autocomplete="new-password" spellcheck="false">
+      </div>
+      <button class="auth-btn" id="auth-recovery-btn" type="submit">Salvar senha</button>
     </form>
     <div class="auth-switch">
       <span id="auth-switch-text">Não tem conta?</span>

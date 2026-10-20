@@ -1994,6 +1994,17 @@
     text-decoration:underline;
     padding:0;
   }
+  .auth-forgot{
+    text-align:right;
+    margin:-4px 0 16px;
+  }
+  .auth-forgot button{
+    font-size:12px;
+    color:var(--text-muted);
+    padding:0;
+  }
+  .auth-forgot button:hover:not(:disabled){color:var(--accent);text-decoration:underline;}
+  .auth-forgot button:disabled{opacity:0.6;cursor:wait;}
 
   .side-user{
     display:flex;
