@@ -50,9 +50,23 @@ const GOOGLE_TEST_TOKEN_LIFETIME_DAYS = 7;
 // Lido antes do createClient: o supabase-js consome o hash do link do email e
 // limpa a URL. Quem volta pelo link de redefinir senha já chega com sessão, e o
 // checkAuth não pode jogar a pessoa direto no app sem ela escolher a senha nova.
+// O pedido fica guardado até a senha ser salva: a sessão do link sobrevive a
+// recarregar a página ou a clicar de novo no link já usado, e sem a marca o app
+// abriria logado sem nunca pedir a senha.
+const SENHA_PENDENTE_KEY = 'senhaPendente';
 const hashDaUrl = new URLSearchParams(location.hash.slice(1));
-let recuperandoSenha = hashDaUrl.get('type') === 'recovery';
+let recuperandoSenha = hashDaUrl.get('type') === 'recovery' || lerSenhaPendente();
+if(recuperandoSenha) marcarSenhaPendente(true);
 const linkDoEmailInvalido = hashDaUrl.has('error_description');
+function lerSenhaPendente(){
+  try{ return localStorage.getItem(SENHA_PENDENTE_KEY) === '1'; }catch(e){ return false; }
+}
+function marcarSenhaPendente(pendente){
+  try{
+    if(pendente) localStorage.setItem(SENHA_PENDENTE_KEY, '1');
+    else localStorage.removeItem(SENHA_PENDENTE_KEY);
+  }catch(e){}
+}
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let session = null;
 let authMode = 'signin';
@@ -64,7 +78,12 @@ sb.auth.onAuthStateChange((event, novaSessao)=>{
   if(novaSessao) session = novaSessao;
   if(event === 'PASSWORD_RECOVERY' && !recuperandoSenha){
     recuperandoSenha = true;
+    marcarSenhaPendente(true);
     checkAuth();
+  }
+  if(event === 'SIGNED_OUT'){
+    recuperandoSenha = false;
+    marcarSenhaPendente(false);
   }
   // Saiu em outra aba (ou o refresh token morreu): esta aba não pode seguir
   // mostrando dados de uma sessão que não existe mais.
@@ -1156,7 +1175,7 @@ async function checkAuth(){
   const authEl = document.getElementById('auth-screen');
   const onbEl = document.getElementById('onboarding-screen');
   if(!ALLOW_SIGNUP){
-    document.querySelector('.auth-switch').style.display = 'none';
+    document.getElementById('auth-switch').style.display = 'none';
   }
   if(session && recuperandoSenha){
     appEl.style.display = 'none';
@@ -1214,6 +1233,10 @@ async function checkAuth(){
     onbEl.classList.remove('show');
     authEl.classList.add('show');
     document.getElementById('auth-sub').textContent = subtituloAuth();
+    // Sem sessão não há o que proteger: quem entrar de novo com a senha antiga
+    // não deve cair no formulário de senha nova.
+    recuperandoSenha = false;
+    marcarSenhaPendente(false);
     if(linkDoEmailInvalido && location.hash){
       showAuthMessage('Esse link expirou ou já foi usado. Peça um novo.');
       history.replaceState(null, '', location.pathname + location.search);
@@ -1277,11 +1300,17 @@ function mostrarNovaSenha(){
   document.getElementById('auth-title').textContent = 'Nova senha';
   document.getElementById('auth-sub').textContent = 'Escolha uma senha nova pra sua conta';
   document.querySelector('#auth-screen form:not(#auth-recovery-form)').hidden = true;
-  document.querySelector('.auth-switch').hidden = true;
+  document.getElementById('auth-switch').hidden = true;
   document.getElementById('auth-recovery-form').hidden = false;
+  document.getElementById('auth-recovery-sair').hidden = false;
   document.getElementById('auth-recovery-email').value = session.user.email || '';
   document.getElementById('auth-error').classList.remove('show');
   setTimeout(()=>document.getElementById('auth-new-password').focus(), 60);
+}
+
+async function sairDaRecuperacao(){
+  await sb.auth.signOut();
+  location.reload();
 }
 
 async function salvarNovaSenha(){
@@ -1299,9 +1328,11 @@ async function salvarNovaSenha(){
   btn.textContent = 'Salvar senha';
   if(error){showAuthMessage(error.message);return;}
   recuperandoSenha = false;
+  marcarSenhaPendente(false);
   document.getElementById('auth-recovery-form').hidden = true;
+  document.getElementById('auth-recovery-sair').hidden = true;
   document.querySelector('#auth-screen form:not(#auth-recovery-form)').hidden = false;
-  document.querySelector('.auth-switch').hidden = false;
+  document.getElementById('auth-switch').hidden = false;
   document.getElementById('auth-title').textContent = 'Entrar';
   await checkAuth();
 }

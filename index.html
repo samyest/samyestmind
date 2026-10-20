@@ -185,7 +185,11 @@
       </div>
       <button class="auth-btn" id="auth-recovery-btn" type="submit">Salvar senha</button>
     </form>
-    <div class="auth-switch">
+    <div class="auth-switch" id="auth-recovery-sair" hidden>
+      <span>Não quer trocar agora?</span>
+      <button type="button" onclick="sairDaRecuperacao()">Sair</button>
+    </div>
+    <div class="auth-switch" id="auth-switch">
       <span id="auth-switch-text">Não tem conta?</span>
       <button type="button" onclick="toggleAuthMode()" id="auth-switch-btn">Cadastrar</button>
     </div>
