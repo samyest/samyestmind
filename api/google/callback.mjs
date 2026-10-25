@@ -1,6 +1,8 @@
-import {verifyState, saveCredential, redirectUri, appOrigin, env} from '../_lib.mjs';
+import {verifyState, saveCredential, redirectUri, appOrigin, env, readCookie, stateCookie, STATE_COOKIE} from '../_lib.mjs';
 
+// O nonce vale para uma tentativa só: toda saída do callback apaga o cookie.
 function back(res, origin, status){
+  res.setHeader('Set-Cookie', stateCookie(null));
   res.status(302).setHeader('Location', `${origin}/?google=${status}`);
   res.setHeader('Cache-Control', 'no-store, private');
   res.end();
@@ -17,7 +19,9 @@ export default async function handler(req, res){
   if(error) return back(res, origin, 'negado');
   if(!code || !state) return back(res, origin, 'erro');
 
-  const userId = verifyState(state);
+  // Sem o cookie (outro navegador, aba anônima, mais de 10 min) cai em
+  // "expirado", que já pede para conectar de novo pelo próprio app.
+  const userId = verifyState(state, readCookie(req, STATE_COOKIE));
   if(!userId) return back(res, origin, 'expirado');
 
   try{

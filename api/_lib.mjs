@@ -44,13 +44,48 @@ export function redirectUri(req){
 
 /* ---------- state assinado (CSRF + identidade do usuário) ---------- */
 
-export function signState(userId){
-  const payload = `${userId}.${Date.now() + 10 * 60 * 1000}`;
+// O HMAC sozinho só prova QUEM pediu a conexão, não quem consentiu: um usuário
+// logado podia mandar a própria URL de consentimento para outra pessoa e, se
+// ela aprovasse, o refresh token dela era gravado na conta de quem mandou. O
+// nonce vai assinado no state e também num cookie HttpOnly deste navegador; o
+// callback só aceita quando os dois batem (SEC-036).
+export const STATE_COOKIE = 'gcal_oauth';
+const STATE_TTL_MS = 10 * 60 * 1000;
+
+export function newNonce(){
+  return crypto.randomBytes(16).toString('base64url');
+}
+
+// Path restrito ao callback: o cookie não viaja em nenhuma outra requisição.
+// SameSite=Lax deixa ele ir na volta do Google, que é navegação de topo (GET).
+export function stateCookie(nonce){
+  const maxAge = nonce ? STATE_TTL_MS / 1000 : 0;
+  return `${STATE_COOKIE}=${nonce || ''}; Path=/api/google/callback; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+}
+
+export function readCookie(req, name){
+  for(const part of String(req.headers.cookie || '').split(';')){
+    const idx = part.indexOf('=');
+    if(idx > -1 && part.slice(0, idx).trim() === name) return part.slice(idx + 1).trim();
+  }
+  return null;
+}
+
+function mesmoValor(a, b){
+  const x = Buffer.from(String(a));
+  const y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+
+export function signState(userId, nonce){
+  const payload = `${userId}.${Date.now() + STATE_TTL_MS}.${nonce}`;
   const mac = crypto.createHmac('sha256', env('OAUTH_STATE_SECRET')).update(payload).digest('base64url');
   return `${Buffer.from(payload).toString('base64url')}.${mac}`;
 }
 
-export function verifyState(state){
+// Devolve o userId só se o state é autêntico, está no prazo e foi iniciado
+// neste navegador (nonce igual ao do cookie). Qualquer outra coisa é null.
+export function verifyState(state, cookieNonce){
   if(typeof state !== 'string' || !state.includes('.')) return null;
   const idx = state.lastIndexOf('.');
   const encoded = state.slice(0, idx);
@@ -60,12 +95,11 @@ export function verifyState(state){
   catch(e){ return null; }
 
   const expected = crypto.createHmac('sha256', env('OAUTH_STATE_SECRET')).update(payload).digest('base64url');
-  const a = Buffer.from(mac);
-  const b = Buffer.from(expected);
-  if(a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  if(!mesmoValor(mac, expected)) return null;
 
-  const [userId, expiresAt] = payload.split('.');
+  const [userId, expiresAt, nonce] = payload.split('.');
   if(!userId || !expiresAt || Date.now() > Number(expiresAt)) return null;
+  if(!nonce || !cookieNonce || !mesmoValor(nonce, cookieNonce)) return null;
   return userId;
 }
 

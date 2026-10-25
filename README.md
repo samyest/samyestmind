@@ -93,8 +93,11 @@ criado enquanto houver alguma).
 ### Como funciona
 
 - `api/google/start` — monta a URL de consentimento com um `state` assinado (HMAC)
-  contendo a identidade do usuário, para o callback não confiar no navegador
-- `api/google/callback` — troca o código pelos tokens e guarda o refresh token
+  contendo a identidade do usuário e um nonce, que também vai num cookie `HttpOnly`
+  deste navegador; o callback não confia no navegador e só aceita a volta no mesmo
+  navegador que começou o fluxo
+- `api/google/callback` — confere state e cookie, troca o código pelos tokens e
+  guarda o refresh token
 - `api/google/token` — devolve ao navegador um access token curto, renovando pelo
   refresh token quando vence; também guarda o id do calendário e o sync token. Se o Google
   falhar de forma passageira ao renovar, responde 503 e o app tenta de novo depois,
