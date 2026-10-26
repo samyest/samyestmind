@@ -3604,7 +3604,7 @@ function fmtDate(iso){
 }
 function dateWithTime(t){
   if(!t.date) return '—';
-  return t.time ? `${fmtDate(t.date)} ⏰${t.time}` : fmtDate(t.date);
+  return t.time ? `${fmtDate(t.date)} ⏰${esc(t.time)}` : fmtDate(t.date);
 }
 function fmtDateFull(iso){
   if(!iso) return 'Sem prazo';
@@ -4247,7 +4247,7 @@ function renderKbCard(t, col, opts){
 // nada que a coluna já não dissesse.
 function dataDoCartao(t){
   if(!t.date) return 'sem prazo';
-  if(t.routine_id && t.date === todayIso()) return t.time ? `hoje · ${t.time.slice(0, 5)}` : 'hoje';
+  if(t.routine_id && t.date === todayIso()) return t.time ? `hoje · ${esc(t.time.slice(0, 5))}` : 'hoje';
   return dateWithTime(t);
 }
 
