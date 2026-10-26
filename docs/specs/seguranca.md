@@ -106,7 +106,7 @@ correção posterior. **Verificação:** auto.
 ### SEC-043 — `google_credentials` sem acesso de `anon`/`authenticated`
 Só a service role lê e escreve. **Verificação:** revisão + `inspecionar_schema.sql`.
 
-### SEC-044 — Convite pendente só é legível pelo dono e pelo convidado *(atendido em `supabase/convites_pendentes.sql`, falta aplicar no Supabase)*
+### SEC-044 — Convite pendente só é legível pelo dono e pelo convidado *(atendido em `supabase/convites_pendentes.sql`)*
 `code` e `invited_email` de uma linha `pending` em `project_members` não são
 legíveis por outros membros. **Por quê:** a policy `members_select` libera a linha
 para qualquer membro aceito. Um visualizador lê o código de um convite de editor,
