@@ -36,8 +36,9 @@ podem rodar mais de uma vez sem problema.
 
 Num banco novo, a ordem é: `schema_base.sql`, depois as migrações
 (`google_credentials`, `task_color`, `eventos_ignorados`, `task_sync_google`,
-`routines`, `task_tags`, `tarefas_google_unicas`, `desafio`, `desafio_v2`) e por
-último `rls_correcoes.sql`.
+`routines`, `task_tags`, `tarefas_google_unicas`, `desafio`, `desafio_v2`),
+`rls_correcoes.sql` e, por último, as correções que vieram depois dele:
+`convites_pendentes.sql` e `tarefas_projeto_acesso.sql`.
 
 Os convites por email confiam no email do login, então mantenha ligada a
 confirmação de email do Supabase ("Confirm email", nas configurações do provedor
