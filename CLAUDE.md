@@ -35,6 +35,17 @@ Sem framework e sem build step. Não existe `package.json`; nada é compilado.
   `corSegura()`, e colunas (pessoais ou de projeto) só depois de `normalizarColunas()`
   — a chave delas vai crua para dentro de `onclick`.
 
+## Specs, RFCs e o agente guardião
+
+- Requisitos de segurança e qualidade ficam em `docs/specs/` com id estável
+  (`SEC-xxx`, `QUA-xxx`). Mudança que afeta um requisito começa pela spec; mudança
+  grande (integração nova, dado sensível novo, superfície pública nova) começa por uma
+  RFC em `docs/rfc/`.
+- `node scripts/verificar.mjs` checa os requisitos automáticos. Rode antes de commit;
+  `FALHA` bloqueia, `AVISO` se confirma lendo o código.
+- O agente `guardiao` (`.claude/agents/guardiao.md`) roda verificador, revisão e teste
+  no navegador e corrige um requisito por commit. Nunca dá push nem deploy.
+
 ## Skills deste repositório
 
 As skills em `.claude/skills/` são cópias fixadas aqui, então valem para este projeto
