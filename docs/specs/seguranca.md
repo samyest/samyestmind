@@ -113,7 +113,7 @@ para qualquer membro aceito. Um visualizador lê o código de um convite de edit
 resgata com uma segunda conta por `accept_invite_by_code` e ganha edição no projeto.
 **Verificação:** revisão. *(Achado da rodada de 2026-10-24.)*
 
-### SEC-045 — Tarefa de projeto segue o acesso ao projeto *(atendido em `supabase/tarefas_projeto_acesso.sql`, falta aplicar no Supabase)*
+### SEC-045 — Tarefa de projeto segue o acesso ao projeto *(atendido em `supabase/tarefas_projeto_acesso.sql`)*
 Tarefa com `project_id` só é visível para o dono e os membros aceitos do projeto,
 inclusive para quem a criou. O mesmo vale para os comentários dela. **Por quê:**
 `tasks_select` e as policies de `task_comments` aceitam `user_id = auth.uid()`, e
