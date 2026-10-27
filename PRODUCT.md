@@ -49,7 +49,7 @@ rotina. Nada disso vive em apps separados.
   etapas, feito/não feito. Um hábito pode virar rotina e aparecer como tarefa nos
   dias marcados; concluir essa tarefa conta na meta. O Desafio fica dentro da seção
   Metas da barra lateral.
-- Oito temas de cor, dois escuros (Grafite e Grêmio, este com foto de fundo).
+- Oito temas de cor: seis claros, o Vidro (vidro fosco nos tons do Sereno) e um escuro, o Grafite.
 - Português do Brasil em toda a interface.
 
 ## Brand Commitments

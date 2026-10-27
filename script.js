@@ -158,41 +158,21 @@ const THEMES = {
     line: 'rgba(255, 255, 255, 0.07)',
     lineStrong: 'rgba(255, 255, 255, 0.14)'
   },
-  gremio: {
-    name: 'Grêmio',
-    dark: true,
-    bg: '#0A1428',
-    p5: '#1B3A6B', p6: '#2C5AA0', p8: '#3D7DD8',
-    accent: '#1560BD', accentHover: '#0D4A9C',
-    text: '#C9D6E8', textStrong: '#FFFFFF',
-    textMuted: '#7891B5', textSoft: '#3D5578',
-    accentText: '#FFFFFF',
-    glass: 'rgba(10, 20, 40, 0.55)',
-    glassStrong: 'rgba(16, 30, 56, 0.75)',
-    glassHover: 'rgba(24, 42, 74, 0.85)',
-    glassBorder: 'rgba(255, 255, 255, 0.10)',
-    glassBorderSoft: 'rgba(255, 255, 255, 0.06)',
-    line: 'rgba(255, 255, 255, 0.08)',
-    lineStrong: 'rgba(255, 255, 255, 0.16)',
-    bgPhoto: 'gremio-bg.jpg'
-  },
-  // Vidro fosco branco e azul por cima de uma sala desfocada. A sala é feita só
-  // de gradientes no CSS (body.theme-vidro), sem foto para baixar.
+  // Os tons do Sereno em vidro fosco mais branco, com o desfoque e as formas
+  // em pílula do body.theme-vidro no CSS.
   vidro: {
     name: 'Vidro',
     vidro: true,
-    bg: '#E6DACA',
-    p5: '#C7D7F4', p6: '#8EAEEA', p8: '#3B74DE',
-    accent: '#2563EB', accentHover: '#1C4FC2',
-    text: '#27303D', textStrong: '#10161F',
-    textMuted: '#5B6472', textSoft: '#858D99',
-    glass: 'rgba(255, 255, 255, 0.40)',
-    glassStrong: 'rgba(255, 255, 255, 0.64)',
-    glassHover: 'rgba(255, 255, 255, 0.78)',
-    glassBorder: 'rgba(255, 255, 255, 0.85)',
-    glassBorderSoft: 'rgba(255, 255, 255, 0.60)',
-    line: 'rgba(40, 50, 70, 0.08)',
-    lineStrong: 'rgba(40, 50, 70, 0.14)'
+    bg: '#EEF2F5',
+    p5: '#C9D5E0', p6: '#A9BCCD', p8: '#7D9AB3',
+    accent: '#5B7A94', accentHover: '#4A6680',
+    text: '#3B4A5A', textStrong: '#2A3644',
+    textMuted: '#6E879E', textSoft: '#9AAFC2',
+    glass: 'rgba(255, 255, 255, 0.50)',
+    glassStrong: 'rgba(255, 255, 255, 0.72)',
+    glassHover: 'rgba(255, 255, 255, 0.85)',
+    glassBorder: 'rgba(255, 255, 255, 0.90)',
+    glassBorderSoft: 'rgba(255, 255, 255, 0.70)'
   }
 };
 
@@ -200,7 +180,8 @@ let currentTheme = 'bluegray';
 
 function applyTheme(name){
   const t = THEMES[name] || THEMES.bluegray;
-  currentTheme = name;
+  // Tema salvo que não existe mais (o Grêmio saiu) cai no padrão.
+  currentTheme = THEMES[name] ? name : 'bluegray';
   const r = document.documentElement.style;
   r.setProperty('--bg-base', t.bg);
   r.setProperty('--palette-5', t.p5);
@@ -221,11 +202,10 @@ function applyTheme(name){
   r.setProperty('--glass-border-soft', t.glassBorderSoft || 'rgba(255,255,255,0.5)');
   r.setProperty('--line', t.line || 'rgba(122, 142, 162, 0.14)');
   r.setProperty('--line-strong', t.lineStrong || 'rgba(122, 142, 162, 0.22)');
-  document.body.classList.toggle('theme-bg-photo', !!t.bgPhoto);
   document.body.classList.toggle('theme-vidro', !!t.vidro);
   document.documentElement.style.colorScheme = t.dark ? 'dark' : 'light';
   // A barra do navegador no celular ficava sempre no azul-acinzentado do
-  // tema padrão, mesmo com o Grafite ou o Grêmio escuros na tela.
+  // tema padrão, mesmo com o Grafite escuro na tela.
   const metaCor = document.querySelector('meta[name="theme-color"]');
   if(metaCor) metaCor.setAttribute('content', t.bg);
 }
