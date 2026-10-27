@@ -143,3 +143,101 @@ Access token do Google não é persistido em `localStorage`. **Verificação:** 
 
 ### SEC-061 — Fluxo de redefinição de senha não vaza existência de conta
 A mensagem é a mesma para email cadastrado ou não. **Verificação:** navegador.
+
+## Chat e chamadas de projeto
+
+Requisitos da [RFC 0002](../rfc/0002-chat-e-chamadas-de-projeto.md). Cada um diz em
+que fase entra. Até lá, valem como critério de revisão para o código que implementar
+a fase.
+
+### SEC-070 — Mensagem de chat segue o acesso ao projeto *(fase 1, não implementado)*
+`project_messages` só é legível pelo dono e pelos membros aceitos do projeto, e só
+eles escrevem nela. Nenhuma policy aceita `author_id = auth.uid()` sem também exigir
+acesso ao projeto. Quem sai do projeto perde na hora a leitura, a escrita e o
+"apagar" das próprias mensagens. **Por quê:** é o furo do SEC-045. A policy de
+tarefas aceita quem criou a tarefa, e a pessoa removida continua lendo, até pelo
+realtime. No chat, seria a conversa inteira do projeto. **Verificação:** revisão
+(toda policy de `project_messages` passa por `is_project_owner`/`is_project_member`)
++ navegador (conta removida não lê nem recebe mensagem nova).
+
+### SEC-071 — Autoria, projeto e data da mensagem são fixados pelo banco *(fase 1, não implementado)*
+`author_id` vem de `auth.uid()` e `created_at` de `now()`, e as duas colunas ficam
+fora do `grant insert`. Nenhuma delas, nem `project_id`, tem `grant update`. UPDATE só
+serve para apagar: o `with check` exige `body = ''` e `apagada_em` preenchido. Não
+existe DELETE pela API. **Por quê:** é o SEC-047 valendo desde o primeiro dia. Sem
+isso, um membro assina mensagem em nome de outro, data mensagem no passado ou troca o
+texto de alguém. **Verificação:** revisão.
+
+### SEC-072 — Texto da mensagem passa por `esc()`, e link só com `https:` *(fase 1, não implementado)*
+O corpo da mensagem passa por `esc()` antes de qualquer transformação. Os links são
+reconhecidos depois do escape, só com `https://`, e viram `<a>` com
+`rel="noopener noreferrer"` e `target="_blank"`. Quebra de linha vem do CSS
+(`white-space: pre-wrap`), não de `<br>` montado. Nomes de autor, de projeto e de
+participante da chamada também passam por `esc()`. A notificação do navegador
+recebe texto puro. **Por quê:** o chat é o texto mais livre do app e chega em tempo
+real ao navegador de todos os membros. **Verificação:** revisão (a heurística do
+SEC-010 já cobre `.body`).
+
+### SEC-073 — Limites de mensagem no banco *(fase 1, não implementado)*
+Um `check` limita o corpo a 4.000 caracteres e recusa texto vazio. Um gatilho recusa
+a 21ª mensagem da mesma pessoa em 1 minuto. **Por quê:** a tela limita, mas a chave
+pública permite chamar a API direto, e um membro inundaria o chat e as notificações
+de todos. **Verificação:** revisão.
+
+### SEC-074 — "Até onde li" e "silenciado" são só da própria pessoa *(fase 1, não implementado)*
+`project_chat_reads` só aceita linha com `user_id = auth.uid()` em projeto do qual a
+pessoa é dona ou membro aceito, tanto para ler quanto para escrever. A contagem de
+não lidas é função `security invoker`. **Por quê:** a linha revela quando cada
+pessoa abriu o chat, e uma contagem `security definer` contaria mensagens de projeto
+alheio. **Verificação:** revisão.
+
+### SEC-075 — Sinalização da chamada só em canal privado autorizado pelo projeto *(fase 2, não implementado)*
+O canal `chamada:<project_id>` é criado com `private: true`. As policies em
+`realtime.messages` (Broadcast e Presence, para receber e para enviar) só deixam
+passar o dono e os membros aceitos daquele projeto, e o formato do tópico é validado
+antes do cast para uuid. Além disso, vale uma de duas: o acesso público do Realtime
+fica desligado no painel do Supabase, ou o teste da fase 2 prova que um canal público
+com o mesmo nome não recebe as mensagens do privado. **Por quê:** oferta, resposta e
+candidatos ICE carregam o IP de cada participante, e quem os recebe pode entrar na
+negociação da chamada. **Verificação:** revisão + navegador (uma conta de fora do
+projeto tenta assinar o tópico e é recusada).
+
+### SEC-076 — Só dono e membros aceitos ficam na chamada *(fase 2, não implementado)*
+Além do SEC-075, cada participante recusa sinal de user id que não está entre o dono
+e os membros aceitos que ele carregou. Quando `project_members` muda, cada
+participante fecha na hora a conexão com quem perdeu o acesso, e o cliente de quem
+saiu deixa a chamada e para câmera e microfone. O JWT do Supabase continua valendo 1
+hora. O limite de 4 pessoas é do cliente e não conta como controle de acesso.
+**Por quê:** o Realtime confere a policy ao entrar no canal e guarda o resultado até
+o JWT vencer, então quem é removido no meio da chamada continuaria nela.
+**Verificação:** revisão + navegador (remover um membro no meio de uma chamada).
+
+### SEC-077 — Credencial TURN de curta duração, emitida só por `api/` *(fase 2, não implementado)*
+A credencial sai de `api/chamada/turn`, vale no máximo 1 hora e, durante a chamada, é
+renovada chamando a rota de novo, que repete todas as checagens. A rota:
+- usa `userFromRequest()`;
+- só emite para dono ou membro aceito de projeto com pelo menos 2 pessoas;
+- emite no máximo 20 vezes por hora por pessoa, contadas numa tabela sem grants para
+  `anon`/`authenticated`;
+- responde só com `iceServers` e a validade.
+
+`TURN_KEY_ID` e `TURN_KEY_API_TOKEN` ficam só nas variáveis da Vercel, com as regras
+do SEC-001. **Por quê:** com o token da API, dá para gerar credenciais à vontade. Com
+credencial longa ou sem limite, uma conta recém-criada usa o TURN como intermediário
+grátis, e a Cloudflare não tem teto de gasto. **Verificação:** auto (SEC-030 e
+SEC-031 já cobrem a rota nova) + revisão (validade, limites, corpo da resposta).
+
+### SEC-078 — Câmera, microfone e tela só no próprio site e só depois de um clique *(fase 2, não implementado)*
+`Permissions-Policy` libera `camera`, `microphone` e `display-capture` só para
+`self`. `getUserMedia` e `getDisplayMedia` só rodam a partir de um clique na prévia
+ou na barra da chamada. Sair da chamada, ou fechar a aba, para todas as faixas.
+**Por quê:** `*` deixaria qualquer iframe ou origem usar a permissão, e uma faixa
+esquecida mantém a câmera ligada depois que a pessoa acha que saiu.
+**Verificação:** auto (a acrescentar na fase 2: `Permissions-Policy` sem `*` nesses
+três) + revisão + navegador.
+
+### SEC-079 — Chamada não é gravada *(fase 2, não implementado)*
+Nenhum `MediaRecorder` nem captura de quadros sobre os fluxos da chamada.
+**Por quê:** decisão da RFC 0002. Gravar exige o consentimento de todos e um lugar
+para guardar vídeo, e uma gravação que vier depois começa por uma RFC.
+**Verificação:** auto (a acrescentar na fase 2: `MediaRecorder` em `script.js`).

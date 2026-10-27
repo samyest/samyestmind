@@ -33,7 +33,7 @@ quebrado**, rodando sob demanda ou em loop.
 
 ### Fora do escopo desta RFC
 
-- Redesenho visual ("cara de IA"). Vira a RFC 0002, conduzida com a skill
+- Redesenho visual ("cara de IA"). Vira a RFC 0003, conduzida com a skill
   `impeccable`, porque mistura julgamento estético com correção técnica e as duas
   coisas pedem revisões diferentes.
 - Migrar para framework ou build step. A stack sem build é decisão do projeto.
@@ -115,6 +115,6 @@ requisito, e quem decide subir é a pessoa.
    separados.
 3. Conta de teste no Supabase (`.env.teste`, fora do git) para o agente testar os
    fluxos logados no navegador.
-4. RFC 0002 — direção visual, com `impeccable`.
+4. RFC 0003 — direção visual, com `impeccable`.
 5. Tirar `'unsafe-inline'` do `script-src` da CSP (exige trocar os 150+ `onclick=`
    inline por delegação de eventos). Requisito `SEC-012`, hoje marcado como dívida.
