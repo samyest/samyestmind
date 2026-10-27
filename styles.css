@@ -12,6 +12,7 @@
     --glass-hover: rgba(255,255,255,0.72);
     --glass-border: rgba(255,255,255,0.75);
     --glass-border-soft: rgba(255,255,255,0.5);
+    --nav-ativo: rgba(255,255,255,0.9);
 
     --text: #3B4A5A;
     --text-strong: #2A3644;
@@ -329,7 +330,9 @@
 
   .app{
     display:grid;
-    grid-template-columns:var(--sidebar-w, 220px) minmax(0,1fr);
+    /* A coluna soma os 14px de margem da barra flutuante, para o painel
+       manter a largura de --sidebar-w e o menu não quebrar linha. */
+    grid-template-columns:calc(var(--sidebar-w, 220px) + 14px) minmax(0,1fr);
     height:100vh;
     /* No iOS o 100vh conta a area atras da barra do Safari e o fim da tela
        ficava escondido; dvh acompanha a barra. */
@@ -340,11 +343,16 @@
   }
   .app.sidebar-collapsed{grid-template-columns:0px minmax(0,1fr);}
 
+  /* Barra lateral solta da borda, como um painel de vidro flutuando, em todos
+     os temas. No celular ela some e quem navega é a barra de baixo. */
   aside{
+    margin:14px 0 14px 14px;
     background:var(--glass);
     backdrop-filter:blur(24px) saturate(160%);
     -webkit-backdrop-filter:blur(24px) saturate(160%);
-    border-right:1px solid var(--glass-border-soft);
+    border:1px solid var(--glass-border);
+    border-radius:28px;
+    box-shadow:var(--shadow);
     display:flex;
     flex-direction:column;
     padding:32px 20px;
@@ -355,8 +363,8 @@
 
   .sidebar-toggle{
     position:absolute;
-    top:38px;
-    left:var(--sidebar-w, 220px);
+    top:44px;
+    left:calc(var(--sidebar-w, 220px) + 14px);
     transform:translateX(-50%);
     width:22px;height:22px;
     display:grid;place-items:center;
@@ -396,7 +404,7 @@
   .brand-dot{
     width:32px;height:32px;
     background:linear-gradient(135deg, var(--palette-8), var(--palette-6));
-    border-radius:9px;
+    border-radius:50%;
     display:grid;place-items:center;
     color:white;
     font-family:'Space Grotesk';
@@ -427,18 +435,20 @@
     align-items:center;
     gap:12px;
     padding:9px 12px;
-    border-radius:10px;
+    border-radius:999px;
     font-size:13.5px;
     color:var(--text);
     transition:background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease, opacity .18s ease;
     text-align:left;
   }
   .nav-item:hover{background:var(--glass-strong);}
+  /* O item ativo é uma pílula quase opaca que sobe do vidro. A cor vem do
+     tema (--nav-ativo), para o Grafite não ganhar uma pílula branca. */
   .nav-item.active{
-    background:var(--glass-strong);
+    background:var(--nav-ativo);
     color:var(--text-strong);
     font-weight:500;
-    box-shadow:var(--shadow-soft);
+    box-shadow:inset 0 1px 0 var(--glass-border), 0 4px 14px rgba(74,102,128,0.10);
   }
   .nav-item.active .nav-icon{color:var(--accent);}
   .nav-icon{width:16px;height:16px;color:var(--text-muted);flex-shrink:0;stroke-width:1.75;}
@@ -448,7 +458,7 @@
     align-items:center;
     gap:10px;
     padding:8px 12px;
-    border-radius:10px;
+    border-radius:999px;
     font-size:12.5px;
     color:var(--text);
     transition:background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .15s ease, opacity .15s ease;
@@ -458,10 +468,10 @@
   }
   .sidebar-project-item:hover{background:var(--glass-strong);}
   .sidebar-project-item.active{
-    background:var(--glass-strong);
+    background:var(--nav-ativo);
     color:var(--text-strong);
     font-weight:500;
-    box-shadow:var(--shadow-soft);
+    box-shadow:inset 0 1px 0 var(--glass-border), 0 4px 14px rgba(74,102,128,0.10);
   }
   .sidebar-project-item.active .sidebar-project-dot{background:var(--accent);box-shadow:0 0 0 3px rgba(91,122,148,0.15);}
   .sidebar-project-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex-shrink:0;}
@@ -5045,8 +5055,9 @@
 
   /* Tema Vidro -------------------------------------------------------------- */
   /* Os tons do Sereno em vidro fosco: fundo quase branco com dois halos
-     azul-acinzentados, cards mais brancos e mais desfocados, barra lateral
-     solta da borda e menu e botões em pílula. As cores vêm do THEMES.vidro. */
+     azul-acinzentados, cards mais brancos e mais desfocados e botões em
+     pílula. A barra lateral flutuante é de todos os temas. As cores vêm do
+     THEMES.vidro. */
   body.theme-vidro{
     --radius:24px;
     --shadow:inset 0 1px 0 rgba(255,255,255,0.8), 0 10px 36px rgba(74,102,128,0.10);
@@ -5070,27 +5081,6 @@
   }
   body.theme-vidro .status-row,
   body.theme-vidro .header-cta{border-radius:22px;}
-
-  /* Barra lateral solta da borda, como um painel de vidro flutuando. */
-  @media (min-width:901px){
-    body.theme-vidro aside{
-      margin:14px 0 14px 14px;
-      border:1px solid var(--glass-border);
-      border-radius:28px;
-      box-shadow:var(--shadow);
-    }
-    body.theme-vidro .sidebar-toggle{top:44px;}
-  }
-
-  body.theme-vidro .brand-dot{border-radius:50%;}
-
-  body.theme-vidro .nav-item,
-  body.theme-vidro .sidebar-project-item{border-radius:999px;}
-  body.theme-vidro .nav-item.active,
-  body.theme-vidro .sidebar-project-item.active{
-    background:rgba(255,255,255,0.9);
-    box-shadow:inset 0 1px 0 #fff, 0 4px 14px rgba(74,102,128,0.10);
-  }
 
   body.theme-vidro .btn-primary{border-radius:999px;}
 

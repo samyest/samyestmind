@@ -155,6 +155,7 @@ const THEMES = {
     glassHover: 'rgba(45, 52, 66, 0.85)',
     glassBorder: 'rgba(255, 255, 255, 0.10)',
     glassBorderSoft: 'rgba(255, 255, 255, 0.06)',
+    navAtivo: 'rgba(52, 60, 76, 0.92)',
     line: 'rgba(255, 255, 255, 0.07)',
     lineStrong: 'rgba(255, 255, 255, 0.14)'
   },
@@ -200,6 +201,7 @@ function applyTheme(name){
   r.setProperty('--glass-hover', t.glassHover || 'rgba(255,255,255,0.72)');
   r.setProperty('--glass-border', t.glassBorder || 'rgba(255,255,255,0.75)');
   r.setProperty('--glass-border-soft', t.glassBorderSoft || 'rgba(255,255,255,0.5)');
+  r.setProperty('--nav-ativo', t.navAtivo || 'rgba(255,255,255,0.9)');
   r.setProperty('--line', t.line || 'rgba(122, 142, 162, 0.14)');
   r.setProperty('--line-strong', t.lineStrong || 'rgba(122, 142, 162, 0.22)');
   document.body.classList.toggle('theme-vidro', !!t.vidro);
