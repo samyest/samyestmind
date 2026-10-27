@@ -150,7 +150,7 @@ Requisitos da [RFC 0002](../rfc/0002-chat-e-chamadas-de-projeto.md). Cada um diz
 que fase entra. Até lá, valem como critério de revisão para o código que implementar
 a fase.
 
-### SEC-070 — Mensagem de chat segue o acesso ao projeto *(fase 1, não implementado)*
+### SEC-070 — Mensagem de chat segue o acesso ao projeto *(fase 1, atendido em `supabase/chat_projeto.sql`; falta aplicar no Supabase)*
 `project_messages` só é legível pelo dono e pelos membros aceitos do projeto, e só
 eles escrevem nela. Nenhuma policy aceita `author_id = auth.uid()` sem também exigir
 acesso ao projeto. Quem sai do projeto perde na hora a leitura, a escrita e o
@@ -160,7 +160,7 @@ realtime. No chat, seria a conversa inteira do projeto. **Verificação:** revis
 (toda policy de `project_messages` passa por `is_project_owner`/`is_project_member`)
 + navegador (conta removida não lê nem recebe mensagem nova).
 
-### SEC-071 — Autoria, projeto e data da mensagem são fixados pelo banco *(fase 1, não implementado)*
+### SEC-071 — Autoria, projeto e data da mensagem são fixados pelo banco *(fase 1, atendido em `supabase/chat_projeto.sql`; falta aplicar no Supabase)*
 `author_id` vem de `auth.uid()` e `created_at` de `now()`, e as duas colunas ficam
 fora do `grant insert`. Nenhuma delas, nem `project_id`, tem `grant update`. UPDATE só
 serve para apagar: o `with check` exige `body = ''` e `apagada_em` preenchido. Não
@@ -178,13 +178,13 @@ recebe texto puro. **Por quê:** o chat é o texto mais livre do app e chega em 
 real ao navegador de todos os membros. **Verificação:** revisão (a heurística do
 SEC-010 já cobre `.body`).
 
-### SEC-073 — Limites de mensagem no banco *(fase 1, não implementado)*
+### SEC-073 — Limites de mensagem no banco *(fase 1, atendido em `supabase/chat_projeto.sql`; falta aplicar no Supabase)*
 Um `check` limita o corpo a 4.000 caracteres e recusa texto vazio. Um gatilho recusa
 a 21ª mensagem da mesma pessoa em 1 minuto. **Por quê:** a tela limita, mas a chave
 pública permite chamar a API direto, e um membro inundaria o chat e as notificações
 de todos. **Verificação:** revisão.
 
-### SEC-074 — "Até onde li" e "silenciado" são só da própria pessoa *(fase 1, não implementado)*
+### SEC-074 — "Até onde li" e "silenciado" são só da própria pessoa *(fase 1, atendido em `supabase/chat_projeto.sql`; falta aplicar no Supabase)*
 `project_chat_reads` só aceita linha com `user_id = auth.uid()` em projeto do qual a
 pessoa é dona ou membro aceito, tanto para ler quanto para escrever. A contagem de
 não lidas é função `security invoker`. **Por quê:** a linha revela quando cada
