@@ -93,6 +93,22 @@ sb.auth.onAuthStateChange((event, novaSessao)=>{
 });
 
 const THEMES = {
+  // Os tons do Sereno em vidro fosco mais branco, com o desfoque e as formas
+  // em pílula do body.theme-vidro no CSS.
+  vidro: {
+    name: 'Vidro',
+    vidro: true,
+    bg: '#EEF2F5',
+    p5: '#C9D5E0', p6: '#A9BCCD', p8: '#7D9AB3',
+    accent: '#5B7A94', accentHover: '#4A6680',
+    text: '#3B4A5A', textStrong: '#2A3644',
+    textMuted: '#6E879E', textSoft: '#9AAFC2',
+    glass: 'rgba(255, 255, 255, 0.50)',
+    glassStrong: 'rgba(255, 255, 255, 0.72)',
+    glassHover: 'rgba(255, 255, 255, 0.85)',
+    glassBorder: 'rgba(255, 255, 255, 0.90)',
+    glassBorderSoft: 'rgba(255, 255, 255, 0.70)'
+  },
   bluegray: {
     name: 'Sereno',
     bg: '#E9EDF1',
@@ -158,31 +174,15 @@ const THEMES = {
     navAtivo: 'rgba(52, 60, 76, 0.92)',
     line: 'rgba(255, 255, 255, 0.07)',
     lineStrong: 'rgba(255, 255, 255, 0.14)'
-  },
-  // Os tons do Sereno em vidro fosco mais branco, com o desfoque e as formas
-  // em pílula do body.theme-vidro no CSS.
-  vidro: {
-    name: 'Vidro',
-    vidro: true,
-    bg: '#EEF2F5',
-    p5: '#C9D5E0', p6: '#A9BCCD', p8: '#7D9AB3',
-    accent: '#5B7A94', accentHover: '#4A6680',
-    text: '#3B4A5A', textStrong: '#2A3644',
-    textMuted: '#6E879E', textSoft: '#9AAFC2',
-    glass: 'rgba(255, 255, 255, 0.50)',
-    glassStrong: 'rgba(255, 255, 255, 0.72)',
-    glassHover: 'rgba(255, 255, 255, 0.85)',
-    glassBorder: 'rgba(255, 255, 255, 0.90)',
-    glassBorderSoft: 'rgba(255, 255, 255, 0.70)'
   }
 };
 
-let currentTheme = 'bluegray';
+let currentTheme = 'vidro';
 
 function applyTheme(name){
-  const t = THEMES[name] || THEMES.bluegray;
-  // Tema salvo que não existe mais (o Grêmio saiu) cai no padrão.
-  currentTheme = THEMES[name] ? name : 'bluegray';
+  const t = THEMES[name] || THEMES.vidro;
+  // Tema salvo que não existe mais (o Grêmio saiu) cai no padrão, o Vidro.
+  currentTheme = THEMES[name] ? name : 'vidro';
   const r = document.documentElement.style;
   r.setProperty('--bg-base', t.bg);
   r.setProperty('--palette-5', t.p5);
@@ -459,7 +459,7 @@ async function colDrop(e, targetKey){
 }
 
 function closeSettings(){
-  const original = state.savedTheme || 'bluegray';
+  const original = state.savedTheme || 'vidro';
   if(currentTheme !== original) applyTheme(original);
   document.getElementById('settings-modal').classList.remove('open');
 }
@@ -1205,7 +1205,7 @@ async function checkAuth(){
     appEl.classList.toggle('sidebar-collapsed', localStorage.getItem('sidebarCollapsed') === '1');
     state.myName = myProfile.name;
     state.myAvatarUrl = myProfile.avatar_url || null;
-    state.savedTheme = myProfile.theme || 'bluegray';
+    state.savedTheme = myProfile.theme || 'vidro';
     state.soundEnabled = myProfile.sound_enabled !== false;
     state.novidadesVistas = Array.isArray(myProfile.novidades_vistas) ? myProfile.novidades_vistas : [];
     applyTheme(state.savedTheme);
@@ -1268,7 +1268,7 @@ async function saveOnboarding(){
   if(!name){errorEl.textContent = 'Digite seu nome.';errorEl.classList.add('show');return;}
   btn.disabled = true;
   btn.textContent = 'Salvando…';
-  const {error} = await sb.from('profiles').upsert({id: session.user.id, name, theme: 'bluegray', updated_at: new Date().toISOString()});
+  const {error} = await sb.from('profiles').upsert({id: session.user.id, name, theme: 'vidro', updated_at: new Date().toISOString()});
   btn.disabled = false;
   btn.textContent = 'Continuar';
   if(error){errorEl.textContent = error.message;errorEl.classList.add('show');return;}

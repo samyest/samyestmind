@@ -49,7 +49,7 @@ create table if not exists public.profiles (
   name           text,
   avatar_url     text,
   updated_at     timestamptz default now(),
-  theme          text default 'bluegray',
+  theme          text default 'vidro',
   kanban_columns jsonb,
   sound_enabled  boolean default true,
   novidades_vistas text[] not null default '{}'
