@@ -175,6 +175,24 @@ const THEMES = {
     line: 'rgba(255, 255, 255, 0.08)',
     lineStrong: 'rgba(255, 255, 255, 0.16)',
     bgPhoto: 'gremio-bg.jpg'
+  },
+  // Vidro fosco branco e azul por cima de uma sala desfocada. A sala é feita só
+  // de gradientes no CSS (body.theme-vidro), sem foto para baixar.
+  vidro: {
+    name: 'Vidro',
+    vidro: true,
+    bg: '#E6DACA',
+    p5: '#C7D7F4', p6: '#8EAEEA', p8: '#3B74DE',
+    accent: '#2563EB', accentHover: '#1C4FC2',
+    text: '#27303D', textStrong: '#10161F',
+    textMuted: '#5B6472', textSoft: '#858D99',
+    glass: 'rgba(255, 255, 255, 0.40)',
+    glassStrong: 'rgba(255, 255, 255, 0.64)',
+    glassHover: 'rgba(255, 255, 255, 0.78)',
+    glassBorder: 'rgba(255, 255, 255, 0.85)',
+    glassBorderSoft: 'rgba(255, 255, 255, 0.60)',
+    line: 'rgba(40, 50, 70, 0.08)',
+    lineStrong: 'rgba(40, 50, 70, 0.14)'
   }
 };
 
@@ -204,6 +222,7 @@ function applyTheme(name){
   r.setProperty('--line', t.line || 'rgba(122, 142, 162, 0.14)');
   r.setProperty('--line-strong', t.lineStrong || 'rgba(122, 142, 162, 0.22)');
   document.body.classList.toggle('theme-bg-photo', !!t.bgPhoto);
+  document.body.classList.toggle('theme-vidro', !!t.vidro);
   document.documentElement.style.colorScheme = t.dark ? 'dark' : 'light';
   // A barra do navegador no celular ficava sempre no azul-acinzentado do
   // tema padrão, mesmo com o Grafite ou o Grêmio escuros na tela.
