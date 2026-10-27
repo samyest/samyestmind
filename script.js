@@ -3050,8 +3050,19 @@ function visaoProjetoSalva(pid){
 function setProjectTasksView(visao){
   // Sair das notas com um salvamento agendado perdia o que acabou de ser digitado.
   flushNotesIfPending();
+  const antes = state.projectTasksView;
   state.projectTasksView = visao;
   try{ if(state.currentProjectId) localStorage.setItem(`projectView:${state.currentProjectId}`, visao); }catch(e){}
+  // O conteúdo da aba nova desliza do lado dela: para a esquerda quando a aba
+  // fica à direita da anterior, e o contrário. Os filtros só existem no
+  // Quadro e no Calendário.
+  if(antes !== visao){
+    const comFiltros = v => v === 'kanban' || v === 'calendar';
+    trocaDeAba = {
+      volta: VISOES_PROJETO.indexOf(visao) < VISOES_PROJETO.indexOf(antes),
+      filtros: comFiltros(visao) && !comFiltros(antes)
+    };
+  }
   skipEntranceOnce = true;
   render();
 }
@@ -3783,12 +3794,28 @@ function perguntar(text, opts){
                     input: {label: o.label || text, value: o.value || '', placeholder: o.placeholder || ''}});
 }
 
+// Último número mostrado em cada contador do painel. O render() refaz o HTML
+// a cada sync, realtime e tarefa marcada; sem isto os contadores voltavam a
+// zero e contavam de novo a cada atualização. Agora contam a partir do zero
+// só na primeira vez e, depois, só quando o número muda, do valor antigo ao
+// novo.
+const contadoresVistos = {};
+
 function animateCount(el, target){
-  const start = 0;
-  const dur = 550;
+  const chave = el.dataset.chave;
+  const start = chave && chave in contadoresVistos ? contadoresVistos[chave] : 0;
+  if(chave) contadoresVistos[chave] = target;
+  if(start === target || window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+    el.textContent = target;
+    return;
+  }
+  el.textContent = start;
+  const dur = start === 0 ? 550 : 400;
   const startTime = performance.now();
   function tick(now){
-    const p = Math.min((now - startTime) / dur, 1);
+    // O carimbo do quadro pode vir antes do performance.now() acima; sem o
+    // max o primeiro quadro mostrava um número negativo.
+    const p = Math.max(0, Math.min((now - startTime) / dur, 1));
     const eased = 1 - Math.pow(1 - p, 3);
     el.textContent = Math.round(start + (target - start) * eased);
     if(p < 1) requestAnimationFrame(tick);
@@ -3893,6 +3920,9 @@ function updateNav(){
 
 let skipEntranceOnce = false;
 let lastRenderedView = null;
+// Preenchido por setProjectTasksView e consumido pelo render() seguinte, que
+// anima só o conteúdo da aba. Qualquer outro render da mesma tela vem sem.
+let trocaDeAba = null;
 
 function render(){
   updateNav();
@@ -3926,7 +3956,11 @@ function render(){
   else if(state.view === 'meta') m.innerHTML = renderMetaPage();
 
   m.classList.toggle('no-entrance', sameView || skipEntranceOnce);
+  m.classList.toggle('troca-aba', !!trocaDeAba);
+  m.classList.toggle('aba-volta', !!(trocaDeAba && trocaDeAba.volta));
+  m.classList.toggle('filtros-entram', !!(trocaDeAba && trocaDeAba.filtros));
   skipEntranceOnce = false;
+  trocaDeAba = null;
   m.scrollLeft = keepScroll;
   attachEvents();
   tornarClicaveisAcessiveis(m);
@@ -4012,8 +4046,8 @@ function renderDashboard(){
       </div>
     </div>
     <div class="status-row">
-      ${colCounts.map(c=>`<div class="status-item" onclick="openStatusDetail('col:${c.key}')"><div class="lbl">${esc(c.name)}</div><div class="val" data-count="${c.count}">0</div></div>`).join('')}
-      <div class="status-item overdue" onclick="openStatusDetail('overdue', 'Atrasadas')"><div class="lbl">Atrasadas</div><div class="val" data-count="${overdue}">0</div></div>
+      ${colCounts.map(c=>`<div class="status-item" onclick="openStatusDetail('col:${c.key}')"><div class="lbl">${esc(c.name)}</div><div class="val" data-chave="${esc('col:' + c.key)}" data-count="${c.count}">0</div></div>`).join('')}
+      <div class="status-item overdue" onclick="openStatusDetail('overdue', 'Atrasadas')"><div class="lbl">Atrasadas</div><div class="val" data-chave="overdue" data-count="${overdue}">0</div></div>
     </div>
     <div class="dash-grid">
       <section class="glass panel dash-acoes" aria-labelledby="dash-acoes-titulo">
