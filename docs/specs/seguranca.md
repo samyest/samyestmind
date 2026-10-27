@@ -168,7 +168,7 @@ existe DELETE pela API. **Por quê:** é o SEC-047 valendo desde o primeiro dia.
 isso, um membro assina mensagem em nome de outro, data mensagem no passado ou troca o
 texto de alguém. **Verificação:** revisão.
 
-### SEC-072 — Texto da mensagem passa por `esc()`, e link só com `https:` *(fase 1, não implementado)*
+### SEC-072 — Texto da mensagem passa por `esc()`, e link só com `https:` *(fase 1, atendido em `script.js`, em `textoChatHtml()`)*
 O corpo da mensagem passa por `esc()` antes de qualquer transformação. Os links são
 reconhecidos depois do escape, só com `https://`, e viram `<a>` com
 `rel="noopener noreferrer"` e `target="_blank"`. Quebra de linha vem do CSS

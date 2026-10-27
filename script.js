@@ -917,6 +917,9 @@ let state = {
   // Notas de cada projeto, carregadas quando a aba Notas abre:
   // {lista, semTabela, aberta (id), lendo (no celular, a nota ocupa a tela)}
   notasProjeto: {},
+  // Chat de cada projeto, carregado quando a aba Chat abre:
+  // {lista, erro, temMais, rascunho, doFim (distância do fim da lista)}
+  chatProjeto: {},
   metas: {lista: [], registros: {}, modo: {}, carregado: false, precisaSql: false, atual: null, viewAntes: null, calMes: null}
 };
 
@@ -2677,6 +2680,8 @@ async function loadProjects(){
   state.pendingInvites = pending || [];
   saveProjectsCache();
   updatePendingInvitesBadge();
+  // Entrar ou sair de um projeto muda o que conta como não lido.
+  carregarNaoLidasChat();
 }
 
 function updatePendingInvitesBadge(){
@@ -2722,6 +2727,7 @@ function renderSidebarProjects(){
         <button class="sidebar-project-item ${isActive?'active':''}" onclick="openProjectView('${p.id}')" title="${esc(p.name)}">
           <span class="sidebar-project-dot"></span>
           <span class="sidebar-project-name">${esc(p.name)}</span>
+          ${seloNaoLidas(p.id)}
           <span class="sidebar-project-role">${role}</span>
         </button>`;
     }).join('');
@@ -3037,7 +3043,7 @@ async function insertProjectImage(){
 // Quadro, calendário ou notas na página do projeto. Vale para todos os
 // projetos e fica salvo no aparelho, como a aba do Desafio.
 // Cada projeto lembra a última aba; o primeiro acesso abre no Início.
-const VISOES_PROJETO = ['inicio', 'kanban', 'calendar', 'notes'];
+const VISOES_PROJETO = ['inicio', 'kanban', 'calendar', 'notes', 'chat'];
 function visaoProjetoSalva(pid){
   if(!pid) return 'inicio';
   try{
@@ -3162,6 +3168,7 @@ function renderProjectPage(){
   const asCalendar = visao === 'calendar';
   const asNotes = visao === 'notes';
   const asInicio = visao === 'inicio';
+  const asChat = visao === 'chat';
   const clientOptions = [...new Set(projectTasks.map(t=>t.client).filter(Boolean))].sort();
   const assigneeOptions = [
     {id:'', label:'Todas as pessoas'},
@@ -3198,10 +3205,11 @@ function renderProjectPage(){
     {key:'inicio', label:'Início'},
     {key:'kanban', label:'Quadro'},
     {key:'calendar', label:'Calendário'},
-    {key:'notes', label:'Notas', marca: !asNotes && (state.notasProjeto[p.id] && !state.notasProjeto[p.id].semTabela ? state.notasProjeto[p.id].lista.length > 0 : projectHasNotes(p))}
+    {key:'notes', label:'Notas', marca: !asNotes && (state.notasProjeto[p.id] && !state.notasProjeto[p.id].semTabela ? state.notasProjeto[p.id].lista.length > 0 : projectHasNotes(p))},
+    {key:'chat', label:'Chat', selo: !asChat}
   ];
 
-  const filtros = (asNotes || asInicio) ? '' : `
+  const filtros = (asNotes || asInicio || asChat) ? '' : `
       <div class="proj-filtros">
         <div class="search-box">
           <svg class="search-box-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -3232,6 +3240,8 @@ function renderProjectPage(){
     corpo = renderProjectInicio(p, canEdit, projectItems, projectTasks, cols);
   } else if(asNotes){
     corpo = renderProjectNotes(p, canEdit);
+  } else if(asChat){
+    corpo = renderProjectChat(p);
   } else if(!asCalendar && !canEdit && projectTasks.length === 0){
     corpo = `<div class="glass proj-surface proj-vazio"><strong>Nenhuma tarefa neste projeto ainda.</strong>Quem edita o projeto cria as tarefas aqui; elas aparecem para você assim que forem criadas.</div>`;
   } else if(asCalendar){
@@ -3306,7 +3316,7 @@ function renderProjectPage(){
 
     <div class="proj-toolbar">
       <div class="proj-view-abas" role="group" aria-label="Ver o projeto como">
-        ${abas.map(a=>`<button class="proj-view-aba ${visao===a.key ? 'ativa' : ''}" aria-pressed="${visao===a.key}" onclick="setProjectTasksView('${a.key}')">${a.label}${a.marca ? '<span class="proj-view-marca" title="Tem notas"></span>' : ''}</button>`).join('')}
+        ${abas.map(a=>`<button class="proj-view-aba ${visao===a.key ? 'ativa' : ''}" data-aba="${a.key}" aria-pressed="${visao===a.key}" onclick="setProjectTasksView('${a.key}')">${a.label}${a.marca ? '<span class="proj-view-marca" title="Tem notas"></span>' : ''}${a.selo ? seloNaoLidas(p.id) : ''}</button>`).join('')}
       </div>
       ${filtros}
     </div>
@@ -3362,7 +3372,7 @@ function renderProjectsList(){
         return `
           <div class="glass project-list-card" onclick="openProjectView('${p.id}')">
             <div class="project-card-head" style="margin-bottom:6px;">
-              <div class="project-card-name">${esc(p.name)}</div>
+              <div class="project-card-name">${esc(p.name)}${seloNaoLidas(p.id)}</div>
               <div class="project-card-role">${role}</div>
             </div>
             <div class="project-list-card-meta">${active} ativa${active!==1?'s':''} · ${tasks.length} no total</div>
@@ -3566,7 +3576,7 @@ function renderProjectsModal(){
       return `
         <div class="project-card">
           <div class="project-card-head">
-            <div class="project-card-name">${esc(p.name)}</div>
+            <div class="project-card-name">${esc(p.name)}${seloNaoLidas(p.id)}</div>
             <div style="display:flex;align-items:center;gap:8px;">
               <div class="project-card-role">${isOwner ? 'Dono' : myRoleInProject(p.id) === 'editor' ? 'Editor' : 'Visualizador'}</div>
               <button class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="closeProjectsModal();openProjectView('${p.id}');">Abrir quadro</button>
@@ -3963,6 +3973,7 @@ function render(){
   m.scrollLeft = keepScroll;
   attachEvents();
   tornarClicaveisAcessiveis(m);
+  if(state.view === 'project' && state.projectTasksView === 'chat') aposRenderChat();
 
   if(focoId){
     const denovo = document.getElementById(focoId);
@@ -8688,6 +8699,466 @@ function novoNoProjeto(k){
     else if(!n) criarNotaAoCarregar = pid;
   }
   else openModal(null, '', pid);
+}
+
+/* ---------- chat do projeto (RFC 0002, fase 1) ---------- */
+// Cada projeto tem um chat de texto. As mensagens vêm de project_messages e
+// chegam em tempo real pelo canal 'chat-projeto'; "até onde li" e "silenciado"
+// ficam em project_chat_reads, uma linha por pessoa e projeto. Quem pode ler
+// e escrever é o banco que decide (supabase/chat_projeto.sql, SEC-070).
+
+const CHAT_LIMITE_TEXTO = 4000;
+const CHAT_POR_PAGINA = 100;
+// Sem a tabela (SQL ainda não rodou) a aba explica, e nada mais tenta o banco.
+let chatSemTabela = false;
+let canalChat = null;
+const chatCarregando = new Set();
+// {pid: n} mensagens dos outros depois do "até onde li".
+let chatNaoLidas = {};
+// {pid: {lidoAte, silenciado}} a linha de project_chat_reads de cada projeto.
+let chatLeitura = {};
+let chatContagemTimer = null;
+
+function chatErroSemTabela(error){
+  return !!error && ['42P01', 'PGRST205', '42883', 'PGRST202'].includes(error.code);
+}
+
+function mensagemChatLinha(r){
+  return {id: r.id, projectId: r.project_id, authorId: r.author_id, kind: r.kind, body: r.body || '', created: r.created_at, apagada: !!r.apagada_em, duracao: r.duracao_seg};
+}
+
+async function carregarNaoLidasChat(){
+  if(chatSemTabela || !session) return;
+  const [{data, error}, {data: leituras}] = await Promise.all([
+    sb.rpc('contar_nao_lidas'),
+    sb.from('project_chat_reads').select('project_id, lido_ate, silenciado')
+  ]);
+  if(error){
+    if(chatErroSemTabela(error)){
+      chatSemTabela = true;
+      console.warn('Chat do projeto: rode supabase/chat_projeto.sql para ativar.', error);
+    }else console.error(error);
+    return;
+  }
+  chatNaoLidas = {};
+  (data || []).forEach(r=>{ chatNaoLidas[r.project_id] = Number(r.n) || 0; });
+  chatLeitura = {};
+  (leituras || []).forEach(r=>{ chatLeitura[r.project_id] = {lidoAte: r.lido_ate, silenciado: !!r.silenciado}; });
+  // Quem saiu de um projeto não guarda a conversa dele na memória da aba.
+  const ativos = new Set(state.projects.map(p=>p.id));
+  Object.keys(state.chatProjeto).forEach(pid=>{ if(!ativos.has(pid)) delete state.chatProjeto[pid]; });
+  ligarRealtimeChat();
+  marcarChatLido();
+  renderSidebarProjects();
+  atualizarContadorAbaChat();
+}
+
+function agendarContagemChat(){
+  if(chatContagemTimer) clearTimeout(chatContagemTimer);
+  chatContagemTimer = setTimeout(carregarNaoLidasChat, 800);
+}
+
+function naoLidasChat(pid){
+  return chatSemTabela ? 0 : (chatNaoLidas[pid] || 0);
+}
+
+function rotuloNaoLidas(n){
+  return n > 99 ? '99+' : String(n);
+}
+
+// Contador pequeno para pôr ao lado do nome do projeto nas listas.
+function seloNaoLidas(pid){
+  const n = naoLidasChat(pid);
+  if(!n) return '';
+  return `<span class="chat-selo" aria-label="${n} mensage${n > 1 ? 'ns' : 'm'} não lida${n > 1 ? 's' : ''} no chat">${rotuloNaoLidas(n)}</span>`;
+}
+
+// A aba Chat é a única coisa do projeto que muda com o contador; trocar só
+// ela evita redesenhar o quadro inteiro a cada mensagem.
+function atualizarContadorAbaChat(){
+  const aba = document.querySelector('.proj-view-aba[data-aba="chat"]');
+  if(!aba || !state.currentProjectId) return;
+  const velho = aba.querySelector('.chat-selo');
+  if(velho) velho.remove();
+  if(state.projectTasksView !== 'chat') aba.insertAdjacentHTML('beforeend', seloNaoLidas(state.currentProjectId));
+}
+
+function chatAberto(pid){
+  return state.view === 'project' && state.currentProjectId === pid && state.projectTasksView === 'chat';
+}
+
+async function carregarChatProjeto(pid, anteriores){
+  if(chatCarregando.has(pid)) return;
+  const atual = state.chatProjeto[pid];
+  chatCarregando.add(pid);
+  let q = sb.from('project_messages').select('*').eq('project_id', pid).order('created_at', {ascending: false}).limit(CHAT_POR_PAGINA);
+  if(anteriores && atual && atual.lista.length) q = q.lt('created_at', atual.lista[0].created);
+  const {data, error} = await q;
+  chatCarregando.delete(pid);
+  if(error){
+    console.error(error);
+    if(chatErroSemTabela(error)){
+      chatSemTabela = true;
+      state.chatProjeto[pid] = {lista: [], erro: null, temMais: false, rascunho: atual ? atual.rascunho : '', doFim: 0};
+    }else if(anteriores){
+      showToast('Não deu para carregar as mensagens anteriores. Tente de novo em instantes.', 'erro');
+      return;
+    }else{
+      state.chatProjeto[pid] = {lista: [], erro: `${error.code || 'erro'}: ${error.message || ''}`, temMais: false, rascunho: atual ? atual.rascunho : '', doFim: 0};
+    }
+  }else{
+    const novas = (data || []).map(mensagemChatLinha).reverse();
+    if(anteriores && atual){
+      atual.lista = [...novas, ...atual.lista];
+      atual.temMais = novas.length === CHAT_POR_PAGINA;
+    }else{
+      state.chatProjeto[pid] = {lista: novas, erro: null, temMais: novas.length === CHAT_POR_PAGINA, rascunho: atual ? atual.rascunho : '', doFim: 0};
+    }
+    ligarRealtimeChat();
+  }
+  if(chatAberto(pid)){
+    if(anteriores) atualizarListaChat(pid, true);
+    else { skipEntranceOnce = true; safeRerender(); }
+    marcarChatLido();
+  }
+}
+
+// Canal próprio, ligado só depois que a tabela respondeu, como o das notas.
+// Postgres Changes reconfere o RLS de leitura a cada mensagem: quem sai do
+// projeto para de receber na hora.
+function ligarRealtimeChat(){
+  if(canalChat || chatSemTabela) return;
+  canalChat = sb.channel('chat-projeto')
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'project_messages'}, (payload)=>{
+      if(payload.new) receberMensagemChat(mensagemChatLinha(payload.new));
+    })
+    .on('postgres_changes', {event:'UPDATE', schema:'public', table:'project_messages'}, (payload)=>{
+      if(!payload.new) return;
+      const m = mensagemChatLinha(payload.new);
+      const c = state.chatProjeto[m.projectId];
+      if(c){
+        const i = c.lista.findIndex(x=>x.id === m.id);
+        if(i >= 0){ c.lista[i] = m; atualizarListaChat(m.projectId); }
+      }
+      // Uma mensagem apagada sai da contagem de quem ainda não tinha lido.
+      if(m.apagada && m.authorId !== session.user.id) agendarContagemChat();
+    })
+    .subscribe();
+}
+
+function receberMensagemChat(m){
+  const pid = m.projectId;
+  const c = state.chatProjeto[pid];
+  if(c && !c.lista.some(x=>x.id === m.id)){
+    c.lista.push(m);
+    atualizarListaChat(pid);
+  }
+  if(m.authorId === session.user.id || m.kind !== 'texto' || m.apagada) return;
+  if(chatAberto(pid) && !document.hidden){
+    marcarChatLido();
+    return;
+  }
+  chatNaoLidas[pid] = (chatNaoLidas[pid] || 0) + 1;
+  renderSidebarProjects();
+  atualizarContadorAbaChat();
+  if(state.view === 'projects') safeRerender();
+  notificarMensagemChat(m);
+}
+
+// Só com a aba do app escondida e o chat do projeto não silenciado. A API de
+// notificação recebe texto puro, então nada aqui passa por esc().
+function notificarMensagemChat(m){
+  if(!document.hidden) return;
+  if(chatLeitura[m.projectId] && chatLeitura[m.projectId].silenciado) return;
+  if(!window.Notification || Notification.permission !== 'granted') return;
+  const p = state.projects.find(x=>x.id === m.projectId);
+  if(!p) return;
+  const trecho = m.body.length > 100 ? m.body.slice(0, 100) + '…' : m.body;
+  try{
+    const n = new Notification(`${nomeAutorChat(p, m.authorId)} em ${p.name}`, {body: trecho, tag: `chat-${p.id}`});
+    n.onclick = ()=>{
+      window.focus();
+      n.close();
+      abrirChatDoProjeto(p.id);
+    };
+  }catch(e){}
+}
+
+function abrirChatDoProjeto(pid){
+  if(!(state.view === 'project' && state.currentProjectId === pid)) openProjectView(pid);
+  setProjectTasksView('chat');
+}
+
+// Guarda o "até onde li" no banco quando o chat está na tela. Usa a data da
+// última mensagem (do servidor), não o relógio do aparelho.
+let chatLeituraEmVoo = null;
+async function marcarChatLido(){
+  const pid = state.currentProjectId;
+  if(!pid || !chatAberto(pid) || document.hidden || chatSemTabela) return;
+  const c = state.chatProjeto[pid];
+  if(!c || !c.lista.length) return;
+  const ultima = c.lista[c.lista.length - 1].created;
+  const leitura = chatLeitura[pid];
+  const tinha = naoLidasChat(pid);
+  if(leitura && leitura.lidoAte && new Date(leitura.lidoAte) >= new Date(ultima) && !tinha) return;
+  if(chatLeituraEmVoo === `${pid}:${ultima}`) return;
+  chatLeituraEmVoo = `${pid}:${ultima}`;
+  chatNaoLidas[pid] = 0;
+  chatLeitura[pid] = {lidoAte: ultima, silenciado: !!(leitura && leitura.silenciado)};
+  if(tinha) renderSidebarProjects();
+  const {error} = await sb.from('project_chat_reads').upsert({project_id: pid, user_id: session.user.id, lido_ate: ultima}, {onConflict: 'project_id,user_id'});
+  chatLeituraEmVoo = null;
+  if(error) console.error(error);
+}
+
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden) marcarChatLido();
+});
+
+async function alternarSilencioChat(){
+  const pid = state.currentProjectId;
+  if(!pid) return;
+  const leitura = chatLeitura[pid] || {lidoAte: null, silenciado: false};
+  const silenciado = !leitura.silenciado;
+  chatLeitura[pid] = {...leitura, silenciado};
+  skipEntranceOnce = true;
+  render();
+  const {error} = await sb.from('project_chat_reads').upsert({project_id: pid, user_id: session.user.id, silenciado}, {onConflict: 'project_id,user_id'});
+  if(error){
+    console.error(error);
+    chatLeitura[pid] = leitura;
+    skipEntranceOnce = true;
+    safeRerender();
+    showToast('Não deu para mudar as notificações do chat. Tente de novo em instantes.', 'erro');
+    return;
+  }
+  showToast(silenciado ? 'Chat silenciado: o contador continua, a notificação para' : 'Notificações do chat ligadas');
+}
+
+function nomeAutorChat(p, authorId){
+  if(authorId && authorId === session.user.id) return 'Você';
+  // Quem não divide mais projeto com você some do RLS de profiles e daqui.
+  const pessoa = authorId && projectPeople(p).find(pe=>pe.id === authorId);
+  return pessoa ? pessoa.label : 'Ex-membro';
+}
+
+function perfilAutorChat(p, authorId){
+  if(authorId === session.user.id) return {avatar_url: state.myAvatarUrl};
+  const pessoa = authorId && projectPeople(p).find(pe=>pe.id === authorId);
+  return pessoa ? pessoa.profile : null;
+}
+
+// SEC-072: o texto passa por esc() primeiro; os links são achados depois, no
+// texto já escapado, só com https. A quebra de linha vem do CSS (pre-wrap).
+function textoChatHtml(body){
+  return esc(body).replace(/https:\/\/(?:(?!&quot;|&#39;|&lt;|&gt;)[^\s<])+/g, (url)=>{
+    const fim = url.match(/[.,;:!?)\]]+$/);
+    const corte = fim ? url.slice(0, -fim[0].length) : url;
+    const resto = fim ? fim[0] : '';
+    return `<a href="${corte}" target="_blank" rel="noopener noreferrer">${corte}</a>${resto}`;
+  });
+}
+
+function diaChat(iso){
+  const d = new Date(iso);
+  const hoje = new Date();
+  const ontem = new Date();
+  ontem.setDate(hoje.getDate() - 1);
+  const mesmo = (a, b)=> a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if(mesmo(d, hoje)) return 'Hoje';
+  if(mesmo(d, ontem)) return 'Ontem';
+  return d.toLocaleDateString(LOCALE_APP, d.getFullYear() === hoje.getFullYear() ? {day: 'numeric', month: 'long'} : {day: 'numeric', month: 'long', year: 'numeric'});
+}
+
+function horaChat(iso){
+  return new Date(iso).toLocaleTimeString(LOCALE_APP, {hour: '2-digit', minute: '2-digit'});
+}
+
+// Mensagens agrupadas por dia e, dentro do dia, por autor: o nome e a foto
+// aparecem uma vez por sequência, e não a cada mensagem.
+function renderListaChat(p, c){
+  if(!c.lista.length){
+    return `<div class="chat-vazio"><strong>Nenhuma mensagem ainda.</strong>Todo mundo do projeto lê e escreve aqui, inclusive quem só visualiza.</div>`;
+  }
+  const isOwner = p.myRole === 'owner';
+  let html = c.temMais ? `<div class="chat-anteriores"><button class="btn-secondary" onclick="carregarChatProjeto('${p.id}', true)">Mostrar mensagens anteriores</button></div>` : '';
+  let diaAnterior = '';
+  let autorAnterior = null;
+  let ultimaHora = 0;
+  c.lista.forEach(m=>{
+    const dia = diaChat(m.created);
+    if(dia !== diaAnterior){
+      html += `<div class="chat-dia" role="separator"><span>${esc(dia)}</span></div>`;
+      diaAnterior = dia;
+      autorAnterior = null;
+    }
+    if(m.kind !== 'texto'){
+      const texto = m.kind === 'chamada_inicio' ? 'Chamada iniciada'
+        : `Chamada encerrada${m.duracao ? ` · ${Math.max(1, Math.round(m.duracao / 60))} min` : ''}`;
+      html += `<div class="chat-sistema">${texto} · ${horaChat(m.created)}</div>`;
+      autorAnterior = null;
+      return;
+    }
+    const minha = m.authorId === session.user.id;
+    const t = new Date(m.created).getTime();
+    // Uma pausa longa reabre o cabeçalho mesmo com o mesmo autor.
+    const novoGrupo = m.authorId !== autorAnterior || t - ultimaHora > 10 * 60 * 1000;
+    autorAnterior = m.authorId;
+    ultimaHora = t;
+    const nome = nomeAutorChat(p, m.authorId);
+    const podeApagar = !m.apagada && (isOwner || minha);
+    html += `
+      <div class="chat-msg ${minha ? 'minha' : ''} ${novoGrupo ? 'inicio' : ''}">
+        ${novoGrupo && !minha ? `<div class="chat-msg-avatar">${avatarChip(perfilAutorChat(p, m.authorId), nome[0])}</div>` : ''}
+        <div class="chat-msg-corpo">
+          ${novoGrupo ? `<div class="chat-msg-quem">${minha ? '' : `<span class="chat-msg-nome">${esc(nome)}</span>`}<time datetime="${esc(m.created)}">${horaChat(m.created)}</time></div>` : ''}
+          <div class="chat-msg-linha">
+            ${m.apagada
+              ? `<div class="chat-balao apagada">mensagem apagada</div>`
+              : `<div class="chat-balao" title="${horaChat(m.created)}">${textoChatHtml(m.body)}</div>`}
+            ${podeApagar ? `<button class="chat-apagar" onclick="apagarMensagemChat('${m.id}')" title="Apagar mensagem" aria-label="Apagar mensagem">
+              <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+            </button>` : ''}
+          </div>
+        </div>
+      </div>`;
+  });
+  return html;
+}
+
+function renderProjectChat(p){
+  if(chatSemTabela){
+    return `<div class="glass proj-surface proj-vazio"><strong>O chat ainda não foi ativado.</strong>Falta rodar o supabase/chat_projeto.sql no Supabase.</div>`;
+  }
+  const c = state.chatProjeto[p.id];
+  if(!c){
+    if(!chatCarregando.has(p.id)) carregarChatProjeto(p.id);
+    return `<div class="glass proj-surface proj-vazio" role="status">Carregando o chat…</div>`;
+  }
+  if(c.erro) return `<div class="glass proj-surface proj-vazio"><strong>Não deu para carregar o chat.</strong>${esc(c.erro)}<button class="btn-secondary" style="margin-top:12px;" onclick="delete state.chatProjeto['${p.id}'];render()">Tentar de novo</button></div>`;
+  const silenciado = !!(chatLeitura[p.id] && chatLeitura[p.id].silenciado);
+  const sino = silenciado
+    ? '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.73 21a2 2 0 01-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0118 8"/><path d="M6.26 6.26A5.86 5.86 0 006 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 00-9.33-5"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+    : '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>';
+  return `
+    <section class="glass proj-surface proj-chat" aria-label="Chat do projeto">
+      <div class="chat-topo">
+        <span class="chat-topo-info">Só quem está no projeto vê estas mensagens.</span>
+        <button class="chat-silenciar ${silenciado ? 'ativo' : ''}" onclick="alternarSilencioChat()" aria-pressed="${silenciado}" title="${silenciado ? 'Voltar a receber notificações deste chat' : 'Parar as notificações deste chat (o contador continua)'}">${sino}${silenciado ? 'Silenciado' : 'Silenciar'}</button>
+      </div>
+      <div class="chat-lista" id="chat-lista" role="log" aria-live="polite" aria-label="Mensagens" onscroll="rolagemChat(this)">${renderListaChat(p, c)}</div>
+      <form class="chat-escrever" onsubmit="event.preventDefault();enviarMensagemChat()">
+        <textarea id="chat-input" class="input chat-input" rows="1" maxlength="${CHAT_LIMITE_TEXTO}" placeholder="Escreva para o projeto…" aria-label="Mensagem para o projeto" oninput="rascunhoChat(this)" onkeydown="teclaChat(event)">${esc(c.rascunho)}</textarea>
+        <button type="submit" class="btn-primary chat-enviar" id="chat-enviar" aria-label="Enviar mensagem" title="Enviar (Enter)" ${c.rascunho.trim() ? '' : 'disabled'}>
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </form>
+    </section>`;
+}
+
+// Depois de cada render: a lista volta para onde estava (no fim, por padrão)
+// e o campo cresce com o texto.
+function aposRenderChat(){
+  const lista = document.getElementById('chat-lista');
+  const c = state.chatProjeto[state.currentProjectId];
+  if(lista && c) lista.scrollTop = lista.scrollHeight - lista.clientHeight - c.doFim;
+  const campo = document.getElementById('chat-input');
+  if(campo) ajustarAlturaChat(campo);
+  marcarChatLido();
+}
+
+// Mensagem nova não redesenha a tela: troca só a lista, para não mexer no
+// campo em que a pessoa está digitando. Quem estava no fim continua no fim.
+function atualizarListaChat(pid, manterTopo){
+  if(!chatAberto(pid)) return;
+  const lista = document.getElementById('chat-lista');
+  const p = state.projects.find(x=>x.id === pid);
+  const c = state.chatProjeto[pid];
+  if(!lista || !p || !c) return;
+  const alturaAntes = lista.scrollHeight;
+  const topoAntes = lista.scrollTop;
+  lista.innerHTML = renderListaChat(p, c);
+  if(manterTopo) lista.scrollTop = topoAntes + (lista.scrollHeight - alturaAntes);
+  else lista.scrollTop = lista.scrollHeight - lista.clientHeight - c.doFim;
+}
+
+function rolagemChat(lista){
+  const c = state.chatProjeto[state.currentProjectId];
+  if(!c) return;
+  const doFim = lista.scrollHeight - lista.clientHeight - lista.scrollTop;
+  // Perto do fim conta como no fim: mensagem nova continua aparecendo.
+  c.doFim = doFim < 40 ? 0 : doFim;
+}
+
+function ajustarAlturaChat(campo){
+  campo.style.height = 'auto';
+  campo.style.height = Math.min(campo.scrollHeight, 180) + 'px';
+}
+
+function rascunhoChat(campo){
+  const c = state.chatProjeto[state.currentProjectId];
+  if(c) c.rascunho = campo.value;
+  ajustarAlturaChat(campo);
+  const b = document.getElementById('chat-enviar');
+  if(b) b.disabled = !campo.value.trim();
+}
+
+// Enter envia; Shift+Enter quebra a linha. Durante a composição de acentos
+// (isComposing) o Enter é do teclado, não do chat.
+function teclaChat(e){
+  if(e.key === 'Enter' && !e.shiftKey && !e.isComposing){
+    e.preventDefault();
+    enviarMensagemChat();
+  }
+}
+
+let chatEnviando = false;
+async function enviarMensagemChat(){
+  const pid = state.currentProjectId;
+  const c = state.chatProjeto[pid];
+  const campo = document.getElementById('chat-input');
+  if(!pid || !c || !campo || chatEnviando) return;
+  const texto = campo.value.trim();
+  if(!texto) return;
+  if(texto.length > CHAT_LIMITE_TEXTO){ showToast(`A mensagem passa de ${CHAT_LIMITE_TEXTO.toLocaleString(LOCALE_APP)} caracteres.`, 'erro'); return; }
+  chatEnviando = true;
+  const botao = document.getElementById('chat-enviar');
+  if(botao) botao.disabled = true;
+  // O clique em Enviar é o gesto que o navegador pede para liberar a permissão.
+  pedirPermissaoNotificacao();
+  const {data, error} = await sb.from('project_messages').insert({project_id: pid, body: texto}).select().single();
+  chatEnviando = false;
+  if(error){
+    console.error(error);
+    if(botao) botao.disabled = false;
+    if(/chat_limite/.test(error.message || '')) showToast('Calma: muitas mensagens seguidas. Espere um minuto e envie de novo.', 'erro');
+    else showToast('A mensagem não foi enviada. Confira a conexão e tente de novo.', 'erro');
+    return;
+  }
+  c.rascunho = '';
+  c.doFim = 0;
+  const atual = document.getElementById('chat-input');
+  if(atual){ atual.value = ''; ajustarAlturaChat(atual); atual.focus(); }
+  receberMensagemChat(mensagemChatLinha(data));
+  marcarChatLido();
+}
+
+async function apagarMensagemChat(id){
+  const pid = state.currentProjectId;
+  const c = state.chatProjeto[pid];
+  const m = c && c.lista.find(x=>x.id === id);
+  if(!m) return;
+  const minha = m.authorId === session.user.id;
+  if(!await confirmar(minha ? 'Ela vira "mensagem apagada" para todo mundo do projeto. Não tem como desfazer.' : 'Como dono do projeto, você apaga a mensagem para todo mundo. Ela vira "mensagem apagada" e não tem como desfazer.', {title: 'Apagar mensagem?', okLabel: 'Apagar mensagem'})) return;
+  const {data, error} = await sb.from('project_messages').update({body: '', apagada_em: new Date().toISOString()}).eq('id', id).select().maybeSingle();
+  if(error || !data){
+    if(error) console.error(error);
+    showToast('Não deu para apagar a mensagem. Tente de novo em instantes.', 'erro');
+    return;
+  }
+  const i = c.lista.findIndex(x=>x.id === id);
+  if(i >= 0) c.lista[i] = mensagemChatLinha(data);
+  atualizarListaChat(pid, true);
 }
 
 watchModalFocus();

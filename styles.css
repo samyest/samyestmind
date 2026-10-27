@@ -1599,6 +1599,171 @@
   }
   .proj-vazio strong{display:block;margin-bottom:4px;font-size:14px;font-weight:500;color:var(--text-strong);}
 
+  /* Chat do projeto: uma superfície com a conversa rolando e o campo preso
+     embaixo. A altura acompanha a janela para o campo nunca sair da tela. */
+  .proj-chat{
+    display:flex;
+    flex-direction:column;
+    padding:0;
+    height:clamp(420px, calc(100dvh - 270px), 920px);
+    overflow:hidden;
+  }
+  .chat-topo{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:10px 14px 10px 20px;
+    border-bottom:1px solid var(--line);
+    font-size:12px;
+    color:var(--text-soft);
+  }
+  .chat-topo-info{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .chat-silenciar{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    flex-shrink:0;
+    padding:6px 12px;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:500;
+    color:var(--text-muted);
+    transition:background-color .18s ease, color .18s ease;
+  }
+  .chat-silenciar:hover{background:var(--glass-strong);color:var(--text-strong);}
+  .chat-silenciar.ativo{background:var(--glass-strong);color:var(--text-strong);}
+  .chat-lista{
+    flex:1;
+    min-height:0;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    padding:14px 20px 18px;
+  }
+  .chat-vazio{
+    margin:auto;
+    max-width:320px;
+    text-align:center;
+    color:var(--text-muted);
+    font-size:13px;
+  }
+  .chat-vazio strong{display:block;margin-bottom:4px;font-size:14px;font-weight:500;color:var(--text-strong);}
+  .chat-anteriores{display:flex;justify-content:center;margin-bottom:6px;}
+  .chat-anteriores .btn-secondary{padding:6px 14px;font-size:12px;}
+  .chat-dia{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin:14px 0 6px;
+    font-size:11.5px;
+    font-weight:500;
+    color:var(--text-soft);
+  }
+  .chat-dia:first-child{margin-top:0;}
+  .chat-dia::before, .chat-dia::after{content:'';flex:1;height:1px;background:var(--line);}
+  .chat-sistema{margin:8px 0;text-align:center;font-size:12px;color:var(--text-muted);}
+  .chat-msg{display:flex;gap:10px;padding-left:38px;}
+  .chat-msg.inicio{margin-top:10px;padding-left:0;}
+  .chat-msg.minha{justify-content:flex-end;padding-left:0;}
+  .chat-msg-avatar{flex-shrink:0;padding-top:20px;}
+  .chat-msg-avatar .member-avatar{width:28px;height:28px;}
+  .chat-msg-corpo{display:flex;flex-direction:column;align-items:flex-start;min-width:0;max-width:min(78%, 580px);}
+  .chat-msg.minha .chat-msg-corpo{align-items:flex-end;}
+  .chat-msg-quem{display:flex;align-items:baseline;gap:8px;margin:0 4px 3px;font-size:11.5px;color:var(--text-soft);font-variant-numeric:tabular-nums;}
+  .chat-msg-nome{font-weight:500;color:var(--text-strong);}
+  .chat-msg-linha{display:flex;align-items:center;gap:4px;max-width:100%;}
+  .chat-msg.minha .chat-msg-linha{flex-direction:row-reverse;}
+  .chat-balao{
+    min-width:0;
+    padding:8px 13px;
+    border-radius:16px;
+    background:var(--glass-strong);
+    border:1px solid var(--glass-border-soft);
+    color:var(--text-strong);
+    font-size:13.5px;
+    line-height:1.5;
+    white-space:pre-wrap;
+    overflow-wrap:anywhere;
+  }
+  .chat-msg.minha .chat-balao{background:var(--accent);border-color:transparent;color:var(--accent-text);}
+  .chat-balao a{color:var(--accent);text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px;}
+  .chat-msg.minha .chat-balao a{color:inherit;}
+  .chat-balao.apagada,
+  .chat-msg.minha .chat-balao.apagada{
+    background:transparent;
+    border:1px dashed var(--line-strong);
+    color:var(--text-soft);
+    font-style:italic;
+  }
+  .chat-apagar{
+    flex-shrink:0;
+    display:grid;
+    place-items:center;
+    width:28px;
+    height:28px;
+    border-radius:50%;
+    color:var(--text-soft);
+    opacity:0;
+    transition:opacity .15s ease, background-color .15s ease, color .15s ease;
+  }
+  .chat-msg:hover .chat-apagar, .chat-apagar:focus-visible{opacity:1;}
+  .chat-apagar:hover{background:var(--glass-strong);color:var(--danger);}
+  @media (hover:none){ .chat-apagar{opacity:.6;} }
+  .chat-escrever{
+    display:flex;
+    align-items:flex-end;
+    gap:8px;
+    padding:12px 14px;
+    border-top:1px solid var(--line);
+  }
+  .chat-input{
+    flex:1;
+    min-width:0;
+    min-height:42px;
+    max-height:180px;
+    padding:10px 14px;
+    border-radius:14px;
+    resize:none;
+    font:inherit;
+    font-size:13.5px;
+    line-height:1.45;
+  }
+  .chat-enviar{
+    flex-shrink:0;
+    display:grid;
+    place-items:center;
+    width:42px;
+    height:42px;
+    padding:0;
+    border-radius:12px;
+  }
+  .chat-enviar:disabled{opacity:.45;cursor:default;}
+  /* Contador de não lidas: na aba Chat e ao lado do projeto nas listas. */
+  .chat-selo{
+    display:inline-grid;
+    place-items:center;
+    flex-shrink:0;
+    min-width:18px;
+    height:18px;
+    margin-left:6px;
+    padding:0 5px;
+    border-radius:9px;
+    background:var(--accent);
+    color:var(--accent-text);
+    font-size:10.5px;
+    font-weight:600;
+    line-height:1;
+    font-variant-numeric:tabular-nums;
+    vertical-align:1px;
+  }
+  .sidebar-project-item .chat-selo{margin-left:0;}
+  body.theme-vidro .chat-balao{border-radius:18px;}
+  body.theme-vidro .chat-input{border-radius:21px;}
+  body.theme-vidro .chat-enviar{border-radius:50%;}
+
   @media (max-width:900px){
     .proj-head{grid-template-columns:auto minmax(0,1fr);gap:12px 14px;margin-bottom:20px;}
     .proj-head-actions{grid-column:1 / -1;}
@@ -1629,6 +1794,15 @@
     .proj-surface{padding:14px 12px;}
     .kanban-projeto .kb-col{min-height:160px;}
     .proj-notas{padding:14px 16px 24px;}
+    /* Cinco abas em 375px: menos folga lateral, e o contador do Chat vira
+       um selo no canto da aba em vez de empurrar o texto para outra linha. */
+    .proj-view-aba{padding:7px 4px;white-space:nowrap;}
+    .proj-view-aba .chat-selo{position:absolute;top:-4px;right:-2px;margin:0;}
+    .proj-chat{padding:0;height:calc(100dvh - 380px);min-height:340px;}
+    .chat-lista{padding:12px 12px 14px;}
+    .chat-topo{padding:8px 10px 8px 14px;}
+    .chat-escrever{padding:10px;}
+    .chat-msg-corpo{max-width:86%;}
     .proj-notas-head{margin-bottom:16px;}
     .proj-notas .project-notes-editor{min-height:260px;font-size:15px;}
   }
