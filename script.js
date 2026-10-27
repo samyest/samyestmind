@@ -1005,11 +1005,13 @@ function renderBulkBar(){
     </div>`;
 }
 
-// Só deixa agir sobre o que o usuário pode mesmo alterar.
+// Só deixa agir sobre o que o usuário pode mesmo alterar. Mesma regra do
+// tasks_update: tarefa pessoal, só o dono; tarefa de projeto, só editor ou dono
+// do projeto, mesmo para quem criou a tarefa e hoje é visualizador.
 function canEditTask(t){
   if(!session || !session.user) return false;
-  if(t.owner_id === session.user.id) return true;
-  return !!(t.project_id && canEditProject(t.project_id));
+  if(!t.project_id) return t.owner_id === session.user.id;
+  return canEditProject(t.project_id);
 }
 
 async function bulkMove(status){
@@ -2093,7 +2095,10 @@ async function refreshAll(kind, silent){
   btns.forEach(b=>b.classList.add('spinning'));
   try{
     const cargas = [];
-    if(!kind || kind === 'tasks') cargas.push(loadTasks());
+    // Entrar, sair ou ser removido de um projeto chega como 'projects' (vem de
+    // project_members). Sem recarregar as tarefas junto, as do projeto
+    // continuavam na tela de quem saiu até a próxima carga.
+    if(!kind || kind === 'tasks' || kind === 'projects') cargas.push(loadTasks());
     if(!kind || kind === 'projects') cargas.push(loadProjects());
     if(!kind) cargas.push(loadDesafio());
     if((!kind || kind === 'notes') && state.view === 'project' && state.projectTasksView === 'notes' && state.currentProjectId && !isEditingNotes()){
@@ -2916,7 +2921,8 @@ async function leaveProject(projectId){
     state.view = 'dashboard';
     state.currentProjectId = null;
   }
-  await loadProjects();
+  // As tarefas do projeto, inclusive as que você criou, saem junto.
+  await Promise.all([loadProjects(), loadTasks()]);
   renderProjectsModal();
   showToast('Você saiu do projeto');
   render();
@@ -5244,8 +5250,7 @@ function openModal(id, prefillDate, prefillProjectId, prefillKind){
     document.getElementById('m-tag-input').value = '';
     renderTaskTagChips();
     document.getElementById('m-notes').value = t.notes || '';
-    const isMine = t.owner_id === session.user.id;
-    const canEdit = isMine || (t.project_id && canEditProject(t.project_id));
+    const canEdit = canEditTask(t);
     delBtn.style.display = canEdit ? '' : 'none';
     // Visualizador via campos travados mas um "Salvar" ativo: o banco recusava
     // e a mensagem de erro era coberta por "Alterações salvas".
