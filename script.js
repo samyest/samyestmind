@@ -2725,10 +2725,19 @@ function renderSidebarProjects(){
       </button>`;
   }
 
-  // Sempre visível, mesmo sem projeto: o + no título é o caminho para criar.
-  html += cabecalhoSecaoNav('Projetos', 'novoProjetoRapido()', 'Novo projeto');
+  // Sempre visível, mesmo sem projeto: o + no título abre as duas formas de
+  // ter um projeto, criar um ou entrar no de alguém com o código do convite.
+  html += `
+    <div class="nav-section-head nav-section-head-menu">
+      <div class="nav-label">Projetos</div>
+      <div class="novo-menu nav-novo-projeto">
+        <button class="nav-section-add novo-menu-btn" aria-haspopup="menu" aria-expanded="false" onclick="alternarMenuNovo(this)" title="Criar projeto ou entrar com código" aria-label="Criar projeto ou entrar com código">${ICONE_MAIS}</button>
+        <div class="novo-menu-lista" role="menu" hidden>${itensNovoProjeto()}</div>
+      </div>
+    </div>`;
   if(state.projects.length === 0){
-    html += `<button class="nav-empty-acao" onclick="novoProjetoRapido()">Criar o primeiro projeto</button>`;
+    html += `<button class="nav-empty-acao" onclick="novoProjetoRapido()">Criar o primeiro projeto</button>
+      <button class="nav-empty-acao" onclick="entrarComCodigoRapido()">Entrar com código de convite</button>`;
   } else {
     html += state.projects.map(p=>{
       const role = p.myRole === 'owner' ? 'Dono' : (myRoleInProject(p.id) === 'editor' ? 'Editor' : 'Vendo');
@@ -2786,7 +2795,35 @@ async function createProject(){
   showToast('Projeto criado');
 }
 
-// O + de Projetos na barra lateral: pede só o nome, cria e já abre o quadro.
+// As duas opções do + de Projetos (barra lateral) e do "Novo projeto" do
+// celular. Usam o menu do "+ Novo" do projeto (alternarMenuNovo), que já fecha
+// com clique fora e com Esc.
+function itensNovoProjeto(){
+  const item = (k, nome, desc)=>`<button role="menuitem" class="novo-menu-item" onclick="escolherNovoProjeto('${k}')"><span class="novo-menu-nome">${nome}</span><span class="novo-menu-desc">${desc}</span></button>`;
+  return item('criar', 'Criar projeto', 'Quadro, chat e chamadas')
+    + item('codigo', 'Entrar com código', 'O código ou link do convite');
+}
+
+function escolherNovoProjeto(k){
+  const b = document.querySelector('.novo-menu-btn[aria-expanded="true"]');
+  if(b) alternarMenuNovo(b, true);
+  if(k === 'codigo') entrarComCodigoRapido();
+  else novoProjetoRapido();
+}
+
+// Pede o código (ou o link inteiro), entra no projeto e já abre ele.
+async function entrarComCodigoRapido(){
+  const valor = await perguntar('Entrar com código de convite', {label: 'Código ou link do convite', placeholder: 'Ex: 7F3K2A', okLabel: 'Entrar no projeto'});
+  if(!valor) return;
+  const code = codigoDoConvite(valor);
+  if(!code){ showToast('Esse código não parece certo. Confira o que te mandaram e tente de novo.', 'erro'); return; }
+  const r = await aceitarCodigoDeConvite(code);
+  if(!r) return;
+  if(r.project_id && state.projects.some(p=>p.id === r.project_id)) openProjectView(r.project_id);
+  else render();
+}
+
+// Criar projeto: pede só o nome, cria e já abre o quadro.
 async function novoProjetoRapido(){
   const name = await perguntar('Novo projeto', {label: 'Nome do projeto', placeholder: 'Ex: Lançamento da loja', okLabel: 'Criar projeto'});
   if(!name) return;
@@ -2862,20 +2899,27 @@ async function generateInviteCode(projectId){
   }
 }
 
+// Aceita o convite por código: recarrega os projetos e avisa. Devolve a
+// resposta do banco (com project_id) ou null, já com o aviso de erro dado.
+async function aceitarCodigoDeConvite(code){
+  const {data, error} = await sb.rpc('accept_invite_by_code', {p_code: code});
+  if(error){console.error(error);showToast('Não deu para concluir a ação. Tente de novo em instantes.', 'erro');return null;}
+  if(!data || !data.success){
+    showToast(data && data.error ? data.error : 'Código inválido ou já usado. Peça um novo para quem te convidou.', 'erro');
+    return null;
+  }
+  await loadProjects();
+  showToast(data.already_member ? 'Você já era membro desse projeto' : 'Você entrou no projeto!');
+  return data;
+}
+
 async function joinByCode(){
   const input = document.getElementById('join-code-input');
   const code = codigoDoConvite(input.value);
   if(!code){input.focus();return;}
-  const {data, error} = await sb.rpc('accept_invite_by_code', {p_code: code});
-  if(error){console.error(error);showToast('Não deu para concluir a ação. Tente de novo em instantes.', 'erro');return;}
-  if(!data || !data.success){
-    showToast(data && data.error ? data.error : 'Código inválido ou já usado. Peça um novo para quem te convidou.', 'erro');
-    return;
-  }
+  if(!await aceitarCodigoDeConvite(code)) return;
   input.value = '';
-  await loadProjects();
   renderProjectsModal();
-  showToast(data.already_member ? 'Você já era membro desse projeto' : 'Você entrou no projeto!');
   render();
 }
 
@@ -3396,7 +3440,10 @@ function renderProjectsList(){
   const acoesProjetos = `
       <div class="projects-list-acoes">
         <button class="btn-secondary" onclick="openProjectsModal()">Gerenciar</button>
-        <button class="btn-primary btn-com-icone" onclick="novoProjetoRapido()">${ICONE_MAIS}Novo projeto</button>
+        <div class="novo-menu">
+          <button class="btn-primary btn-com-icone novo-menu-btn" aria-haspopup="menu" aria-expanded="false" onclick="alternarMenuNovo(this)">${ICONE_MAIS}Novo projeto</button>
+          <div class="novo-menu-lista" role="menu" hidden>${itensNovoProjeto()}</div>
+        </div>
       </div>`;
   // Com as metas no topo a tela vira "Metas e projetos", e os botões de
   // projeto descem para junto da lista que eles afetam — no topo, separados
