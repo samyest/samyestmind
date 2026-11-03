@@ -50,7 +50,7 @@ Fechadas em duas rodadas de entrevista em 2026-10-26.
 | Q5 | Só texto, com links `https` clicáveis. Sem anexos. |
 | Q6 | O autor apaga a própria mensagem e o dono apaga qualquer uma. O texto é zerado no banco e fica "mensagem apagada". Ninguém edita. |
 | Q7 | Contador de não lidas mais notificação do navegador com o app aberto. O "até onde li" fica salvo no banco, por pessoa. |
-| Q8 | Até 4 pessoas, em malha P2P. |
+| Q8 | Até 4 pessoas, em malha P2P. Substituída pela Q35 (sem limite). |
 | Q9 | TURN da Cloudflare (Realtime TURN). |
 | Q10 | Sem gravação. |
 | Q11 | O dono e qualquer membro aceito, inclusive o visualizador, iniciam e entram. |
@@ -61,7 +61,7 @@ Fechadas em duas rodadas de entrevista em 2026-10-26.
 | Q16 | Cada pessoa pode silenciar o chat de um projeto: o contador continua, a notificação para. |
 | Q17 | Menções, reações, respostas encadeadas, busca e "digitando…" ficam fora. |
 | Q18 | Botão "Iniciar chamada". Quem está com o app aberto recebe aviso e notificação. O chat registra "Chamada iniciada" e "Chamada encerrada · 32 min". Uma chamada por projeto por vez. |
-| Q19 | A 5ª pessoa vê "Chamada cheia (4 de 4)" e não entra. |
+| Q19 | A 5ª pessoa vê "Chamada cheia (4 de 4)" e não entra. Substituída pela Q35. |
 | Q20 | ~~A transmissão de tela substitui a câmera de quem transmite. Uma transmissão por vez.~~ Revista em 2026-11-03 (Q26). |
 | Q21 | A chamada fica numa janela flutuante que continua aberta enquanto a pessoa navega pelo app. |
 | Q22 | Prévia antes de entrar. O padrão é microfone ligado e câmera desligada. |
@@ -80,9 +80,12 @@ continua.
 | Q28 | Anel verde em quem está falando. |
 | Q29 | Ensurdecer (não ouve ninguém e fecha o próprio microfone) e volume individual de cada pessoa, como no Discord: de 0 a 200% (acima de 100% o som passa por um `GainNode`, com o `<audio>` tocando mudo), "silenciar para mim" à parte do volume e um volume separado para o som da transmissão de tela, quando ela tem som. Tudo só neste aparelho. Com alto-falante escolhido e sem `setSinkId` no `AudioContext`, o teto fica em 100%. |
 | Q30 | Escolher microfone, câmera e alto-falante na prévia e durante a chamada. |
-| Q31 | Som curto quando alguém entra ou sai, que respeita o "Som" das Configurações. Como no Discord, também ao fechar e abrir o microfone e ao ensurdecer e voltar a ouvir: mais curtos e em outro timbre, descendo ao fechar e subindo ao abrir. Só quem clicou ouve. |
+| Q31 | Som curto quando alguém entra ou sai, que respeita o "Som" das Configurações. Também ao fechar e abrir o microfone e ao ensurdecer e voltar a ouvir: um toque só, curto, baixo e em seno, com a altura deslizando de leve (desce ao fechar, sobe ao abrir; o do fone mais grave). A primeira versão, com notas em onda triangular, soou "gamer" e foi trocada. Só quem clicou ouve. |
+| Q35 | Sem limite de pessoas (2026-11-03, no lugar de Q8 e Q19), ainda em malha P2P. Como cada um manda uma cópia para cada outro, o teto por envio cai em degraus: até 3 do outro lado como na Q27; de 4 a 5, câmera em ~480p a 600 kbps e tela a 2 Mbps e 24 quadros; de 6 a 8, câmera em ~360p a 350 kbps e tela a 1,2 Mbps e 15 quadros; 9 ou mais, câmera em ~240p a 200 kbps e tela a 800 kbps e 10 quadros. A tela mantém a resolução e perde quadros. Acima de umas 8 pessoas com câmera, a malha pesa no envio e no processador de cada um; chamadas grandes de verdade pedem um SFU (seção 4). |
+| Q36 | Câmera fluida (2026-11-03). Numa chamada de 4 com tela transmitida, as câmeras chegavam a uns 8 quadros por segundo, com congelamentos de até 0,7 s: cada um codificava o próprio vídeo em VP8 (no processador) uma vez por pessoa, e a câmera mantinha a resolução e sacrificava os quadros. Agora câmera e tela listam o H.264 (Constrained Baseline) na frente, que Mac, iPhone e a maioria dos PCs codificam no hardware; quem não tem segue no VP8. A câmera vai com `maintain-resolution` nos primeiros 12 s de cada conexão (sai em 720p na hora, em vez de levar 15 s subindo de 320x180) e depois com `maintain-framerate`, que baixa a resolução e mantém o movimento quando falta banda ou processador. A tela segue em `maintain-resolution`. Medido no mesmo cenário: de 9 e 6 quadros/s em 720p para 20 (o máximo da câmera de teste). |
+| Q34 | Supressão de ruído do navegador (e isolamento de voz onde houver), ligada por padrão, com interruptor na prévia e no painel de dispositivos e guardada no aparelho. Trocar reabre o microfone, fechando o atual antes: aberto, o navegador reaproveita o processamento dele e ignora a escolha nova. |
 | Q32 | Antes do seletor do navegador, a própria janela da chamada pergunta o que transmitir (tela inteira, janela ou aba), a qualidade (720p, 1080p ou 1080p a 60 quadros) e se o som vai junto, como no Discord. O navegador abre já na fonte escolhida (`displaySurface`), só para confirmar qual. A escolha fica guardada no aparelho. A qualidade escolhida é teto: vale a menor entre ela e a da Q27. |
-| Q33 | Janela flutuante, como no Meet: a chamada sai numa janela pequena por cima das outras abas e programas (Document Picture-in-Picture, Chrome e Edge no computador). Abre pelo botão no topo da chamada ou no mini; junto com a transmissão de tela, pelo mesmo clique em "Transmitir" (opção "Janela flutuante" na escolha da tela, ligada por padrão; fecha se a pessoa desistir no seletor); e sozinha ao trocar de aba onde o navegador permite (`mediaSession` `enterpictureinpicture`; o Chrome faz desde a versão 120; no Arc ela não abriu sozinha), e a que abriu sozinha fecha quando a pessoa volta. Minimizar a janela ou ir para outro programa não dispara nada em navegador nenhum: abrir a flutuante exige um clique. Tem microfone, fone, câmera, voltar para a aba e sair. É a própria janela da chamada movida para o documento da flutuante; os `<audio>` ficam na página. |
+| Q33 | Janela flutuante, como no Meet: a chamada sai numa janela pequena por cima das outras abas e programas (Document Picture-in-Picture, Chrome e Edge no computador). Abre pelo botão no topo da chamada ou no mini; junto com a transmissão de tela, pelo mesmo clique em "Transmitir" (opção "Janela flutuante" na escolha da tela, ligada por padrão; fecha se a pessoa desistir no seletor); e sozinha ao trocar de aba onde o navegador permite (`mediaSession` `enterpictureinpicture`; o Chrome faz desde a versão 120; no Arc ela não abriu sozinha), e a que abriu sozinha fecha quando a pessoa volta. Minimizar a janela ou ir para outro programa não dispara nada em navegador nenhum: abrir a flutuante exige um clique. Enquanto a chamada está na flutuante, a página mostra no canto um aviso com o relógio e "Trazer para cá", que devolve a chamada minimizada. Se a flutuante sumir sem o `pagehide` chegar, uma vigia (a cada segundo, ao voltar para a aba e no foco da página) percebe e devolve a chamada para a página. Tem microfone, fone, câmera, voltar para a aba e sair. É a própria janela da chamada movida para o documento da flutuante; os `<audio>` ficam na página. |
 
 ### Fora do escopo
 
@@ -189,8 +192,9 @@ permissão para os alarmes.
 
 ### 3.2 Fase 2 — Chamadas
 
-**Topologia.** Malha P2P de até 4 pessoas: cada participante mantém um
-`RTCPeerConnection` com cada um dos outros.
+**Topologia.** Malha P2P, sem limite de pessoas desde a Q35 (antes, até 4): cada
+participante mantém um `RTCPeerConnection` com cada um dos outros, e o teto de envio
+cai em degraus conforme a chamada cresce.
 
 **Sinalização.** Broadcast e Presence do Supabase Realtime, no canal privado
 `chamada:<project_id>`:
@@ -208,6 +212,19 @@ permissão para os alarmes.
   recebe os mesmos quatro na mesma ordem pela oferta. Ligar e desligar câmera ou tela é
   `replaceTrack`, sem renegociar, e o que está ligado é anunciado pela Presence. Como
   só um lado oferece, não há oferta cruzada para resolver.
+- **Vigia das conexões** (2026-11-03). O Broadcast não garante entrega: uma oferta,
+  resposta ou pedido perdido deixava os dois lados em "Conectando…" para sempre (quem
+  esperava pedia de novo só três vezes). A cada 3 s, cada cliente confere as conexões;
+  a que não fecha é refeita sem desistir, com intervalos de 8 s crescendo até 30 s:
+  quem oferece recomeça do zero, quem espera manda `pedir`. Um `pedir` que chega com a
+  conexão recomeçada há menos de 5 s é ignorado. Depois de duas tentativas, o ladrilho
+  troca "Conectando…" por "Ainda não conectou. Tentando de novo…" e, sem TURN, cita o
+  servidor de apoio. A vigia também refaz a conexão quando a imagem para: a pessoa diz
+  que a câmera (ou a tela) está ligada, mas o receptor não decodifica quadro novo em
+  9 s (contado pelo `framesDecoded` das estatísticas). Toda oferta aceita recoloca as
+  faixas locais de agora, e uma oferta de conexão nova do outro lado (certificado DTLS
+  diferente) refaz a conexão também do lado de quem responde. Até o primeiro quadro, o
+  ladrilho mostra a foto da pessoa, não um vídeo preto.
 
 **Autorização do canal** (SEC-075). As policies ficam em `realtime.messages`:
 
@@ -269,8 +286,8 @@ meio da chamada continuaria recebendo os sinais. Por isso (SEC-076):
 3. Busca a credencial em `api/chamada/turn` (3.3). Se falhar, segue só com o STUN
    (`stun.cloudflare.com`, gratuito) e avisa que em algumas redes a chamada pode não
    conectar.
-4. Entra na Presence com `em_chamada: true`. Com 4 pessoas já na chamada, mostra
-   "Chamada cheia (4 de 4)".
+4. Entra na Presence com `em_chamada: true`. (Até a Q35, com 4 pessoas já na chamada
+   mostrava "Chamada cheia (4 de 4)"; agora não há limite.)
 5. O primeiro a entrar grava `chamada_inicio` no chat, e o último a sair grava
    `chamada_fim` com `duracao_seg`. Se o último cair sem sair, a linha de fim não
    aparece; fica assim nesta versão.
@@ -279,8 +296,8 @@ meio da chamada continuaria recebendo os sinais. Por isso (SEC-076):
    silenciou o projeto, a notificação do navegador. Nenhum canal novo é preciso para
    avisar.
 
-O limite de 4 pessoas e o "uma transmissão por vez" moram no cliente, e um cliente
-modificado os ignora. Não são controle de acesso. O que o banco garante é que todos ali
+O "uma transmissão por vez" mora no cliente (o limite de 4 pessoas também morava, até
+a Q35), e um cliente modificado o ignora. Não são controle de acesso. O que o banco garante é que todos ali
 são do projeto.
 
 **Janela da chamada.** Elemento fixo preso ao `body`, fora do container que `render()`

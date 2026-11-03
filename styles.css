@@ -1852,7 +1852,7 @@
      temas, como num app de chamada: vídeo e tela leem melhor sobre fundo
      escuro, e o anel verde de quem fala aparece em qualquer tema. Fica preso
      ao body, abaixo dos modais (100) e acima da barra lateral. */
-  .chamada, .ch-previa{
+  .chamada, .ch-previa, .ch-na-flutuante{
     --ch-fundo:#10151b;
     --ch-ladrilho:#1b232d;
     --ch-texto:#e9eef3;
@@ -2093,6 +2093,15 @@
   }
   .ch-painel-disp p{margin:0;font-size:13px;color:var(--ch-suave);}
   .ch-disp{display:grid;gap:4px;font-size:12px;color:var(--ch-suave);}
+  /* Supressão de ruído: interruptor no fim da lista de dispositivos, na
+     prévia (tema do app) e no painel da chamada (escuro). */
+  .ch-disp-ruido{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-top:2px;cursor:pointer;}
+  .ch-disp-ruido-texto{display:flex;flex-direction:column;gap:2px;min-width:0;font-size:12.5px;font-weight:500;color:var(--ch-texto);}
+  .ch-disp-ruido-texto small{font-size:11.5px;font-weight:400;line-height:1.4;color:var(--ch-suave);}
+  .ch-previa-disps .ch-disp-ruido-texto{color:var(--text-strong);}
+  .ch-previa-disps .ch-disp-ruido-texto small{color:var(--text-muted);}
+  .ch-previa-disps .ch-interruptor:not(:checked){background:var(--line);}
+  .ch-previa-disps .ch-disp-ruido{grid-column:1 / -1;}
   .chamada .ch-disp .select{width:100%;max-width:none;background:var(--ch-fundo);color:var(--ch-texto);border-color:rgba(255,255,255,0.12);}
 
   .ch-mini-palco{position:relative;display:block;width:100%;aspect-ratio:16 / 9;background:var(--ch-ladrilho);cursor:pointer;}
@@ -2146,7 +2155,8 @@
   .ch-faixa-texto{display:flex;flex-direction:column;min-width:0;flex:1;font-size:12.5px;color:var(--text-muted);}
   .ch-faixa-texto strong{font-size:13.5px;font-weight:600;color:var(--text-strong);}
   .ch-faixa-texto span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .ch-faixa-cheia{font-size:12.5px;color:var(--text-muted);white-space:nowrap;}
+  /* Mais de 4 pessoas: os 4 primeiros rostos e um "+N" no fim. */
+  .ch-faixa-avatares > .ch-faixa-mais{min-width:28px;height:28px;padding:0 6px;place-items:center;border-radius:14px;background:var(--glass-strong);border:1px solid var(--line);font-size:11px;font-weight:600;color:var(--text-muted);font-variant-numeric:tabular-nums;}
 
   /* Aviso de chamada iniciada: o mesmo cartão do alarme, sem o vermelho. */
   .alarm-banner.ch-aviso{border-color:rgba(67,181,98,0.35);border-left-color:#43b562;animation:alarmSlideIn .35s cubic-bezier(0.22,0.9,0.35,1) both;}
@@ -2214,7 +2224,35 @@
   .ch-painel-disp.abrindo{animation:chPainelSobe .22s var(--mov-curva) both;}
   .ch-volume.abrindo{animation:chVolumeDesce .2s var(--mov-curva) both;}
   @keyframes chPainelSobe{from{opacity:0;transform:translate(-50%, 8px);}}
+  @keyframes chAvisoSobe{from{opacity:0;transform:translateY(8px);}}
   @keyframes chVolumeDesce{from{opacity:0;transform:translateY(-6px);}}
+
+  /* Com a chamada na janela flutuante, a página mostra no canto, no lugar da
+     janela minimizada, que ela está lá, com o caminho de volta. */
+  .ch-na-flutuante{
+    position:fixed;
+    right:20px;
+    bottom:20px;
+    z-index:90;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    max-width:calc(100vw - 24px);
+    padding:10px 10px 10px 14px;
+    border-radius:16px;
+    background:var(--ch-fundo);
+    color:var(--ch-texto);
+    box-shadow:0 18px 48px rgba(10,16,24,0.38), 0 0 0 1px rgba(255,255,255,0.06);
+    animation:chAvisoSobe .25s var(--mov-curva) both;
+  }
+  .ch-na-flutuante-texto{display:flex;flex-direction:column;gap:1px;min-width:0;font-size:12.5px;}
+  .ch-na-flutuante-texto strong{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ch-na-flutuante-texto > span{color:var(--ch-suave);font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .ch-na-flutuante-btn{flex-shrink:0;height:34px;padding:0 14px;border-radius:17px;background:var(--ch-texto);color:var(--ch-fundo);font-size:12.5px;font-weight:600;transition:filter .15s ease, transform .12s ease;}
+  .ch-na-flutuante-btn:hover{filter:brightness(0.92);}
+  .ch-na-flutuante-btn:active{transform:scale(.95);}
+  .ch-na-flutuante-btn:focus-visible{outline:2px solid #fff;outline-offset:2px;}
+  @media (max-width:600px){ .ch-na-flutuante{right:12px;bottom:calc(84px + env(safe-area-inset-bottom));} }
 
   /* Janela flutuante (Document Picture-in-Picture): a chamada minimizada ocupa
      a janela inteira, e o palco cresce com ela quando a pessoa a redimensiona. */
@@ -2337,9 +2375,8 @@
   }
 
   @media (prefers-reduced-motion:reduce){
-    .chamada *, .ch-faixa *, .ch-previa *{transition:none !important;animation:none !important;}
+    .chamada *, .ch-faixa *, .ch-previa *, .ch-na-flutuante, .ch-na-flutuante *{transition:none !important;animation:none !important;}
     .alarm-banner.ch-aviso{animation:none;}
-    .ch-video{opacity:1;}
   }
   .search-box{position:relative;flex:1;min-width:180px;}
   .search-box-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-soft);pointer-events:none;}
