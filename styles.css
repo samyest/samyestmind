@@ -2097,9 +2097,59 @@
     .ch-sair span{display:none;}
     .ch-faixa{flex-wrap:wrap;}
   }
+  /* Janela pequena com vídeo: os outros em grade (até 4) e a própria câmera
+     num quadro no canto, como num app de chamada no celular. */
+  .ch-mini-grade{position:absolute;inset:0;display:grid;grid-template-columns:1fr;gap:2px;background:var(--ch-fundo);}
+  .ch-mini-grade.n-2{grid-template-columns:1fr 1fr;}
+  .ch-mini-grade.n-3, .ch-mini-grade.n-4{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;}
+  .ch-mini-palco .ch-mini-grade .ch-ladrilho{position:relative;inset:auto;min-height:0;}
+  .ch-mini-eu{
+    position:absolute;
+    right:8px;
+    bottom:8px;
+    z-index:2;
+    width:32%;
+    aspect-ratio:16 / 9;
+    border-radius:9px;
+    overflow:hidden;
+    box-shadow:0 6px 18px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.14);
+    pointer-events:none;
+  }
+  .ch-mini-palco .ch-mini-eu .ch-ladrilho{position:absolute;inset:0;border-radius:inherit;}
+  .ch-mini-palco .ch-rotulo{left:6px;bottom:6px;padding:2px 7px;border-radius:6px;font-size:11px;}
+  .ch-mini-grade:not(.n-1) .ch-ladrilho .member-avatar{width:30px;height:30px;font-size:12px;}
+
+  /* Movimento da chamada. A troca entre o palco e a janela pequena usa a View
+     Transition do navegador (comTransicaoChamada): a janela muda de tamanho e
+     de lugar num gesto só. O resto da página não participa. */
+  .chamada{view-transition-name:chamada;}
+  ::view-transition-old(root), ::view-transition-new(root){animation:none;}
+  ::view-transition-group(chamada){animation-duration:.4s;animation-timing-function:var(--mov-curva);}
+  ::view-transition-old(chamada), ::view-transition-new(chamada){width:100%;height:100%;object-fit:cover;animation-duration:.26s;}
+  ::view-transition-new(chamada):only-child{animation:chJanelaAbre .34s var(--mov-curva) both;}
+  ::view-transition-old(chamada):only-child{animation:chJanelaFecha .22s ease-in both;}
+  @keyframes chJanelaAbre{from{opacity:0;transform:scale(.96) translateY(10px);}}
+  @keyframes chJanelaFecha{to{opacity:0;transform:scale(.97) translateY(6px);}}
+
+  /* Quem entra (ou a tela que começa) chega com um respiro; o vídeo aparece
+     com fade no primeiro quadro, em vez de piscar preto. */
+  .ch-ladrilho.entrando{animation:chLadrilhoEntra .38s var(--mov-curva) both;}
+  @keyframes chLadrilhoEntra{from{opacity:0;transform:scale(.94);}}
+  .ch-video{opacity:0;transition:opacity .35s ease;}
+  .ch-video.pronto{opacity:1;}
+
+  /* Botões afundam um pouco no toque; painéis deslizam ao abrir. */
+  .ch-botao, .ch-sair, .ch-acao{transition:background-color .15s ease, color .15s ease, transform .12s ease, filter .15s ease;}
+  .ch-botao:active, .ch-sair:active, .ch-acao:active{transform:scale(.92);}
+  .ch-painel-disp.abrindo{animation:chPainelSobe .22s var(--mov-curva) both;}
+  .ch-volume.abrindo{animation:chVolumeDesce .2s var(--mov-curva) both;}
+  @keyframes chPainelSobe{from{opacity:0;transform:translate(-50%, 8px);}}
+  @keyframes chVolumeDesce{from{opacity:0;transform:translateY(-6px);}}
+
   @media (prefers-reduced-motion:reduce){
-    .chamada *, .ch-faixa *, .ch-previa *{transition:none !important;}
+    .chamada *, .ch-faixa *, .ch-previa *{transition:none !important;animation:none !important;}
     .alarm-banner.ch-aviso{animation:none;}
+    .ch-video{opacity:1;}
   }
   .search-box{position:relative;flex:1;min-width:180px;}
   .search-box-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-soft);pointer-events:none;}
@@ -2250,6 +2300,44 @@
     display:flex;
     justify-content:space-between;
     gap:10px;
+  }
+  /* Criar projeto e entrar com código: um campo só, sem a moldura de
+     cabeçalho e rodapé do modal comum. O título diz o que é; a linha de baixo,
+     o que acontece. */
+  .modal.modal-rapido{max-width:440px;position:relative;}
+  .modal-rapido-corpo{display:flex;flex-direction:column;padding:30px 30px 4px;}
+  .modal-rapido-titulo{
+    margin:0 44px 8px 0;
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:500;
+    font-size:22px;
+    line-height:1.15;
+    letter-spacing:-0.02em;
+    color:var(--text-strong);
+  }
+  .modal-rapido-texto{margin:0 0 20px;font-size:13.5px;line-height:1.55;color:var(--text-muted);text-wrap:pretty;}
+  .modal-rapido .modal-rapido-campo{height:48px;padding:0 16px;font-size:15px;border-radius:12px;}
+  /* No código, o campo tem cara de código: grande, espaçado e no centro. O
+     espaço entre letras sobra depois da última; o recuo à esquerda compensa. */
+  #projeto-rapido[data-modo="codigo"] .modal-rapido-campo{
+    height:62px;
+    padding-left:calc(16px + 0.3em);
+    font-family:'JetBrains Mono',monospace;
+    font-size:24px;
+    letter-spacing:0.3em;
+    text-align:center;
+    text-transform:uppercase;
+  }
+  #projeto-rapido[data-modo="codigo"] .modal-rapido-campo::placeholder{color:color-mix(in srgb, var(--text-soft) 55%, transparent);}
+  .modal-rapido-erro{margin:10px 2px 0;font-size:12.5px;line-height:1.45;color:var(--danger);}
+  .modal-rapido-dica{margin:10px 2px 0;font-size:12.5px;color:var(--text-soft);}
+  .modal-rapido-dica:empty{display:none;}
+  .modal-rapido-acoes{display:flex;justify-content:flex-end;gap:8px;padding:22px 30px 26px;}
+  .modal-rapido-fechar{position:absolute;top:20px;right:20px;}
+  @media (max-width:900px){
+    .modal-rapido-corpo{padding:26px 22px 4px;}
+    .modal-rapido-acoes{padding:20px 22px calc(20px + env(safe-area-inset-bottom));}
+    .modal-rapido-acoes button{flex:1;justify-content:center;}
   }
   .btn-danger{
     padding:10px 16px;

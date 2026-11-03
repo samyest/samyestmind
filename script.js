@@ -2811,27 +2811,121 @@ function escolherNovoProjeto(k){
   else novoProjetoRapido();
 }
 
-// Pede o código (ou o link inteiro), entra no projeto e já abre ele.
-async function entrarComCodigoRapido(){
-  const valor = await perguntar('Entrar com código de convite', {label: 'Código ou link do convite', placeholder: 'Ex: 7F3K2A', okLabel: 'Entrar no projeto'});
-  if(!valor) return;
-  const code = codigoDoConvite(valor);
-  if(!code){ showToast('Esse código não parece certo. Confira o que te mandaram e tente de novo.', 'erro'); return; }
-  const r = await aceitarCodigoDeConvite(code);
-  if(!r) return;
-  if(r.project_id && state.projects.some(p=>p.id === r.project_id)) openProjectView(r.project_id);
-  else render();
+function novoProjetoRapido(){ abrirProjetoRapido('criar'); }
+function entrarComCodigoRapido(){ abrirProjetoRapido('codigo'); }
+
+// Diálogo próprio de "Criar projeto" e "Entrar com código", com um campo só,
+// em vez do perguntar() genérico: diz o que acontece, mostra o erro no próprio
+// diálogo e, no código, o campo tem cara de código.
+const PROJETO_RAPIDO = {
+  criar: {
+    titulo: 'Novo projeto',
+    texto: 'Um quadro do time, com chat e chamadas. Depois de criar, chame quem quiser pelo botão Convidar.',
+    rotulo: 'Nome do projeto', placeholder: 'Ex: Lançamento da loja', dica: '',
+    ok: 'Criar projeto', enviando: 'Criando…', max: 80
+  },
+  codigo: {
+    titulo: 'Entrar com código',
+    texto: 'Digite o código que te mandaram para entrar no projeto de outra pessoa.',
+    rotulo: 'Código ou link do convite', placeholder: '7F3K2A', dica: 'Pode colar o link inteiro do convite.',
+    ok: 'Entrar no projeto', enviando: 'Entrando…', max: 300
+  }
+};
+let projetoRapidoModo = null;
+let projetoRapidoEnviando = false;
+
+function abrirProjetoRapido(modo){
+  const m = PROJETO_RAPIDO[modo];
+  if(!m) return;
+  projetoRapidoModo = modo;
+  projetoRapidoEnviando = false;
+  const caixa = document.getElementById('projeto-rapido');
+  caixa.dataset.modo = modo;
+  document.getElementById('projeto-rapido-titulo').textContent = m.titulo;
+  document.getElementById('projeto-rapido-texto').textContent = m.texto;
+  document.getElementById('projeto-rapido-rotulo').textContent = m.rotulo;
+  document.getElementById('projeto-rapido-dica').textContent = m.dica;
+  const campo = document.getElementById('projeto-rapido-campo');
+  campo.value = '';
+  campo.placeholder = m.placeholder;
+  campo.maxLength = m.max;
+  campo.spellcheck = modo !== 'codigo';
+  campo.setAttribute('autocapitalize', modo === 'codigo' ? 'characters' : 'sentences');
+  document.getElementById('projeto-rapido-ok').textContent = m.ok;
+  erroProjetoRapido('');
+  atualizarOkProjetoRapido();
+  caixa.classList.add('open');
+  // O fundo leva alguns quadros para deixar de ser invisível, e focar antes
+  // disso não pega. Um setTimeout fixo de 50 ms às vezes chegava cedo e o foco
+  // se perdia; repete até o campo estar mesmo com o foco.
+  const focar = (resta)=>{
+    if(projetoRapidoModo !== modo) return;
+    campo.focus();
+    if(document.activeElement !== campo && resta > 0) setTimeout(()=>focar(resta - 1), 40);
+  };
+  setTimeout(()=>focar(10), 30);
 }
 
-// Criar projeto: pede só o nome, cria e já abre o quadro.
-async function novoProjetoRapido(){
-  const name = await perguntar('Novo projeto', {label: 'Nome do projeto', placeholder: 'Ex: Lançamento da loja', okLabel: 'Criar projeto'});
-  if(!name) return;
-  const criado = await criarProjetoRemoto(name.slice(0, 80));
-  if(!criado) return;
-  await loadProjects();
-  openProjectView(criado.id);
-  showToast('Projeto criado');
+function fecharProjetoRapido(){
+  document.getElementById('projeto-rapido').classList.remove('open');
+  projetoRapidoModo = null;
+}
+
+function erroProjetoRapido(msg){
+  const el = document.getElementById('projeto-rapido-erro');
+  el.textContent = msg;
+  el.hidden = !msg;
+  document.getElementById('projeto-rapido-campo').setAttribute('aria-invalid', msg ? 'true' : 'false');
+}
+
+function projetoRapidoValido(){
+  const v = document.getElementById('projeto-rapido-campo').value;
+  return projetoRapidoModo === 'codigo' ? codigoDoConvite(v).length >= 4 : v.trim().length > 0;
+}
+
+function atualizarOkProjetoRapido(){
+  document.getElementById('projeto-rapido-ok').disabled = projetoRapidoEnviando || !projetoRapidoValido();
+}
+
+// No código, o link colado vira só o código, em maiúsculas e sem espaços.
+function digitarProjetoRapido(campo){
+  if(projetoRapidoModo === 'codigo'){
+    const limpo = codigoDoConvite(campo.value);
+    if(campo.value !== limpo) campo.value = limpo;
+  }
+  erroProjetoRapido('');
+  atualizarOkProjetoRapido();
+}
+
+async function enviarProjetoRapido(){
+  const modo = projetoRapidoModo;
+  if(!modo || projetoRapidoEnviando || !projetoRapidoValido()) return;
+  const m = PROJETO_RAPIDO[modo];
+  const campo = document.getElementById('projeto-rapido-campo');
+  const ok = document.getElementById('projeto-rapido-ok');
+  projetoRapidoEnviando = true;
+  ok.textContent = m.enviando;
+  atualizarOkProjetoRapido();
+  try{
+    if(modo === 'criar'){
+      const criado = await criarProjetoRemoto(campo.value.trim().slice(0, 80));
+      if(!criado) return;
+      await loadProjects();
+      fecharProjetoRapido();
+      openProjectView(criado.id);
+      showToast('Projeto criado');
+    }else{
+      const r = await aceitarCodigoDeConvite(codigoDoConvite(campo.value), {noDialogo: true});
+      if(!r) return;
+      if(r.erro){ erroProjetoRapido(r.erro); campo.focus(); campo.select(); return; }
+      fecharProjetoRapido();
+      if(r.project_id && state.projects.some(p=>p.id === r.project_id)) openProjectView(r.project_id);
+      else render();
+    }
+  }finally{
+    projetoRapidoEnviando = false;
+    if(projetoRapidoModo === modo){ ok.textContent = m.ok; atualizarOkProjetoRapido(); }
+  }
 }
 
 // Atalho do cabeçalho do projeto: abre a lista de projetos já no campo de
@@ -2901,12 +2995,17 @@ async function generateInviteCode(projectId){
 
 // Aceita o convite por código: recarrega os projetos e avisa. Devolve a
 // resposta do banco (com project_id) ou null, já com o aviso de erro dado.
-async function aceitarCodigoDeConvite(code){
+// Com noDialogo, o erro volta como {erro} para aparecer no próprio diálogo.
+async function aceitarCodigoDeConvite(code, opts){
+  const noDialogo = !!(opts && opts.noDialogo);
+  const falhar = (msg)=>{ if(noDialogo) return {erro: msg}; showToast(msg, 'erro'); return null; };
   const {data, error} = await sb.rpc('accept_invite_by_code', {p_code: code});
-  if(error){console.error(error);showToast('Não deu para concluir a ação. Tente de novo em instantes.', 'erro');return null;}
+  if(error){console.error(error);return falhar('Não deu para entrar agora. Confira a conexão e tente de novo.');}
   if(!data || !data.success){
-    showToast(data && data.error ? data.error : 'Código inválido ou já usado. Peça um novo para quem te convidou.', 'erro');
-    return null;
+    const msg = data && data.error ? String(data.error) : '';
+    return falhar(!msg || /inválido|usado/i.test(msg)
+      ? 'Esse código está errado ou já foi usado. Peça um novo para quem te convidou.'
+      : `${msg.replace(/\.$/, '')}.`);
   }
   await loadProjects();
   showToast(data.already_member ? 'Você já era membro desse projeto' : 'Você entrou no projeto!');
@@ -5597,6 +5696,7 @@ const FECHAR_MODAL = {
   'metas-intro-modal': ()=>fecharApresentacaoMetas(),
   'metas-historico-modal': ()=>fecharHistoricoMetas(),
   'chamada-previa': ()=>fecharPreviaChamada(),
+  'projeto-rapido': ()=>fecharProjetoRapido(),
   'confirm-modal': ()=>resolveDialog(null)
 };
 const SALVAR_MODAL = {
@@ -9269,6 +9369,11 @@ const falaMedidores = new Map();
 let falaTimer = null;
 let chamadaRelogio = null;
 let dispositivosChamada = {mic: [], cam: [], saida: []};
+// O que o último desenho da janela mostrou, para animar só o que é novo, e
+// quando cada ladrilho novo começou a entrar (a animação dura CHAMADA_ENTRADA_MS).
+let chamadaDesenho = {modo: null, chaves: new Set()};
+const chamadaEntradas = new Map();
+const CHAMADA_ENTRADA_MS = 380;
 
 const ICONES_CHAMADA = {
   mic: '<path d="M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>',
@@ -10011,6 +10116,7 @@ function desenharPreviaChamada(){
     const v = document.createElement('video');
     v.autoplay = true; v.playsInline = true; v.muted = true;
     v.className = 'ch-video espelho';
+    marcarVideoQuandoPronto(v);
     v.srcObject = new MediaStream([pr.cam]);
     corpo.querySelector('.ch-previa-slot').appendChild(v);
     v.play().catch(()=>{});
@@ -10118,7 +10224,7 @@ async function entrarNaChamada(){
   }
   agendarRenovacaoTurn();
   tocarSomChamada('entrar');
-  desenharChamada();
+  comTransicaoChamada(()=>desenharChamada());
   iniciarRelogioChamada();
   await atualizarPresencaChamada();
   if(!chamada) return;
@@ -10160,8 +10266,15 @@ async function sairDaChamada(opts){
   if(document.fullscreenElement && document.getElementById('chamada') && document.getElementById('chamada').contains(document.fullscreenElement)){
     document.exitFullscreen().catch(()=>{});
   }
+  // A janela sai com a transição. Perde o id já, para uma chamada nova que
+  // comece nesse meio-tempo criar a própria janela em vez de reusar esta.
   const raiz = document.getElementById('chamada');
-  if(raiz) raiz.remove();
+  chamadaDesenho = {modo: null, chaves: new Set()};
+  if(raiz){
+    raiz.removeAttribute('id');
+    raiz.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));
+    comTransicaoChamada(()=>raiz.remove());
+  }
   const audios = document.getElementById('chamada-audios');
   if(audios) audios.remove();
   const reg = canaisChamada[c.pid];
@@ -10347,7 +10460,10 @@ async function chamadaAlternarDispositivos(){
   const c = chamada;
   if(!c) return;
   c.painelDisp = !c.painelDisp;
-  if(c.painelDisp) await carregarDispositivosChamada();
+  if(c.painelDisp){
+    await carregarDispositivosChamada();
+    c.animarPainel = true;
+  }
   desenharChamada();
 }
 
@@ -10369,6 +10485,7 @@ function chamadaAbrirVolume(uid, e){
   const c = chamada;
   if(!c) return;
   c.volumeAberto = c.volumeAberto === uid ? null : uid;
+  if(c.volumeAberto) c.animarPainel = true;
   desenharChamada();
   if(c.volumeAberto){
     const r = document.getElementById(`ch-vol-${uid}`);
@@ -10394,21 +10511,29 @@ function chamadaTelaCheia(chave, e){
 }
 
 function chamadaMinimizar(){
-  if(!chamada) return;
-  chamada.modo = 'mini';
-  chamada.painelDisp = false;
-  chamada.volumeAberto = null;
-  desenharChamada();
-  const b = document.getElementById('ch-btn-expandir');
-  if(b) b.focus();
+  const c = chamada;
+  if(!c || c.modo === 'mini') return;
+  comTransicaoChamada(()=>{
+    c.modo = 'mini';
+    c.painelDisp = false;
+    c.volumeAberto = null;
+    desenharChamada();
+  }).then(()=>{
+    const b = document.getElementById('ch-btn-expandir');
+    if(b) b.focus();
+  });
 }
 
 function chamadaExpandir(){
-  if(!chamada) return;
-  chamada.modo = 'expandida';
-  desenharChamada();
-  const b = document.getElementById('ch-btn-minimizar');
-  if(b) b.focus();
+  const c = chamada;
+  if(!c || c.modo === 'expandida') return;
+  comTransicaoChamada(()=>{
+    c.modo = 'expandida';
+    desenharChamada();
+  }).then(()=>{
+    const b = document.getElementById('ch-btn-minimizar');
+    if(b) b.focus();
+  });
 }
 
 document.addEventListener('keydown', (e)=>{
@@ -10465,14 +10590,44 @@ function videoDaChamada(chave){
     v.autoplay = true;
     v.playsInline = true;
     v.muted = true;
+    marcarVideoQuandoPronto(v);
     chamadaVideos[chave] = v;
   }
   const atual = v.srcObject && v.srcObject.getVideoTracks()[0];
   if(atual !== t) v.srcObject = new MediaStream([t]);
   const tela = chave.endsWith(':tela');
-  v.className = 'ch-video' + (tela ? ' tela' : '') + (chave === `${session.user.id}:cam` ? ' espelho' : '');
+  v.className = 'ch-video' + (tela ? ' tela' : '') + (chave === `${session.user.id}:cam` ? ' espelho' : '') + (v.dataset.pronto ? ' pronto' : '');
   v.play().catch(()=>{});
   return v;
+}
+
+// O vídeo aparece com um fade quando chega o primeiro quadro, em vez de
+// piscar preto. Se o evento não vier (navegador que não avisa), aparece
+// mesmo assim depois de 1,5 s.
+function marcarVideoQuandoPronto(v){
+  const pronto = ()=>{ v.dataset.pronto = '1'; v.classList.add('pronto'); };
+  v.addEventListener('loadeddata', pronto, {once: true});
+  v.addEventListener('playing', pronto, {once: true});
+  setTimeout(pronto, 1500);
+}
+
+// Troca de modo com a View Transition do navegador: o palco encolhe até a
+// janela do canto e ela cresce de volta, no lugar de trocar de uma vez. Sem
+// suporte, ou com movimento reduzido, troca direto.
+function comTransicaoChamada(mudar){
+  const reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(!document.startViewTransition || reduzir){ mudar(); return Promise.resolve(); }
+  try{
+    const t = document.startViewTransition(mudar);
+    // Uma transição nova no meio de outra faz o navegador pular a antiga e
+    // rejeitar as promessas dela; não é erro, só não anima.
+    t.ready.catch(()=>{});
+    t.finished.catch(()=>{});
+    return t.updateCallbackDone.catch(()=>{});
+  }catch(e){
+    mudar();
+    return Promise.resolve();
+  }
 }
 
 function estadoDoLadrilho(uid){
@@ -10512,7 +10667,7 @@ function ladrilhoChamadaHtml(l, opts){
       <div class="ch-ladrilho-video" data-slot="${l.chave}"></div>
       ${comVideo ? '' : `<div class="ch-ladrilho-avatar">${tela ? iconeChamada('tela', 40) : avatarChip(perfilNaChamada(c.pid, l.uid), nome[0])}</div>`}
       ${o.mini ? '' : `<button type="button" class="ch-alvo" id="ch-destacar-${l.chave.replace(':', '-')}" onclick="chamadaDestacar('${l.chave}')" aria-pressed="${destacado}" aria-label="${destacado ? 'Tirar do destaque' : 'Pôr em destaque'}: ${esc(rotulo)}"></button>`}
-      <div class="ch-rotulo">${icones}<span class="ch-rotulo-nome">${esc(rotulo)}</span></div>
+      ${o.semRotulo ? '' : `<div class="ch-rotulo">${icones}<span class="ch-rotulo-nome">${esc(rotulo)}</span></div>`}
       ${estado ? `<div class="ch-estado">${esc(estado)}</div>` : ''}
       ${o.mini ? '' : `<div class="ch-ladrilho-acoes">
         ${volume}
@@ -10545,6 +10700,18 @@ function controlesChamadaHtml(mini){
 }
 
 // Celular em pé: uma coluna até 2 ladrilhos e no máximo 2 colunas depois.
+function videosDoMini(){
+  const c = chamada;
+  const eu = session.user.id;
+  const ladrilhos = ladrilhosChamada();
+  const outros = [];
+  const pegar = (k)=>{ if(k && !outros.includes(k) && !k.startsWith(`${eu}:`) && faixaDeVideoChamada(k)) outros.push(k); };
+  pegar(c.destaque);
+  ladrilhos.filter(l=>l.tipo === 'tela').forEach(l=>pegar(l.chave));
+  ladrilhos.filter(l=>l.tipo === 'cam').forEach(l=>pegar(l.chave));
+  return {outros: outros.slice(0, 4), minha: faixaDeVideoChamada(`${eu}:cam`) ? `${eu}:cam` : null};
+}
+
 function colunasDaGrade(n){
   if(window.matchMedia && window.matchMedia('(max-width:900px) and (orientation:portrait)').matches) return n <= 2 ? 1 : 2;
   if(n <= 1) return 1;
@@ -10573,14 +10740,21 @@ function desenharChamada(){
   let html;
 
   if(c.modo === 'mini'){
-    // O mini mostra o que estiver em destaque, ou a primeira tela de outra
-    // pessoa, ou quem tem câmera ligada; sem vídeo, as fotos de todos.
-    const principal = [c.destaque, ...ladrilhos.filter(l=>l.tipo === 'tela' && l.uid !== session.user.id).map(l=>l.chave),
-      ...ladrilhos.filter(l=>l.uid !== session.user.id && l.tipo === 'cam').map(l=>l.chave)]
-      .find(k=>k && faixaDeVideoChamada(k));
-    const palco = principal
-      ? ladrilhoChamadaHtml(ladrilhos.find(l=>l.chave === principal), {mini: true})
-      : `<div class="ch-mini-pessoas">${ladrilhos.filter(l=>l.tipo === 'cam').map(l=>`<span class="ch-mini-pessoa" data-fala="${l.uid}" title="${esc(nomeNaChamada(c.pid, l.uid))}">${avatarChip(perfilNaChamada(c.pid, l.uid), nomeNaChamada(c.pid, l.uid)[0])}</span>`).join('')}</div>`;
+    // Minimizada, a câmera de quem estiver com ela ligada continua aparecendo:
+    // os vídeos dos outros em grade (até 4, o destaque e as telas primeiro) e
+    // a própria câmera num quadro no canto, ou ocupando tudo se for o único
+    // vídeo. Sem vídeo nenhum, as fotos de todos.
+    const {outros, minha} = videosDoMini();
+    const porChave = (k)=>ladrilhos.find(l=>l.chave === k);
+    let palco;
+    if(outros.length){
+      palco = `<div class="ch-mini-grade n-${outros.length}">${outros.map(k=>ladrilhoChamadaHtml(porChave(k), {mini: true})).join('')}</div>`
+        + (minha ? `<div class="ch-mini-eu">${ladrilhoChamadaHtml(porChave(minha), {mini: true, semRotulo: true})}</div>` : '');
+    }else if(minha){
+      palco = ladrilhoChamadaHtml(porChave(minha), {mini: true});
+    }else{
+      palco = `<div class="ch-mini-pessoas">${ladrilhos.filter(l=>l.tipo === 'cam').map(l=>`<span class="ch-mini-pessoa" data-fala="${l.uid}" title="${esc(nomeNaChamada(c.pid, l.uid))}">${avatarChip(perfilNaChamada(c.pid, l.uid), nomeNaChamada(c.pid, l.uid)[0])}</span>`).join('')}</div>`;
+    }
     // O palco do mini abre a chamada no clique; pelo teclado, o caminho é o
     // botão "Abrir a chamada" dos controles, por isso este fica fora do Tab.
     html = `
@@ -10635,6 +10809,31 @@ function desenharChamada(){
     const v = videoDaChamada(slot.dataset.slot);
     if(v) slot.appendChild(v);
   });
+  // Ladrilho de quem acabou de entrar (ou da tela que acabou de começar)
+  // chega com animação; os que já estavam não repetem a cada desenho. Na
+  // troca de modo, quem anima é a transição da janela inteira.
+  // Ao entrar alguém a janela se redesenha várias vezes seguidas (presença,
+  // áudio, conexão); a animação continua de onde estava em vez de recomeçar
+  // ou ser cortada.
+  const agora = performance.now();
+  const chaves = new Set();
+  raiz.querySelectorAll('.ch-ladrilho[data-chave]').forEach(el=>{
+    const k = el.dataset.chave;
+    chaves.add(k);
+    if(chamadaDesenho.modo === c.modo && !chamadaDesenho.chaves.has(k) && !chamadaEntradas.has(k)) chamadaEntradas.set(k, agora);
+    const desde = chamadaEntradas.get(k);
+    if(desde === undefined) return;
+    const passou = agora - desde;
+    if(passou < CHAMADA_ENTRADA_MS){
+      el.classList.add('entrando');
+      el.style.animationDelay = `-${Math.round(passou)}ms`;
+    }else chamadaEntradas.delete(k);
+  });
+  chamadaDesenho = {modo: c.modo, chaves};
+  if(c.animarPainel){
+    raiz.querySelectorAll('.ch-painel-disp, .ch-volume').forEach(el=>el.classList.add('abrindo'));
+    c.animarPainel = false;
+  }
   const novoAnuncio = document.getElementById('ch-anuncio');
   if(novoAnuncio && textoAnuncio) novoAnuncio.textContent = textoAnuncio;
   for(const [chave, m] of falaMedidores) if(m.falando) marcarFalaChamada(chave, true);
