@@ -208,6 +208,14 @@ permissão para os alarmes.
   recebe os mesmos quatro na mesma ordem pela oferta. Ligar e desligar câmera ou tela é
   `replaceTrack`, sem renegociar, e o que está ligado é anunciado pela Presence. Como
   só um lado oferece, não há oferta cruzada para resolver.
+- **Vigia das conexões** (2026-11-03). O Broadcast não garante entrega: uma oferta,
+  resposta ou pedido perdido deixava os dois lados em "Conectando…" para sempre (quem
+  esperava pedia de novo só três vezes). A cada 3 s, cada cliente confere as conexões;
+  a que não fecha é refeita sem desistir, com intervalos de 8 s crescendo até 30 s:
+  quem oferece recomeça do zero, quem espera manda `pedir`. Um `pedir` que chega com a
+  conexão recomeçada há menos de 5 s é ignorado. Depois de duas tentativas, o ladrilho
+  troca "Conectando…" por "Ainda não conectou. Tentando de novo…" e, sem TURN, cita o
+  servidor de apoio.
 
 **Autorização do canal** (SEC-075). As policies ficam em `realtime.messages`:
 

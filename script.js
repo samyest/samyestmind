@@ -9645,6 +9645,9 @@ function receberSinalChamada(pid, s){
     const reg = canaisChamada[pid];
     const p = reg && reg.emChamada.find(x=>x.uid === s.de && x.sessao === s.deSessao);
     if(!p) return;
+    // Uma conexão recém-recomeçada (pela vigia ou por outro pedido) ainda
+    // está negociando: recomeçar de novo agora só atrasaria.
+    if(par && par.sessao === s.deSessao && Date.now() - par.criadoEm < 5000 && par.pc.connectionState !== 'failed') return;
     if(par) fecharParChamada(par);
     criarParChamada(s.de, s.deSessao, true);
   }
@@ -9660,7 +9663,7 @@ function enfileirarPar(par, fn){
 function criarParChamada(uid, sessao, ofertante){
   const c = chamada;
   const pc = new RTCPeerConnection({iceServers: c.iceServers, bundlePolicy: 'max-bundle'});
-  const par = {uid, sessao, pc, ofertante, transceptores: {}, remotas: {}, pendentes: [], fila: Promise.resolve(), audio: {}, reforcos: {}, timer: null, pedidos: 0};
+  const par = {uid, sessao, pc, ofertante, transceptores: {}, remotas: {}, pendentes: [], fila: Promise.resolve(), audio: {}, reforcos: {}, timer: null, pedidos: 0, criadoEm: Date.now()};
   c.pares.set(uid, par);
   const adiantados = c.iceAdiantado[`${uid}:${sessao}`];
   if(adiantados){ par.pendentes.push(...adiantados); delete c.iceAdiantado[`${uid}:${sessao}`]; }
@@ -9881,24 +9884,45 @@ function estadoConexaoChamada(par){
   desenharChamada();
 }
 
-// Quem não oferece espera a oferta. Se ela não vem (sinal perdido), pede de
-// novo, até três vezes.
-function esperarOfertaChamada(uid, sessao){
+// Vigia das conexões, a cada 3 s. Antes, quem esperava a oferta pedia de novo
+// só três vezes e desistia, e ninguém percebia uma negociação parada no meio
+// (a resposta perdida deixava os dois lados "Conectando…" para sempre). Agora,
+// enquanto a pessoa está na chamada e a conexão com ela não fecha, tenta de
+// novo sem desistir, com intervalos de 8 s crescendo até 30 s: quem oferece
+// recomeça do zero (conexão e oferta novas); quem espera pede uma oferta.
+function vigiarConexoesChamada(){
   const c = chamada;
-  const chave = `${uid}:${sessao}`;
-  clearTimeout(c.esperas[chave]);
-  let tentativas = 0;
-  const conferir = ()=>{
-    if(chamada !== c) return;
+  if(!c) return;
+  const agora = Date.now();
+  const eu = session.user.id;
+  for(const p of c.participantes.values()){
+    const chave = `${p.uid}:${p.sessao}`;
+    const v = c.vigias[chave] || (c.vigias[chave] = {desde: 0, tentativas: 0, proxima: 0});
+    const par = c.pares.get(p.uid);
+    const st = par && par.sessao === p.sessao ? par.pc.connectionState : 'sem-par';
+    if(st === 'connected'){ v.desde = 0; v.tentativas = 0; continue; }
+    if(!v.desde){ v.desde = agora; v.proxima = agora + 8000; continue; }
+    if(agora < v.proxima) continue;
+    v.tentativas++;
+    v.proxima = agora + Math.min(30000, 8000 + v.tentativas * 5000);
+    if(eu < p.uid){
+      if(par) fecharParChamada(par);
+      criarParChamada(p.uid, p.sessao, true);
+    }else enviarSinalChamada(p.uid, p.sessao, 'pedir', null);
+    desenharChamada();
+  }
+  for(const chave of Object.keys(c.vigias)){
+    const [uid, sessao] = chave.split(':');
     const p = c.participantes.get(uid);
-    if(!p || p.sessao !== sessao) return;
-    const par = c.pares.get(uid);
-    if(par && par.sessao === sessao && par.pc.connectionState === 'connected') return;
-    if(tentativas++ >= 3) return;
-    if(!par || par.sessao !== sessao || par.pc.connectionState !== 'connecting') enviarSinalChamada(uid, sessao, 'pedir', null);
-    c.esperas[chave] = setTimeout(conferir, 6000);
-  };
-  c.esperas[chave] = setTimeout(conferir, 5000);
+    if(!p || p.sessao !== sessao) delete c.vigias[chave];
+  }
+}
+
+function tentativasDeConexao(uid){
+  const c = chamada;
+  const p = c && c.participantes.get(uid);
+  const v = p && c.vigias[`${uid}:${p.sessao}`];
+  return v ? v.tentativas : 0;
 }
 
 function fecharParChamada(par){
@@ -9948,10 +9972,8 @@ function reconciliarChamada(){
       tocarSomChamada('entrar');
       anunciarNaChamada(`${nomeNaChamada(c.pid, p.uid)} entrou na chamada`);
     }
-    if(!par){
-      if(eu < p.uid) criarParChamada(p.uid, p.sessao, true);
-      else esperarOfertaChamada(p.uid, p.sessao);
-    }
+    // Quem espera a oferta não faz nada aqui: se ela não vier, a vigia pede.
+    if(!par && eu < p.uid) criarParChamada(p.uid, p.sessao, true);
   }
   for(const uid of [...c.participantes.keys()]){
     if(vistos.has(uid)) continue;
@@ -10380,7 +10402,7 @@ async function entrarNaChamada(){
     local: {voz: pr.voz, cam: pr.camera ? pr.cam : null, tela: null, telaAudio: null},
     mic: !!(pr.mic && pr.voz), ensurdecido: false, micAntes: true, camera: !!(pr.camera && pr.cam), tela: false,
     dispositivos: Object.assign({}, pr.dispositivos),
-    pares: new Map(), participantes: new Map(), iceAdiantado: {}, esperas: {},
+    pares: new Map(), participantes: new Map(), iceAdiantado: {}, esperas: {}, vigias: {},
     iceServers: ice.servidores, semTurn: ice.semTurn, turnTimer: null,
     destaque: null, modo: 'expandida', painelDisp: false, volumeAberto: null,
     registrarInicio: reg.emChamada.length === 0
@@ -10397,6 +10419,7 @@ async function entrarNaChamada(){
   tocarSomChamada('entrar');
   comTransicaoChamada(()=>desenharChamada());
   ligarFlutuanteAutomatico();
+  chamada.vigiaConexoes = setInterval(vigiarConexoesChamada, 3000);
   iniciarRelogioChamada();
   await atualizarPresencaChamada();
   if(!chamada) return;
@@ -10437,6 +10460,7 @@ async function sairDaChamada(opts){
   clearTimeout(c.turnTimer);
   clearTimeout(c.timerInicio);
   Object.values(c.esperas).forEach(clearTimeout);
+  clearInterval(c.vigiaConexoes);
   pararRelogioChamada();
   for(const par of [...c.pares.values()]){
     clearTimeout(par.timer);
@@ -11238,6 +11262,11 @@ function estadoDoLadrilho(uid){
   if(st === 'connected') return '';
   if(st === 'failed') return c.semTurn ? 'Não conectou: esta rede pede o servidor de apoio (TURN), que não está configurado.' : 'Reconectando…';
   if(st === 'disconnected') return 'Reconectando…';
+  // Depois de duas tentativas da vigia, diz que está tentando de novo e, sem
+  // TURN, a causa mais provável.
+  if(tentativasDeConexao(uid) >= 2){
+    return c.semTurn ? 'Ainda não conectou. Esta rede pode precisar do servidor de apoio (TURN), que não está configurado. Tentando de novo…' : 'Ainda não conectou. Tentando de novo…';
+  }
   return 'Conectando…';
 }
 
