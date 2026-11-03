@@ -10484,7 +10484,11 @@ function desenharPreviaChamada(){
         <div class="ch-previa-nivel" aria-hidden="true" title="Volume do microfone"><span id="ch-previa-nivel"></span></div>
       </div>
       ${pr.erro ? `<p class="ch-previa-erro" role="alert">${esc(pr.erro)}</p>` : ''}
-      <div class="ch-previa-disps">${seletoresDispositivo(pr.dispositivos, 'previaTrocarDispositivo')}</div>
+      <div class="ch-previa-disps">${seletoresDispositivo(pr.dispositivos, 'previaTrocarDispositivo')}${janelaFlutuanteSuportada() ? `
+        <label class="ch-disp-ruido">
+          <span class="ch-disp-ruido-texto"><span>Janela flutuante ao entrar</span><small>A chamada fica por cima das outras abas e programas, mesmo quando você troca de aba.</small></span>
+          <input type="checkbox" role="switch" class="ch-interruptor" id="ch-previa-fixa" ${flutuanteAoEntrar() ? 'checked' : ''} onchange="previaAlternarFixa(this.checked)">
+        </label>` : ''}</div>
       <p class="ch-previa-quem" id="ch-previa-quem"></p>
     </div>`;
   if(comVideo){
@@ -10560,20 +10564,51 @@ function agendarRenovacaoTurn(){
   }, CHAMADA_RENOVA_TURN_MS);
 }
 
+// Janela flutuante fixa ao entrar. Abrir essa janela exige um clique, e a
+// abertura sozinha ao trocar de aba depende do navegador avisar o site, o
+// que o Arc não faz. Com esta opção, o próprio clique em "Entrar na chamada"
+// abre a janela, e ela fica por cima das outras abas e programas até a pessoa
+// trazer a chamada de volta. Vem ligada no Arc (que injeta as variáveis
+// --arc-palette-* na página) e desligada no resto, onde a troca de aba já
+// abre a janela; a escolha fica guardada no aparelho.
+function navegadorArc(){
+  try{ return !!getComputedStyle(document.documentElement).getPropertyValue('--arc-palette-title').trim(); }catch(e){ return false; }
+}
+
+function flutuanteAoEntrar(){
+  let v = null;
+  try{ v = localStorage.getItem('chamadaFixa'); }catch(e){}
+  return v === null ? navegadorArc() : v === 'sim';
+}
+
+function previaAlternarFixa(ligada){
+  try{ localStorage.setItem('chamadaFixa', ligada ? 'sim' : 'nao'); }catch(e){}
+  desenharPreviaChamada();
+}
+
 async function entrarNaChamada(){
   const pr = previaChamada;
   if(!pr || pr.entrando) return;
+  // Pedida já, dentro do clique: depois das esperas abaixo o navegador não
+  // considera mais que houve um gesto.
+  const pedidoJanela = flutuanteAoEntrar() && janelaFlutuanteSuportada() && !janelaFlutuante
+    ? window.documentPictureInPicture.requestWindow({width: 380, height: 270})
+      .then(w=>{ w.document.body.style.cssText = 'margin:0;background:#10151b'; return w; })
+      .catch(()=>null) : null;
   pr.entrando = true;
   desenharPreviaChamada();
   const reg = canalChamada(pr.pid);
   const pronto = await Promise.race([reg.pronto, new Promise(ok=>setTimeout(()=>ok(false), 10000))]);
-  if(previaChamada !== pr) return;
-  const falhar = (msg)=>{ pr.entrando = false; pr.erro = msg; desenharPreviaChamada(); };
+  if(previaChamada !== pr){ if(pedidoJanela) pedidoJanela.then(w=>w && w.close()); return; }
+  const falhar = (msg)=>{
+    pr.entrando = false; pr.erro = msg; desenharPreviaChamada();
+    if(pedidoJanela) pedidoJanela.then(w=>w && w.close());
+  };
   if(!pronto) return falhar('O canal da chamada não abriu. Confira a conexão. Se é a primeira chamada do app, falta rodar o supabase/chamadas.sql no Supabase.');
   const eu = session.user.id;
   if(reg.emChamada.some(p=>p.uid === eu)) return falhar('Você já está nesta chamada em outra aba ou aparelho.');
   const ice = await buscarTurnChamada(pr.pid);
-  if(previaChamada !== pr) return;
+  if(previaChamada !== pr){ if(pedidoJanela) pedidoJanela.then(w=>w && w.close()); return; }
 
   const agora = Date.now();
   chamada = {
@@ -10598,6 +10633,8 @@ async function entrarNaChamada(){
   tocarSomChamada('entrar');
   comTransicaoChamada(()=>desenharChamada());
   ligarFlutuanteAutomatico();
+  // A janela pedida no clique chega agora (ou já chegou): a chamada vai para ela.
+  if(pedidoJanela) pedidoJanela.then(w=>{ if(w) adotarJanelaFlutuante(w, 'entrada'); });
   chamada.vigiaConexoes = setInterval(vigiarConexoesChamada, 3000);
   iniciarRelogioChamada();
   await atualizarPresencaChamada();
@@ -11220,6 +11257,13 @@ async function abrirJanelaFlutuante(origem){
   if(chamada !== c || janelaFlutuante){ win.close(); return; }
   // Aberta junto com a transmissão, mas a pessoa já desistiu do seletor.
   if(origem === 'tela' && !c.pedindoTela && !c.tela){ win.close(); return; }
+  adotarJanelaFlutuante(win, origem);
+}
+
+// Leva a chamada para uma janela flutuante já aberta.
+function adotarJanelaFlutuante(win, origem){
+  const c = chamada;
+  if(!c || janelaFlutuante){ try{ win.close(); }catch(e){} return; }
   prepararJanelaFlutuante(win);
   const raiz = document.getElementById('chamada');
   janelaFlutuante = {win, origem: origem || 'botao', auto: origem === 'auto', modoAntes: c.modo, voltarExpandida: false};
