@@ -9370,19 +9370,35 @@ async function apagarMensagemChat(id){
 // A janela fica presa ao <body>, fora do #main que o render() reescreve, para
 // a chamada continuar enquanto a pessoa navega pelo app.
 
-const CHAMADA_MAX = 4;
 const CHAMADA_FAIXAS = ['voz', 'cam', 'tela', 'telaAudio'];
 const CHAMADA_STUN = [{urls: 'stun:stun.cloudflare.com:3478'}];
 const CHAMADA_RENOVA_TURN_MS = 45 * 60 * 1000;
 const CHAMADA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // Teto de envio por conexão conforme quantas pessoas estão do outro lado
-// (Q27): na malha, quem transmite manda uma cópia para cada uma.
+// (Q27): na malha, quem transmite manda uma cópia para cada uma. Sem limite
+// de pessoas (desde 2026-11-03), a câmera também diminui a resolução
+// (camEscala divide largura e altura) a partir de 4 do outro lado, para a
+// soma das cópias caber no envio de uma internet de casa; a tela mantém a
+// resolução, para o texto continuar legível, e perde quadros.
 const CHAMADA_TETOS = [
   null,
-  {tela: 8000000, telaQuadros: 60, cam: 2500000},
-  {tela: 4500000, telaQuadros: 30, cam: 1500000},
-  {tela: 3000000, telaQuadros: 30, cam: 1000000}
+  {tela: 8000000, telaQuadros: 60, cam: 2500000, camEscala: 1, camQuadros: 30},
+  {tela: 4500000, telaQuadros: 30, cam: 1500000, camEscala: 1, camQuadros: 30},
+  {tela: 3000000, telaQuadros: 30, cam: 1000000, camEscala: 1, camQuadros: 30},
+  // 4 e 5 do outro lado: câmera em ~480p.
+  {tela: 2000000, telaQuadros: 24, cam: 600000, camEscala: 1.5, camQuadros: 24},
+  // 6 a 8: ~360p.
+  {tela: 1200000, telaQuadros: 15, cam: 350000, camEscala: 2, camQuadros: 20},
+  // 9 ou mais: ~240p.
+  {tela: 800000, telaQuadros: 10, cam: 200000, camEscala: 3, camQuadros: 15}
 ];
+
+function tetoDaChamada(outros){
+  if(outros <= 3) return CHAMADA_TETOS[Math.max(1, outros)];
+  if(outros <= 5) return CHAMADA_TETOS[4];
+  if(outros <= 8) return CHAMADA_TETOS[5];
+  return CHAMADA_TETOS[6];
+}
 const CHAMADA_LIMIAR_FALA = 0.02;
 
 let chamada = null;
@@ -10013,18 +10029,15 @@ function fecharParChamada(par){
 }
 
 // Liga e desliga conexões conforme a Presence: entra quem chegou, sai quem
-// saiu ou perdeu o acesso. Só os 4 primeiros a entrar ficam (Q19).
+// saiu ou perdeu o acesso. Sem limite de pessoas desde 2026-11-03 (antes, só
+// as 4 primeiras ficavam, Q19); a qualidade se ajusta pelo tetoDaChamada.
 function reconciliarChamada(){
   const c = chamada;
   const reg = c && canaisChamada[c.pid];
   if(!c || !reg || !c.presente) return;
   const eu = session.user.id;
-  const dentro = reg.emChamada.slice(0, CHAMADA_MAX);
-  const estouNaPresenca = reg.emChamada.some(p=>p.uid === eu && p.sessao === c.sessao);
-  if(estouNaPresenca && !dentro.some(p=>p.uid === eu && p.sessao === c.sessao)){
-    sairDaChamada({aviso: `Chamada cheia (${CHAMADA_MAX} de ${CHAMADA_MAX}).`});
-    return;
-  }
+  const dentro = reg.emChamada;
+  const estouNaPresenca = dentro.some(p=>p.uid === eu && p.sessao === c.sessao);
   c.inicio = Math.min(c.entrouEm, ...dentro.map(p=>p.desde));
   // "Chamada iniciada" sai de quem não viu ninguém ao entrar, mas só depois
   // de a Presence assentar (2,5 s): duas pessoas que iniciam juntas acabam
@@ -10092,9 +10105,9 @@ async function definirEnvioChamada(transceptor, enc, preferencia){
 function ajustarQualidadePar(par){
   const c = chamada;
   if(!c) return;
-  const teto = CHAMADA_TETOS[Math.max(1, Math.min(3, c.pares.size))];
+  const teto = tetoDaChamada(c.pares.size);
   definirEnvioChamada(par.transceptores.voz, {maxBitrate: 64000});
-  definirEnvioChamada(par.transceptores.cam, {maxBitrate: teto.cam, maxFramerate: 30}, 'maintain-resolution');
+  definirEnvioChamada(par.transceptores.cam, {maxBitrate: teto.cam, maxFramerate: teto.camQuadros, scaleResolutionDownBy: teto.camEscala}, 'maintain-resolution');
   // A qualidade escolhida para a tela é um teto a mais: 720p não precisa da
   // taxa do 1080p, e 30 quadros não mandam 60.
   const q = QUALIDADES_TELA[c.qualidadeTela] || QUALIDADES_TELA['1080'];
@@ -10441,9 +10454,7 @@ function desenharQuemEstaNaPrevia(){
   if(reg && reg.erro){ el.textContent = 'O canal da chamada não abriu. Se é a primeira chamada do app, falta rodar o supabase/chamadas.sql no Supabase.'; return; }
   if(!na.length){ el.textContent = 'Ninguém na chamada ainda. Quem estiver com o app aberto recebe um aviso quando você entrar.'; return; }
   const nomes = na.map(p=>nomeNaChamada(pr.pid, p.uid));
-  el.textContent = na.length >= CHAMADA_MAX
-    ? `Chamada cheia (${CHAMADA_MAX} de ${CHAMADA_MAX}): ${listaDeNomes(nomes)}.`
-    : `${listaDeNomes(nomes)} ${na.length === 1 ? 'está' : 'estão'} na chamada.`;
+  el.textContent = `${listaDeNomes(nomes)} ${na.length === 1 ? 'está' : 'estão'} na chamada.`;
 }
 
 function fecharPreviaChamada(){
@@ -10505,7 +10516,6 @@ async function entrarNaChamada(){
   if(!pronto) return falhar('O canal da chamada não abriu. Confira a conexão. Se é a primeira chamada do app, falta rodar o supabase/chamadas.sql no Supabase.');
   const eu = session.user.id;
   if(reg.emChamada.some(p=>p.uid === eu)) return falhar('Você já está nesta chamada em outra aba ou aparelho.');
-  if(reg.emChamada.length >= CHAMADA_MAX) return falhar(`Chamada cheia (${CHAMADA_MAX} de ${CHAMADA_MAX}).`);
   const ice = await buscarTurnChamada(pr.pid);
   if(previaChamada !== pr) return;
 
@@ -11509,7 +11519,8 @@ function colunasDaGrade(n){
   if(n <= 1) return 1;
   if(n <= 4) return 2;
   if(n <= 6) return 3;
-  return 4;
+  if(n <= 12) return 4;
+  return 5;
 }
 
 function desenharChamada(){
@@ -11674,8 +11685,8 @@ function faixaChamadaHtml(p){
   if(!na.length && !euDentro) return '<div id="chamada-faixa"></div>';
   const pessoas = euDentro ? [{uid: session.user.id}, ...[...chamada.participantes.values()]] : na;
   const nomes = pessoas.map(x=>x.uid === session.user.id ? 'você' : nomeNaChamada(p.id, x.uid));
-  const avatares = pessoas.slice(0, 4).map(x=>`<span data-fala="${x.uid}">${avatarChip(perfilNaChamada(p.id, x.uid), nomeNaChamada(p.id, x.uid)[0])}</span>`).join('');
-  const cheia = !euDentro && na.length >= CHAMADA_MAX;
+  const avatares = pessoas.slice(0, 4).map(x=>`<span data-fala="${x.uid}">${avatarChip(perfilNaChamada(p.id, x.uid), nomeNaChamada(p.id, x.uid)[0])}</span>`).join('')
+    + (pessoas.length > 4 ? `<span class="ch-faixa-mais" aria-hidden="true">+${pessoas.length - 4}</span>` : '');
   return `
     <div id="chamada-faixa" class="ch-faixa" role="status">
       <span class="ch-ponto" aria-hidden="true"></span>
@@ -11683,7 +11694,6 @@ function faixaChamadaHtml(p){
       <span class="ch-faixa-texto"><strong>${euDentro ? 'Você está na chamada' : 'Chamada em andamento'}</strong><span>${esc(listaDeNomes(nomes))}</span></span>
       ${euDentro
         ? `<button class="btn-secondary" onclick="chamadaExpandir()">Abrir a chamada</button>`
-        : cheia ? `<span class="ch-faixa-cheia">Cheia (${CHAMADA_MAX} de ${CHAMADA_MAX})</span>`
         : `<button class="btn-primary btn-com-icone" onclick="abrirPreviaChamada('${p.id}')">${iconeChamada('ligar', 14)}Entrar</button>`}
     </div>`;
 }

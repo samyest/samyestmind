@@ -208,7 +208,8 @@ Além do SEC-075, cada participante recusa sinal de user id que não está entre
 e os membros aceitos que ele carregou. Quando `project_members` muda, cada
 participante fecha na hora a conexão com quem perdeu o acesso, e o cliente de quem
 saiu deixa a chamada e para câmera e microfone. O JWT do Supabase continua valendo 1
-hora. O limite de 4 pessoas é do cliente e não conta como controle de acesso.
+hora. Não há limite de pessoas na chamada (o de 4, que existia até a Q35 da RFC 0002,
+era do cliente e nunca contou como controle de acesso).
 Quem aparece no canal sem estar na lista carregada (entrou no projeto depois) faz o
 cliente recarregar os projetos (`membroNovoNaChamada`, no máximo 3 vezes por pessoa)
 e só entra se vier na lista nova: a recusa continua valendo para quem não é membro.
