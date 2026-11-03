@@ -62,12 +62,25 @@ Fechadas em duas rodadas de entrevista em 2026-10-26.
 | Q17 | Menções, reações, respostas encadeadas, busca e "digitando…" ficam fora. |
 | Q18 | Botão "Iniciar chamada". Quem está com o app aberto recebe aviso e notificação. O chat registra "Chamada iniciada" e "Chamada encerrada · 32 min". Uma chamada por projeto por vez. |
 | Q19 | A 5ª pessoa vê "Chamada cheia (4 de 4)" e não entra. |
-| Q20 | A transmissão de tela substitui a câmera de quem transmite. Uma transmissão por vez. |
+| Q20 | ~~A transmissão de tela substitui a câmera de quem transmite. Uma transmissão por vez.~~ Revista em 2026-11-03 (Q26). |
 | Q21 | A chamada fica numa janela flutuante que continua aberta enquanto a pessoa navega pelo app. |
 | Q22 | Prévia antes de entrar. O padrão é microfone ligado e câmera desligada. |
 | Q23 | A credencial TURN vale 1 hora e é renovada aos 45 minutos, com nova conferência de acesso. |
 | Q24 | No máximo 20 credenciais TURN por hora por pessoa, e só para projeto com pelo menos 2 pessoas. |
 | Q25 | Conexão direta sempre que der. O IP público fica visível para quem está na chamada. |
+
+Revisão de 2026-11-03, antes da fase 2. O pedido passou a ser "igual ao Discord, com
+câmera e transmissão de tela em perfeita qualidade". A malha P2P de até 4 pessoas (Q8)
+continua.
+
+| # | Decisão |
+|---|---|
+| Q26 | Câmera e tela ao mesmo tempo, e mais de uma pessoa pode transmitir. Clicar numa transmissão põe ela em destaque; dá para ir para tela cheia. A tela leva o áudio da aba ou do sistema quando o navegador oferece. Substitui a Q20. |
+| Q27 | Qualidade: tela em até 1080p e até 60 quadros com uma pessoa do outro lado, priorizando nitidez (texto legível). A taxa de cada envio cai conforme cresce o número de pessoas, porque na malha quem transmite manda uma cópia para cada um. Câmera em 720p. Câmera e tela usam `maintain-resolution`: medido no Chromium, com `balanced` a câmera começava em 320x180 e levava mais de 15 s para subir, mesmo com banda sobrando. |
+| Q28 | Anel verde em quem está falando. |
+| Q29 | Ensurdecer (não ouve ninguém e fecha o próprio microfone) e volume individual de cada pessoa. |
+| Q30 | Escolher microfone, câmera e alto-falante na prévia e durante a chamada. |
+| Q31 | Som curto quando alguém entra ou sai, que respeita o "Som" das Configurações. |
 
 ### Fora do escopo
 
@@ -184,9 +197,15 @@ permissão para os alarmes.
   Quem está com o projeto aberto assina o canal sem entrar na chamada, para ver a
   faixa "Chamada em andamento · 2 pessoas · Entrar".
 - **Broadcast.** Um evento `sinal` com `{de, para, tipo, dados}`, em que `tipo` é
-  `oferta`, `resposta` ou `ice` (trickle ICE). Cada cliente ignora o que não é para
-  ele. A negociação segue o padrão *perfect negotiation*: o participante de menor user
-  id faz o papel "educado".
+  `oferta`, `resposta`, `ice` (trickle ICE) ou `pedir` (pede uma oferta nova). Cada
+  cliente ignora o que não é para ele, e cada entrada na chamada tem um id de sessão,
+  para sinal de uma entrada anterior não se misturar com o da atual.
+- **Negociação sem colisão** (revista em 2026-11-03, no lugar do *perfect
+  negotiation*). Em cada par, só o participante de menor user id faz oferta. Ele cria
+  quatro transceptores fixos, na ordem voz, câmera, tela e áudio da tela; o outro lado
+  recebe os mesmos quatro na mesma ordem pela oferta. Ligar e desligar câmera ou tela é
+  `replaceTrack`, sem renegociar, e o que está ligado é anunciado pela Presence. Como
+  só um lado oferece, não há oferta cruzada para resolver.
 
 **Autorização do canal** (SEC-075). As policies ficam em `realtime.messages`:
 
@@ -267,8 +286,9 @@ reescreve, como o `alarm-banner`. A janela minimiza, expande e vai para tela che
 tem botões de microfone, câmera, tela e sair:
 
 - **Tela.** O botão só aparece se `navigator.mediaDevices.getDisplayMedia` existir (no
-  celular ele some). A tela entra no lugar da câmera por `replaceTrack`; ao parar,
-  volta a câmera se ela estava ligada.
+  celular ele some). A tela vai no transceptor próprio, ao lado da câmera (Q26), com
+  `contentHint = 'detail'` e `degradationPreference = 'maintain-resolution'`: quando a
+  banda aperta, cai o número de quadros antes da nitidez.
 - **Sair.** Para todas as faixas com `track.stop()`, para o indicador de câmera do
   sistema apagar, fecha as conexões e sai da Presence. Fechar a aba faz o mesmo pelo
   `pagehide`.
@@ -375,8 +395,11 @@ verificador.
 - **Identidade na sinalização declarada pelo cliente.** Um membro pode se apresentar
   como outro membro dentro da chamada. Aceito nesta versão: fica restrito a pessoas
   do projeto, e o RLS impede que alguém de fora entre.
-- **Malha em rede fraca.** Com 4 pessoas de câmera ligada no 4G, a chamada degrada.
-  Mitigado pela câmera desligada por padrão e pela tela no lugar da câmera.
+- **Malha em rede fraca.** Com 4 pessoas de câmera ligada no 4G, a chamada degrada, e
+  com câmera e tela juntas (Q26) quem transmite manda as duas para cada participante.
+  Mitigado pela câmera desligada por padrão e pelo teto de taxa por envio, que cai
+  conforme o número de pessoas (Q27). Se a malha não der conta, a saída é o SFU da
+  seção 4, sem refazer a janela.
 - **Safari e iOS.** O WebRTC funciona, mas o áudio só toca depois de um gesto, e a
   entrada já é por clique. Transmissão de tela não existe no celular.
 - **`script.js` crescer mais.** Chat e chamada seguem os padrões que já existem
@@ -413,3 +436,20 @@ da fase 1, para ninguém usar a policy errada das tarefas como modelo.
 10. Teste com 2 a 4 navegadores em redes diferentes, incluindo 4G (que força o TURN)
     e Safari.
 11. `privacidade.html`: Cloudflare, IP visível e ausência de gravação.
+
+**Estado em 2026-11-03.**
+
+- **Feito no código:** passos 8, 9 e 11 e o `supabase/chamadas.sql` do passo 7.
+- **Testado:** a rota TURN com `fetch` simulado (11 casos). O SQL num Postgres local,
+  com dono, membro, convite pendente, conta de fora e o limite de 20 por hora. A
+  chamada no Chromium com 5 abas, câmera e microfone falsos e WebRTC de verdade
+  (51 casos):
+  - malha de 4;
+  - tela a 1920x1080 e 60 quadros com 2 pessoas;
+  - teto menor com 4 pessoas;
+  - quinta pessoa recusada, inclusive entrando ao mesmo tempo que a quarta;
+  - remoção no meio da chamada (SEC-076);
+  - uma linha só de "Chamada iniciada" quando duas pessoas começam juntas.
+- **Falta, e depende do painel:** rodar o `chamadas.sql`, o teste do passo 6, a chave
+  TURN na Cloudflare com as variáveis na Vercel (passo 7) e o passo 10 em redes
+  diferentes, 4G e Safari.
