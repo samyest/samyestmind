@@ -9426,7 +9426,8 @@ const ICONES_CHAMADA = {
   camOff: '<path d="M16 16v1a2 2 0 01-2 2H3a2 2 0 01-2-2V7a2 2 0 012-2h2m5.66 0H14a2 2 0 012 2v3.34l1 1L23 7v10"/><line x1="1" y1="1" x2="23" y2="23"/>',
   tela: '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><polyline points="9 10 12 7 15 10"/><line x1="12" y1="7" x2="12" y2="13"/>',
   ajustes: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
-  sair: '<path d="M10.68 13.31a16 16 0 003.41 2.6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7 2 2 0 011.72 2v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.42 19.42 0 01-3.33-2.67m-2.67-3.34a19.79 19.79 0 01-3.07-8.63A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/>',
+  // Telefone inteiro; o risco (ch-risco) só se desenha com o mouse em cima.
+  sair: '<path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/><line class="ch-risco" pathLength="1" x1="23" y1="1" x2="1" y2="23"/>',
   ligar: '<path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>',
   minimizar: '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>',
   expandir: '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>',
@@ -10220,12 +10221,27 @@ function lerFala(){
     }
     // A própria voz com o microfone fechado não acende o anel.
     const valendo = m.track.enabled && m.track.readyState === 'live';
+    if(chave === session.user.id) mostrarVozNoBotao(valendo ? rms : 0);
     if(valendo && rms > CHAMADA_LIMIAR_FALA) m.ate = agora + 350;
     const falando = agora < m.ate;
     if(falando !== m.falando){
       m.falando = falando;
       marcarFalaChamada(chave, falando);
     }
+  }
+}
+
+// Microfone aberto: o botão do microfone ganha um anel verde que acompanha a
+// própria voz, para a pessoa ver que está sendo ouvida sem precisar olhar o
+// próprio ladrilho. Suavizado, e só escreve no estilo quando muda de verdade.
+let vozNoBotao = 0;
+function mostrarVozNoBotao(rms){
+  const alvo = Math.min(1, rms * 16);
+  const novo = alvo > vozNoBotao ? vozNoBotao * 0.4 + alvo * 0.6 : vozNoBotao * 0.75 + alvo * 0.25;
+  if(Math.abs(novo - vozNoBotao) < 0.02 && !(alvo === 0 && vozNoBotao > 0 && novo < 0.02)) return;
+  vozNoBotao = novo < 0.02 ? 0 : novo;
+  for(const d of docsChamada()){
+    d.querySelectorAll('#ch-btn-mic, #ch-btn-mic-mini').forEach(b=>b.style.setProperty('--ch-voz', vozNoBotao.toFixed(2)));
   }
 }
 
@@ -10614,6 +10630,9 @@ async function sairDaChamada(opts){
   trocarRelogioFala();
   desligarFlutuanteAutomatico();
   chamada = null;
+  // A próxima chamada começa sem animar a troca dos botões a partir desta.
+  for(const id of Object.keys(estadosDosBotoes)) delete estadosDosBotoes[id];
+  vozNoBotao = 0;
   if(flutuante){
     clearInterval(flutuante.vigia);
     try{ if(raizFlutuante) raizFlutuante.remove(); }catch(e){}
@@ -10702,7 +10721,9 @@ async function trocarFaixaLocal(tipo, track){
     if(track){ track.enabled = c.mic && !c.ensurdecido; medirFala(session.user.id, track); }
     else pararMedicaoFala(session.user.id);
   }
-  delete chamadaVideos[`${session.user.id}:${tipo === 'tela' ? 'tela' : 'cam'}`];
+  // Só câmera e tela têm vídeo próprio. Antes, trocar o microfone (ao mudar a
+  // supressão de ruído) descartava o vídeo da câmera e ela piscava.
+  if(tipo === 'cam' || tipo === 'tela') delete chamadaVideos[`${session.user.id}:${tipo}`];
   ajustarQualidadeChamada();
 }
 
@@ -11217,6 +11238,7 @@ async function abrirJanelaFlutuante(origem){
 // A janela flutuante nasce em branco: leva os estilos e o tema do app.
 function prepararJanelaFlutuante(win){
   const d = win.document;
+  ouvirModalidadeChamada(d);
   for(const folha of document.querySelectorAll('link[rel="stylesheet"], style')){
     let copia;
     if(folha.tagName === 'LINK'){
@@ -11337,6 +11359,24 @@ document.addEventListener('visibilitychange', ()=>{
   conferirJanelaFlutuante();
 });
 window.addEventListener('focus', ()=>conferirJanelaFlutuante());
+
+// Anel de foco só para quem usa o teclado. Depois de cada clique a chamada se
+// redesenha e devolve o foco ao botão clicado; o navegador às vezes trata esse
+// foco devolvido como de teclado e mostrava o anel branco em quem usa mouse.
+// Clique (ou toque) liga "via-ponteiro", que esconde o anel; Tab, setas,
+// Enter ou espaço desligam.
+let chamadaViaPonteiro = false;
+function ouvirModalidadeChamada(doc){
+  const marcar = (viaPonteiro)=>{
+    if(chamadaViaPonteiro === viaPonteiro) return;
+    chamadaViaPonteiro = viaPonteiro;
+    const raiz = chamada && docChamada().getElementById('chamada');
+    if(raiz) raiz.classList.toggle('via-ponteiro', viaPonteiro);
+  };
+  doc.addEventListener('pointerdown', ()=>marcar(true), true);
+  doc.addEventListener('keydown', (e)=>{ if(e.key === 'Tab' || e.key === 'Enter' || e.key === ' ' || e.key.startsWith('Arrow')) marcar(false); }, true);
+}
+ouvirModalidadeChamada(document);
 
 /* --- desenho da janela --- */
 
@@ -11513,8 +11553,28 @@ function ladrilhoChamadaHtml(l, opts){
     </div>`;
 }
 
+// Troca de estado dos botões (microfone, fone, câmera, tela, dispositivos). A
+// chamada se redesenha a cada mudança e o botão nasce de novo, então uma
+// transição de CSS não teria de onde partir: a troca era seca. Aqui cada
+// botão guarda o estado em que estava; quando ele muda, o botão novo nasce
+// com "trocou": a cor sai da do estado anterior (--ch-de), o ícone novo entra
+// girando e um anel se espalha uma vez. Um redesenho no meio continua a
+// animação de onde ela estava (--ch-atraso negativo), em vez de recomeçar.
+const CHAMADA_TROCA_MS = 520;
+const COR_DO_ESTADO = {'': 'var(--ch-botao)', desligado: 'var(--ch-desligado)', ativo: 'var(--ch-texto)'};
+const estadosDosBotoes = {};
+
 function botaoChamada(id, acao, icone, rotulo, classe, pressionado){
-  return `<button type="button" id="${id}" class="ch-botao ${classe || ''}" onclick="${acao}" aria-label="${rotulo}" title="${rotulo}"${pressionado === undefined ? '' : ` aria-pressed="${pressionado}"`}>${iconeChamada(icone)}</button>`;
+  const cl = classe || '';
+  const agora = Date.now();
+  const antes = estadosDosBotoes[id];
+  if(!antes) estadosDosBotoes[id] = {icone, classe: cl, de: '', desde: 0};
+  else if(antes.icone !== icone || antes.classe !== cl) estadosDosBotoes[id] = {icone, classe: cl, de: antes.classe, desde: agora};
+  const e = estadosDosBotoes[id];
+  const passou = agora - e.desde;
+  const trocando = e.desde && passou < CHAMADA_TROCA_MS;
+  const estilo = trocando ? ` style="--ch-de:${COR_DO_ESTADO[e.de] || COR_DO_ESTADO['']};--ch-atraso:-${passou}ms"` : '';
+  return `<button type="button" id="${id}" class="ch-botao ${cl}${trocando ? ' trocou' : ''}"${estilo} onclick="${acao}" aria-label="${rotulo}" title="${rotulo}"${pressionado === undefined ? '' : ` aria-pressed="${pressionado}"`}>${iconeChamada(icone)}</button>`;
 }
 
 function controlesChamadaHtml(mini){
@@ -11576,6 +11636,7 @@ function desenharChamada(){
     doc.body.appendChild(raiz);
   }
   raiz.classList.toggle('na-janela', doc !== document);
+  raiz.classList.toggle('via-ponteiro', chamadaViaPonteiro);
   if(janelaFlutuante && doc !== document) janelaFlutuante.raiz = raiz;
   const p = projetoDaChamada(c.pid);
   const nomeProjeto = p ? p.name : 'Projeto';

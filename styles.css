@@ -2218,9 +2218,40 @@
   .ch-video{opacity:0;transition:opacity .35s ease;}
   .ch-video.pronto{opacity:1;}
 
-  /* Botões afundam um pouco no toque; painéis deslizam ao abrir. */
-  .ch-botao, .ch-sair, .ch-acao{transition:background-color .15s ease, color .15s ease, transform .12s ease, filter .15s ease;}
-  .ch-botao:active, .ch-sair:active, .ch-acao:active{transform:scale(.92);}
+  /* Botões afundam no toque e voltam com um leve quique; painéis deslizam ao
+     abrir. */
+  .ch-botao, .ch-sair, .ch-acao{transition:background-color .15s ease, color .15s ease, transform .3s cubic-bezier(.34,1.56,.64,1), filter .15s ease, box-shadow .12s linear;}
+  .ch-botao:active, .ch-sair:active, .ch-acao:active{transform:scale(.88);transition-duration:.15s, .15s, .08s, .15s, .12s;}
+
+  /* Troca de estado (ver botaoChamada): a cor vem da do estado anterior, o
+     ícone novo entra girando e um anel se espalha uma vez, vermelho ao
+     desligar e claro ao ligar. */
+  .ch-botao{position:relative;--ch-anel:rgba(233,238,243,0.4);}
+  .ch-botao.desligado{--ch-anel:rgba(217,83,74,0.55);}
+  .ch-botao.trocou{animation:chBotaoCor .42s ease-out both;animation-delay:var(--ch-atraso, 0ms);}
+  .ch-botao.trocou svg{animation:chIconeEntra .45s cubic-bezier(.34,1.56,.64,1) both;animation-delay:var(--ch-atraso, 0ms);}
+  .ch-botao.trocou::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;animation:chBotaoAnel .52s ease-out both;animation-delay:var(--ch-atraso, 0ms);}
+  @keyframes chBotaoCor{from{background-color:var(--ch-de);}}
+  @keyframes chIconeEntra{from{opacity:0;transform:scale(.45) rotate(-35deg);}}
+  @keyframes chBotaoAnel{
+    from{box-shadow:0 0 0 0 var(--ch-anel);opacity:1;}
+    to{box-shadow:0 0 0 11px var(--ch-anel);opacity:0;}
+  }
+
+  /* Microfone aberto: anel verde que acompanha a própria voz (--ch-voz, de 0
+     a 1, posto pelo medidor de fala). */
+  #ch-btn-mic, #ch-btn-mic-mini{box-shadow:0 0 0 calc(var(--ch-voz, 0) * 5px) rgba(67,181,98,0.5);}
+
+  /* Sair: o telefone inclina, como quem vai pôr no gancho. */
+  .ch-sair svg{transition:transform .3s cubic-bezier(.34,1.56,.64,1);}
+  .ch-sair:hover svg{transform:rotate(-14deg) translateY(1px);}
+  /* O risco do telefone se desenha de ponta a ponta no hover (e no foco pelo
+     teclado), e se apaga ao sair. */
+  .ch-sair .ch-risco{stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset .28s cubic-bezier(.4,0,.2,1);}
+  .ch-sair:hover .ch-risco, .ch-sair:focus-visible .ch-risco{stroke-dashoffset:0;}
+
+  /* Anel de foco só para quem usa o teclado (ver ouvirModalidadeChamada). */
+  .chamada.via-ponteiro button:focus-visible{outline:none;}
   .ch-painel-disp.abrindo{animation:chPainelSobe .22s var(--mov-curva) both;}
   .ch-volume.abrindo{animation:chVolumeDesce .2s var(--mov-curva) both;}
   @keyframes chPainelSobe{from{opacity:0;transform:translate(-50%, 8px);}}
@@ -2376,6 +2407,7 @@
 
   @media (prefers-reduced-motion:reduce){
     .chamada *, .ch-faixa *, .ch-previa *, .ch-na-flutuante, .ch-na-flutuante *{transition:none !important;animation:none !important;}
+    .ch-botao.trocou::after{content:none;}
     .alarm-banner.ch-aviso{animation:none;}
   }
   .search-box{position:relative;flex:1;min-width:180px;}
