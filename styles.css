@@ -2097,9 +2097,59 @@
     .ch-sair span{display:none;}
     .ch-faixa{flex-wrap:wrap;}
   }
+  /* Janela pequena com vídeo: os outros em grade (até 4) e a própria câmera
+     num quadro no canto, como num app de chamada no celular. */
+  .ch-mini-grade{position:absolute;inset:0;display:grid;grid-template-columns:1fr;gap:2px;background:var(--ch-fundo);}
+  .ch-mini-grade.n-2{grid-template-columns:1fr 1fr;}
+  .ch-mini-grade.n-3, .ch-mini-grade.n-4{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;}
+  .ch-mini-palco .ch-mini-grade .ch-ladrilho{position:relative;inset:auto;min-height:0;}
+  .ch-mini-eu{
+    position:absolute;
+    right:8px;
+    bottom:8px;
+    z-index:2;
+    width:32%;
+    aspect-ratio:16 / 9;
+    border-radius:9px;
+    overflow:hidden;
+    box-shadow:0 6px 18px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.14);
+    pointer-events:none;
+  }
+  .ch-mini-palco .ch-mini-eu .ch-ladrilho{position:absolute;inset:0;border-radius:inherit;}
+  .ch-mini-palco .ch-rotulo{left:6px;bottom:6px;padding:2px 7px;border-radius:6px;font-size:11px;}
+  .ch-mini-grade:not(.n-1) .ch-ladrilho .member-avatar{width:30px;height:30px;font-size:12px;}
+
+  /* Movimento da chamada. A troca entre o palco e a janela pequena usa a View
+     Transition do navegador (comTransicaoChamada): a janela muda de tamanho e
+     de lugar num gesto só. O resto da página não participa. */
+  .chamada{view-transition-name:chamada;}
+  ::view-transition-old(root), ::view-transition-new(root){animation:none;}
+  ::view-transition-group(chamada){animation-duration:.4s;animation-timing-function:var(--mov-curva);}
+  ::view-transition-old(chamada), ::view-transition-new(chamada){width:100%;height:100%;object-fit:cover;animation-duration:.26s;}
+  ::view-transition-new(chamada):only-child{animation:chJanelaAbre .34s var(--mov-curva) both;}
+  ::view-transition-old(chamada):only-child{animation:chJanelaFecha .22s ease-in both;}
+  @keyframes chJanelaAbre{from{opacity:0;transform:scale(.96) translateY(10px);}}
+  @keyframes chJanelaFecha{to{opacity:0;transform:scale(.97) translateY(6px);}}
+
+  /* Quem entra (ou a tela que começa) chega com um respiro; o vídeo aparece
+     com fade no primeiro quadro, em vez de piscar preto. */
+  .ch-ladrilho.entrando{animation:chLadrilhoEntra .38s var(--mov-curva) both;}
+  @keyframes chLadrilhoEntra{from{opacity:0;transform:scale(.94);}}
+  .ch-video{opacity:0;transition:opacity .35s ease;}
+  .ch-video.pronto{opacity:1;}
+
+  /* Botões afundam um pouco no toque; painéis deslizam ao abrir. */
+  .ch-botao, .ch-sair, .ch-acao{transition:background-color .15s ease, color .15s ease, transform .12s ease, filter .15s ease;}
+  .ch-botao:active, .ch-sair:active, .ch-acao:active{transform:scale(.92);}
+  .ch-painel-disp.abrindo{animation:chPainelSobe .22s var(--mov-curva) both;}
+  .ch-volume.abrindo{animation:chVolumeDesce .2s var(--mov-curva) both;}
+  @keyframes chPainelSobe{from{opacity:0;transform:translate(-50%, 8px);}}
+  @keyframes chVolumeDesce{from{opacity:0;transform:translateY(-6px);}}
+
   @media (prefers-reduced-motion:reduce){
-    .chamada *, .ch-faixa *, .ch-previa *{transition:none !important;}
+    .chamada *, .ch-faixa *, .ch-previa *{transition:none !important;animation:none !important;}
     .alarm-banner.ch-aviso{animation:none;}
+    .ch-video{opacity:1;}
   }
   .search-box{position:relative;flex:1;min-width:180px;}
   .search-box-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-soft);pointer-events:none;}
