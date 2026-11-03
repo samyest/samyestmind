@@ -9409,6 +9409,8 @@ const falaMedidores = new Map();
 let falaTimer = null;
 // {win, auto, modoAntes, voltarExpandida} com a chamada na janela flutuante.
 let janelaFlutuante = null;
+// Verdadeiro enquanto a raiz da chamada troca de documento (página ↔ flutuante).
+let chamadaMudandoDeJanela = false;
 let chamadaRelogio = null;
 let dispositivosChamada = {mic: [], cam: [], saida: []};
 // O que o último desenho da janela mostrou, para animar só o que é novo, e
@@ -11254,21 +11256,42 @@ function adotarJanelaFlutuante(win, origem){
   c.painelDisp = false;
   c.painelTela = false;
   c.volumeAberto = null;
-  if(raiz) win.document.body.appendChild(raiz);
   janelaFlutuante.raiz = raiz;
   win.addEventListener('pagehide', ()=>voltarDaJanelaFlutuante(win), {once: true});
-  janelaFlutuante.vigia = setInterval(conferirJanelaFlutuante, 1000);
-  trocarRelogioFala();
-  desenharChamada();
+  // Na página, a chamada encolhe até o aviso do canto (os dois têm o mesmo
+  // view-transition-name) enquanto vai para a flutuante.
+  chamadaMudandoDeJanela = true;
+  comTransicaoChamada(()=>{
+    chamadaMudandoDeJanela = false;
+    if(janelaFlutuante && janelaFlutuante.win === win){
+      try{ if(raiz) win.document.body.appendChild(raiz); }catch(e){}
+      janelaFlutuante.vigia = setInterval(conferirJanelaFlutuante, 1000);
+      trocarRelogioFala();
+    }
+    desenharChamada();
+  }, true);
 }
 
 // A janela flutuante nasce em branco: leva os estilos e o tema do app.
 function prepararJanelaFlutuante(win){
   const d = win.document;
+  // Fundo escuro já no primeiro quadro: a janela abre branca.
+  d.documentElement.style.background = '#10151b';
+  d.body.style.cssText = 'margin:0;overflow:hidden;background:#10151b';
   ouvirModalidadeChamada(d);
   for(const folha of document.querySelectorAll('link[rel="stylesheet"], style')){
     let copia;
+    // As folhas do próprio site vão como texto, aplicadas na hora; um <link>
+    // carregaria de novo e a chamada aparecia sem estilo por um instante.
+    // As de outra origem (fontes) não deixam ler as regras e vão por <link>.
+    let regras = null;
     if(folha.tagName === 'LINK'){
+      try{ regras = Array.from(folha.sheet.cssRules, r=>r.cssText).join('\n'); }catch(e){ regras = null; }
+    }
+    if(regras){
+      copia = d.createElement('style');
+      copia.textContent = regras;
+    }else if(folha.tagName === 'LINK'){
       copia = d.createElement('link');
       copia.rel = 'stylesheet';
       copia.href = folha.href;
@@ -11313,10 +11336,20 @@ function voltarDaJanelaFlutuante(win){
   if(!raiz){ try{ raiz = win.document.getElementById('chamada'); }catch(e){} }
   const c = chamada;
   if(!c){ try{ if(raiz) raiz.remove(); }catch(e){} desenharAvisoFlutuante(); return; }
-  try{ if(raiz) document.body.appendChild(raiz); }
-  catch(e){ try{ raiz.remove(); }catch(e2){} }
   c.modo = j.modoVolta || (j.voltarExpandida ? 'expandida' : j.modoAntes);
-  desenharChamada();
+  const trazer = ()=>{
+    chamadaMudandoDeJanela = false;
+    if(chamada !== c){ try{ if(raiz) raiz.remove(); }catch(e){} return; }
+    if(janelaFlutuante) return;
+    try{ if(raiz) document.body.appendChild(raiz); }
+    catch(e){ try{ raiz.remove(); }catch(e2){} }
+    desenharChamada();
+  };
+  // Fechada antes mesmo de a chamada chegar lá: volta sem animar.
+  if(chamadaMudandoDeJanela){ trazer(); return; }
+  // O aviso do canto cresce de volta até a chamada.
+  chamadaMudandoDeJanela = true;
+  comTransicaoChamada(trazer, true);
 }
 
 // Confere se a flutuante ainda está de pé com a chamada dentro. Roda a cada
@@ -11484,9 +11517,13 @@ function marcarVideoQuandoPronto(v){
 // a transição espera, e ela ficava parada: o site travava até trocar de aba,
 // que é quando o navegador a pula. Nesses casos troca direto, e uma transição
 // que passe de 1,5 s (a mais longa dura 0,4 s) é pulada.
-function comTransicaoChamada(mudar){
+// Com trocaDeJanela, a mudança leva a chamada para a janela flutuante ou de
+// volta: anima mesmo com a flutuante aberta e sem foco na página (a janela
+// nova costuma ficar com o foco).
+function comTransicaoChamada(mudar, trocaDeJanela){
   const reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(!document.startViewTransition || reduzir || janelaFlutuante || document.visibilityState !== 'visible' || !document.hasFocus()){ mudar(); return Promise.resolve(); }
+  const semFoco = !trocaDeJanela && (janelaFlutuante || !document.hasFocus());
+  if(!document.startViewTransition || reduzir || semFoco || document.visibilityState !== 'visible'){ mudar(); return Promise.resolve(); }
   try{
     const t = document.startViewTransition(mudar);
     // Uma transição nova no meio de outra faz o navegador pular a antiga e
@@ -11652,6 +11689,9 @@ function colunasDaGrade(n){
 
 function desenharChamada(){
   const c = chamada;
+  // No meio da troca de janela (página ↔ flutuante), a raiz ainda não chegou
+  // ao documento de destino; desenhar agora criaria uma segunda chamada lá.
+  if(c && chamadaMudandoDeJanela) return;
   desenharAvisoFlutuante();
   const doc = docChamada();
   let raiz = doc.getElementById('chamada');
