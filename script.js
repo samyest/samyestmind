@@ -10220,12 +10220,27 @@ function lerFala(){
     }
     // A própria voz com o microfone fechado não acende o anel.
     const valendo = m.track.enabled && m.track.readyState === 'live';
+    if(chave === session.user.id) mostrarVozNoBotao(valendo ? rms : 0);
     if(valendo && rms > CHAMADA_LIMIAR_FALA) m.ate = agora + 350;
     const falando = agora < m.ate;
     if(falando !== m.falando){
       m.falando = falando;
       marcarFalaChamada(chave, falando);
     }
+  }
+}
+
+// Microfone aberto: o botão do microfone ganha um anel verde que acompanha a
+// própria voz, para a pessoa ver que está sendo ouvida sem precisar olhar o
+// próprio ladrilho. Suavizado, e só escreve no estilo quando muda de verdade.
+let vozNoBotao = 0;
+function mostrarVozNoBotao(rms){
+  const alvo = Math.min(1, rms * 16);
+  const novo = alvo > vozNoBotao ? vozNoBotao * 0.4 + alvo * 0.6 : vozNoBotao * 0.75 + alvo * 0.25;
+  if(Math.abs(novo - vozNoBotao) < 0.02 && !(alvo === 0 && vozNoBotao > 0 && novo < 0.02)) return;
+  vozNoBotao = novo < 0.02 ? 0 : novo;
+  for(const d of docsChamada()){
+    d.querySelectorAll('#ch-btn-mic, #ch-btn-mic-mini').forEach(b=>b.style.setProperty('--ch-voz', vozNoBotao.toFixed(2)));
   }
 }
 
@@ -10614,6 +10629,9 @@ async function sairDaChamada(opts){
   trocarRelogioFala();
   desligarFlutuanteAutomatico();
   chamada = null;
+  // A próxima chamada começa sem animar a troca dos botões a partir desta.
+  for(const id of Object.keys(estadosDosBotoes)) delete estadosDosBotoes[id];
+  vozNoBotao = 0;
   if(flutuante){
     clearInterval(flutuante.vigia);
     try{ if(raizFlutuante) raizFlutuante.remove(); }catch(e){}
@@ -10702,7 +10720,9 @@ async function trocarFaixaLocal(tipo, track){
     if(track){ track.enabled = c.mic && !c.ensurdecido; medirFala(session.user.id, track); }
     else pararMedicaoFala(session.user.id);
   }
-  delete chamadaVideos[`${session.user.id}:${tipo === 'tela' ? 'tela' : 'cam'}`];
+  // Só câmera e tela têm vídeo próprio. Antes, trocar o microfone (ao mudar a
+  // supressão de ruído) descartava o vídeo da câmera e ela piscava.
+  if(tipo === 'cam' || tipo === 'tela') delete chamadaVideos[`${session.user.id}:${tipo}`];
   ajustarQualidadeChamada();
 }
 
@@ -11217,6 +11237,7 @@ async function abrirJanelaFlutuante(origem){
 // A janela flutuante nasce em branco: leva os estilos e o tema do app.
 function prepararJanelaFlutuante(win){
   const d = win.document;
+  ouvirModalidadeChamada(d);
   for(const folha of document.querySelectorAll('link[rel="stylesheet"], style')){
     let copia;
     if(folha.tagName === 'LINK'){
@@ -11337,6 +11358,24 @@ document.addEventListener('visibilitychange', ()=>{
   conferirJanelaFlutuante();
 });
 window.addEventListener('focus', ()=>conferirJanelaFlutuante());
+
+// Anel de foco só para quem usa o teclado. Depois de cada clique a chamada se
+// redesenha e devolve o foco ao botão clicado; o navegador às vezes trata esse
+// foco devolvido como de teclado e mostrava o anel branco em quem usa mouse.
+// Clique (ou toque) liga "via-ponteiro", que esconde o anel; Tab, setas,
+// Enter ou espaço desligam.
+let chamadaViaPonteiro = false;
+function ouvirModalidadeChamada(doc){
+  const marcar = (viaPonteiro)=>{
+    if(chamadaViaPonteiro === viaPonteiro) return;
+    chamadaViaPonteiro = viaPonteiro;
+    const raiz = chamada && docChamada().getElementById('chamada');
+    if(raiz) raiz.classList.toggle('via-ponteiro', viaPonteiro);
+  };
+  doc.addEventListener('pointerdown', ()=>marcar(true), true);
+  doc.addEventListener('keydown', (e)=>{ if(e.key === 'Tab' || e.key === 'Enter' || e.key === ' ' || e.key.startsWith('Arrow')) marcar(false); }, true);
+}
+ouvirModalidadeChamada(document);
 
 /* --- desenho da janela --- */
 
@@ -11513,8 +11552,28 @@ function ladrilhoChamadaHtml(l, opts){
     </div>`;
 }
 
+// Troca de estado dos botões (microfone, fone, câmera, tela, dispositivos). A
+// chamada se redesenha a cada mudança e o botão nasce de novo, então uma
+// transição de CSS não teria de onde partir: a troca era seca. Aqui cada
+// botão guarda o estado em que estava; quando ele muda, o botão novo nasce
+// com "trocou": a cor sai da do estado anterior (--ch-de), o ícone novo entra
+// girando e um anel se espalha uma vez. Um redesenho no meio continua a
+// animação de onde ela estava (--ch-atraso negativo), em vez de recomeçar.
+const CHAMADA_TROCA_MS = 520;
+const COR_DO_ESTADO = {'': 'var(--ch-botao)', desligado: 'var(--ch-desligado)', ativo: 'var(--ch-texto)'};
+const estadosDosBotoes = {};
+
 function botaoChamada(id, acao, icone, rotulo, classe, pressionado){
-  return `<button type="button" id="${id}" class="ch-botao ${classe || ''}" onclick="${acao}" aria-label="${rotulo}" title="${rotulo}"${pressionado === undefined ? '' : ` aria-pressed="${pressionado}"`}>${iconeChamada(icone)}</button>`;
+  const cl = classe || '';
+  const agora = Date.now();
+  const antes = estadosDosBotoes[id];
+  if(!antes) estadosDosBotoes[id] = {icone, classe: cl, de: '', desde: 0};
+  else if(antes.icone !== icone || antes.classe !== cl) estadosDosBotoes[id] = {icone, classe: cl, de: antes.classe, desde: agora};
+  const e = estadosDosBotoes[id];
+  const passou = agora - e.desde;
+  const trocando = e.desde && passou < CHAMADA_TROCA_MS;
+  const estilo = trocando ? ` style="--ch-de:${COR_DO_ESTADO[e.de] || COR_DO_ESTADO['']};--ch-atraso:-${passou}ms"` : '';
+  return `<button type="button" id="${id}" class="ch-botao ${cl}${trocando ? ' trocou' : ''}"${estilo} onclick="${acao}" aria-label="${rotulo}" title="${rotulo}"${pressionado === undefined ? '' : ` aria-pressed="${pressionado}"`}>${iconeChamada(icone)}</button>`;
 }
 
 function controlesChamadaHtml(mini){
@@ -11576,6 +11635,7 @@ function desenharChamada(){
     doc.body.appendChild(raiz);
   }
   raiz.classList.toggle('na-janela', doc !== document);
+  raiz.classList.toggle('via-ponteiro', chamadaViaPonteiro);
   if(janelaFlutuante && doc !== document) janelaFlutuante.raiz = raiz;
   const p = projetoDaChamada(c.pid);
   const nomeProjeto = p ? p.name : 'Projeto';
