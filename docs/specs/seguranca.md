@@ -230,8 +230,8 @@ SEC-031 já cobrem a rota nova) + revisão (validade, limites, corpo da resposta
 
 ### SEC-078 — Câmera, microfone e tela só no próprio site e só depois de um clique *(fase 2, atendido em `vercel.json` e `script.js`)*
 `Permissions-Policy` libera `camera`, `microphone` e `display-capture` só para
-`self`. `getUserMedia` e `getDisplayMedia` só rodam a partir de um clique na prévia
-ou na barra da chamada. Sair da chamada, ou fechar a aba, para todas as faixas.
+`self`. `getUserMedia` e `getDisplayMedia` só rodam a partir de um clique na prévia,
+na barra da chamada ou no "Transmitir" da escolha da tela. Sair da chamada, ou fechar a aba, para todas as faixas.
 **Por quê:** `*` deixaria qualquer iframe ou origem usar a permissão, e uma faixa
 esquecida mantém a câmera ligada depois que a pessoa acha que saiu.
 **Verificação:** auto (`Permissions-Policy` com os três presentes e só `self`) +

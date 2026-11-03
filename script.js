@@ -9860,7 +9860,10 @@ function ajustarQualidadePar(par){
   const teto = CHAMADA_TETOS[Math.max(1, Math.min(3, c.pares.size))];
   definirEnvioChamada(par.transceptores.voz, {maxBitrate: 64000});
   definirEnvioChamada(par.transceptores.cam, {maxBitrate: teto.cam, maxFramerate: 30}, 'maintain-resolution');
-  definirEnvioChamada(par.transceptores.tela, {maxBitrate: teto.tela, maxFramerate: teto.telaQuadros}, 'maintain-resolution');
+  // A qualidade escolhida para a tela é um teto a mais: 720p não precisa da
+  // taxa do 1080p, e 30 quadros não mandam 60.
+  const q = QUALIDADES_TELA[c.qualidadeTela] || QUALIDADES_TELA['1080'];
+  definirEnvioChamada(par.transceptores.tela, {maxBitrate: Math.min(teto.tela, q.taxa), maxFramerate: Math.min(teto.telaQuadros, q.quadros)}, 'maintain-resolution');
   definirEnvioChamada(par.transceptores.telaAudio, {maxBitrate: 128000});
 }
 
@@ -10386,20 +10389,147 @@ async function chamadaAlternarCamera(){
   desenharChamada();
 }
 
+// Transmitir a tela começa por uma escolha do app, como no Discord: o que
+// transmitir, em que qualidade e se o som vai junto. O seletor do navegador
+// vem depois, já na aba certa (displaySurface), só para confirmar; o visual
+// dele é do navegador e nenhum site muda.
+const QUALIDADES_TELA = {
+  '720': {rotulo: '720p', dica: 'Mais leve para a internet de quem assiste', largura: 1280, altura: 720, quadros: 30, taxa: 2500000},
+  '1080': {rotulo: '1080p', dica: 'Texto e detalhes nítidos', largura: 1920, altura: 1080, quadros: 30, taxa: 6000000},
+  '1080-60': {rotulo: '1080p · 60', dica: 'Movimento suave, para jogos e vídeos', largura: 1920, altura: 1080, quadros: 60, taxa: 8000000}
+};
+const FONTES_TELA = {
+  monitor: {nome: 'Tela inteira', desc: 'Tudo o que está no monitor'},
+  window: {nome: 'Janela', desc: 'Um programa só'},
+  browser: {nome: 'Aba', desc: 'Uma aba do navegador, com o som dela'}
+};
+const ICONES_FONTE = {
+  monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+  window: '<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><circle cx="6" cy="6.5" r=".6" fill="currentColor"/><circle cx="8.5" cy="6.5" r=".6" fill="currentColor"/>',
+  browser: '<rect x="2" y="5" width="20" height="15" rx="2"/><path d="M2 9h20"/><path d="M6 5V3.5h6V5"/>'
+};
+
+function escolhaTelaSalva(){
+  let e = {};
+  try{ e = JSON.parse(localStorage.getItem('chamadaTela') || '{}') || {}; }catch(err){}
+  return {
+    fonte: FONTES_TELA[e.fonte] ? e.fonte : 'monitor',
+    qualidade: QUALIDADES_TELA[e.qualidade] ? e.qualidade : '1080',
+    som: e.som !== false
+  };
+}
+
+function ehMac(){
+  const p = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+  return /mac/i.test(p);
+}
+
 async function chamadaAlternarTela(){
   const c = chamada;
   if(!c || !telaSuportada()) return;
   if(c.tela){ await pararTelaChamada(); return; }
+  c.painelTela = true;
+  c.painelDisp = false;
+  c.volumeAberto = null;
+  c.escolhaTela = escolhaTelaSalva();
+  c.animarPainel = true;
+  desenharChamada();
+  const marcada = document.getElementById(`ch-fonte-${c.escolhaTela.fonte}`);
+  if(marcada) marcada.focus();
+}
+
+function escolherTela(campo, valor){
+  const c = chamada;
+  if(!c || !c.escolhaTela) return;
+  if(campo === 'fonte' && FONTES_TELA[valor]) c.escolhaTela.fonte = valor;
+  else if(campo === 'qualidade' && QUALIDADES_TELA[valor]) c.escolhaTela.qualidade = valor;
+  else if(campo === 'som') c.escolhaTela.som = !!valor;
+  else return;
+  try{ localStorage.setItem('chamadaTela', JSON.stringify(c.escolhaTela)); }catch(e){}
+  desenharChamada();
+}
+
+function fecharEscolhaTela(){
+  const c = chamada;
+  if(!c || !c.painelTela) return;
+  c.painelTela = false;
+  desenharChamada();
+  const b = document.getElementById('ch-btn-tela');
+  if(b) b.focus();
+}
+
+function escolhaTelaHtml(){
+  const c = chamada;
+  const e = c.escolhaTela;
+  const q = QUALIDADES_TELA[e.qualidade];
+  const somDica = !e.som ? 'Só a imagem vai para a chamada.'
+    : e.fonte === 'browser' ? 'O som da aba vai junto com a imagem.'
+    : ehMac() ? 'No Mac, o navegador só manda o som quando você transmite uma aba.'
+    : 'O som do computador vai junto, se o navegador permitir.';
+  return `
+    <div class="ch-dialogo-fundo">
+      <div class="ch-dialogo" role="dialog" aria-modal="true" aria-labelledby="ch-tela-titulo" aria-describedby="ch-tela-texto">
+        <h3 class="ch-dialogo-titulo" id="ch-tela-titulo">Transmitir a tela</h3>
+        <p class="ch-dialogo-texto" id="ch-tela-texto">Escolha o que mostrar. Depois o navegador pede para confirmar qual.</p>
+        <fieldset class="ch-fontes">
+          <legend class="sr-only">O que transmitir</legend>
+          ${Object.entries(FONTES_TELA).map(([k, f])=>`
+            <label class="ch-fonte ${e.fonte === k ? 'marcada' : ''}">
+              <input type="radio" class="sr-only" name="ch-fonte" id="ch-fonte-${k}" value="${k}" ${e.fonte === k ? 'checked' : ''} onchange="escolherTela('fonte', this.value)">
+              <span class="ch-fonte-icone" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONES_FONTE[k]}</svg></span>
+              <span class="ch-fonte-nome">${esc(f.nome)}</span>
+              <span class="ch-fonte-desc">${esc(f.desc)}</span>
+            </label>`).join('')}
+        </fieldset>
+        <fieldset class="ch-qualidade">
+          <legend class="ch-dialogo-rotulo">Qualidade</legend>
+          <div class="ch-segmentos">
+            ${Object.entries(QUALIDADES_TELA).map(([k, qq])=>`
+              <label class="ch-segmento ${e.qualidade === k ? 'marcado' : ''}">
+                <input type="radio" class="sr-only" name="ch-qualidade" id="ch-qualidade-${k}" value="${k}" ${e.qualidade === k ? 'checked' : ''} onchange="escolherTela('qualidade', this.value)">
+                ${esc(qq.rotulo)}
+              </label>`).join('')}
+          </div>
+          <p class="ch-dialogo-dica">${esc(q.dica)}</p>
+        </fieldset>
+        <label class="ch-som">
+          <span class="ch-som-texto"><span>Transmitir o som</span><span class="ch-dialogo-dica">${esc(somDica)}</span></span>
+          <input type="checkbox" role="switch" class="ch-interruptor" id="ch-tela-som" ${e.som ? 'checked' : ''} onchange="escolherTela('som', this.checked)">
+        </label>
+        <div class="ch-dialogo-acoes">
+          <button type="button" class="ch-dialogo-cancelar" id="ch-tela-cancelar" onclick="fecharEscolhaTela()">Cancelar</button>
+          <button type="button" class="ch-dialogo-ok" id="ch-tela-transmitir" onclick="transmitirTelaEscolhida()">${iconeChamada('tela', 17)}Transmitir</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// O clique em "Transmitir" é o gesto que o navegador exige para pedir a
+// tela (SEC-078): getDisplayMedia é chamado antes de qualquer espera.
+function transmitirTelaEscolhida(){
+  const c = chamada;
+  if(!c || !c.escolhaTela) return;
+  const e = c.escolhaTela;
+  const q = QUALIDADES_TELA[e.qualidade];
   const pedido = {
-    video: {width: {ideal: 1920, max: 1920}, height: {ideal: 1080, max: 1080}, frameRate: {ideal: 60, max: 60}},
-    audio: {echoCancellation: false, noiseSuppression: false, autoGainControl: false},
-    selfBrowserSurface: 'exclude', surfaceSwitching: 'include', systemAudio: 'include'
+    video: {displaySurface: e.fonte, width: {ideal: q.largura, max: q.largura}, height: {ideal: q.altura, max: q.altura}, frameRate: {ideal: q.quadros, max: q.quadros}},
+    audio: e.som ? {echoCancellation: false, noiseSuppression: false, autoGainControl: false} : false,
+    selfBrowserSurface: 'exclude', surfaceSwitching: 'include', systemAudio: e.som ? 'include' : 'exclude', monitorTypeSurfaces: 'include'
   };
+  const pedirTela = navigator.mediaDevices.getDisplayMedia(pedido);
+  c.painelTela = false;
+  c.qualidadePedida = e.qualidade;
+  desenharChamada();
+  iniciarTelaChamada(c, pedirTela, pedido, q);
+}
+
+async function iniciarTelaChamada(c, pedirTela, pedido, q){
   let s;
-  try{ s = await navigator.mediaDevices.getDisplayMedia(pedido); }
+  try{ s = await pedirTela; }
   catch(e){
+    // Navegador que não conhece algum campo do pedido: tenta só com o vídeo.
     if(e && e.name === 'TypeError'){
-      try{ s = await navigator.mediaDevices.getDisplayMedia({video: pedido.video}); }catch(e2){ e = e2; }
+      try{ s = await navigator.mediaDevices.getDisplayMedia({video: {width: pedido.video.width, height: pedido.video.height, frameRate: pedido.video.frameRate}}); }catch(e2){ e = e2; }
     }
     if(!s){
       if(e && e.name !== 'NotAllowedError' && e.name !== 'AbortError') showToast('Não deu para transmitir a tela.', 'erro');
@@ -10409,9 +10539,11 @@ async function chamadaAlternarTela(){
   if(chamada !== c){ s.getTracks().forEach(t=>t.stop()); return; }
   const video = s.getVideoTracks()[0];
   const audio = s.getAudioTracks()[0] || null;
-  // Nitidez antes de fluidez: texto e código continuam legíveis quando a banda
-  // aperta, e o que cai é o número de quadros (Q27).
-  try{ video.contentHint = 'detail'; }catch(e){}
+  // A 30 quadros, nitidez antes de fluidez (texto e código legíveis); a 60,
+  // o pedido é movimento. Em todos, quando a banda aperta, cai o número de
+  // quadros e não a resolução (Q27).
+  try{ video.contentHint = q.quadros >= 60 ? 'motion' : 'detail'; }catch(e){}
+  c.qualidadeTela = c.qualidadePedida || '1080';
   // "Parar de compartilhar" na barra do navegador encerra a faixa por fora.
   video.addEventListener('ended', ()=>{ if(chamada === c && c.local.tela === video) pararTelaChamada(); });
   c.tela = true;
@@ -10516,6 +10648,7 @@ function chamadaMinimizar(){
   comTransicaoChamada(()=>{
     c.modo = 'mini';
     c.painelDisp = false;
+    c.painelTela = false;
     c.volumeAberto = null;
     desenharChamada();
   }).then(()=>{
@@ -10539,11 +10672,25 @@ function chamadaExpandir(){
 document.addEventListener('keydown', (e)=>{
   if(e.key !== 'Escape' || !chamada || e.defaultPrevented) return;
   if(topOpenModal() || document.fullscreenElement) return;
+  if(chamada.painelTela){ fecharEscolhaTela(); return; }
   if(chamada.painelDisp || chamada.volumeAberto){
     chamada.painelDisp = false;
     chamada.volumeAberto = null;
     desenharChamada();
   }else if(chamada.modo === 'expandida') chamadaMinimizar();
+});
+
+// Com a escolha da tela aberta, o Tab fica dentro dela, como nos modais.
+document.addEventListener('keydown', (e)=>{
+  if(e.key !== 'Tab' || !chamada || !chamada.painelTela) return;
+  const caixa = document.querySelector('#chamada .ch-dialogo');
+  if(!caixa) return;
+  const alvos = focusablesIn(caixa).filter(el=>!(el.type === 'radio' && !el.checked));
+  if(!alvos.length) return;
+  const primeiro = alvos[0], ultimo = alvos[alvos.length - 1];
+  if(e.shiftKey && document.activeElement === primeiro){ e.preventDefault(); ultimo.focus(); }
+  else if(!e.shiftKey && document.activeElement === ultimo){ e.preventDefault(); primeiro.focus(); }
+  else if(!caixa.contains(document.activeElement)){ e.preventDefault(); primeiro.focus(); }
 });
 
 /* --- desenho da janela --- */
@@ -10800,6 +10947,7 @@ function desenharChamada(){
         ${c.painelDisp ? `<div class="ch-painel-disp" role="group" aria-label="Dispositivos">${seletoresDispositivo(c.dispositivos, 'chamadaTrocarDispositivo') || '<p>Nenhum dispositivo encontrado.</p>'}</div>` : ''}
         <div class="ch-controles">${controlesChamadaHtml(false)}</div>
       </div>
+      ${c.painelTela && c.escolhaTela ? escolhaTelaHtml() : ''}
       <div class="sr-only" aria-live="polite" id="ch-anuncio"></div>`;
   }
   const anuncio = document.getElementById('ch-anuncio');
@@ -10831,7 +10979,7 @@ function desenharChamada(){
   });
   chamadaDesenho = {modo: c.modo, chaves};
   if(c.animarPainel){
-    raiz.querySelectorAll('.ch-painel-disp, .ch-volume').forEach(el=>el.classList.add('abrindo'));
+    raiz.querySelectorAll('.ch-painel-disp, .ch-volume, .ch-dialogo-fundo').forEach(el=>el.classList.add('abrindo'));
     c.animarPainel = false;
   }
   const novoAnuncio = document.getElementById('ch-anuncio');

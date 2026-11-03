@@ -81,6 +81,7 @@ continua.
 | Q29 | Ensurdecer (não ouve ninguém e fecha o próprio microfone) e volume individual de cada pessoa. |
 | Q30 | Escolher microfone, câmera e alto-falante na prévia e durante a chamada. |
 | Q31 | Som curto quando alguém entra ou sai, que respeita o "Som" das Configurações. |
+| Q32 | Antes do seletor do navegador, a própria janela da chamada pergunta o que transmitir (tela inteira, janela ou aba), a qualidade (720p, 1080p ou 1080p a 60 quadros) e se o som vai junto, como no Discord. O navegador abre já na fonte escolhida (`displaySurface`), só para confirmar qual. A escolha fica guardada no aparelho. A qualidade escolhida é teto: vale a menor entre ela e a da Q27. |
 
 ### Fora do escopo
 
@@ -286,9 +287,12 @@ reescreve, como o `alarm-banner`. A janela minimiza, expande e vai para tela che
 tem botões de microfone, câmera, tela e sair:
 
 - **Tela.** O botão só aparece se `navigator.mediaDevices.getDisplayMedia` existir (no
-  celular ele some). A tela vai no transceptor próprio, ao lado da câmera (Q26), com
-  `contentHint = 'detail'` e `degradationPreference = 'maintain-resolution'`: quando a
-  banda aperta, cai o número de quadros antes da nitidez.
+  celular ele some). Clicar abre a escolha da Q32; o `getDisplayMedia` sai do clique em
+  "Transmitir" dessa escolha, antes de qualquer espera, para o navegador reconhecer o
+  gesto. A tela vai no transceptor próprio, ao lado da câmera (Q26), com
+  `contentHint = 'detail'` (ou `'motion'` em 1080p a 60) e
+  `degradationPreference = 'maintain-resolution'`: quando a banda aperta, cai o número
+  de quadros antes da nitidez.
 - **Sair.** Para todas as faixas com `track.stop()`, para o indicador de câmera do
   sistema apagar, fecha as conexões e sai da Presence. Fechar a aba faz o mesmo pelo
   `pagehide`.
