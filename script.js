@@ -10484,11 +10484,7 @@ function desenharPreviaChamada(){
         <div class="ch-previa-nivel" aria-hidden="true" title="Volume do microfone"><span id="ch-previa-nivel"></span></div>
       </div>
       ${pr.erro ? `<p class="ch-previa-erro" role="alert">${esc(pr.erro)}</p>` : ''}
-      <div class="ch-previa-disps">${seletoresDispositivo(pr.dispositivos, 'previaTrocarDispositivo')}${janelaFlutuanteSuportada() ? `
-        <label class="ch-disp-ruido">
-          <span class="ch-disp-ruido-texto"><span>Janela flutuante ao entrar</span><small>A chamada fica por cima das outras abas e programas, mesmo quando você troca de aba.</small></span>
-          <input type="checkbox" role="switch" class="ch-interruptor" id="ch-previa-fixa" ${flutuanteAoEntrar() ? 'checked' : ''} onchange="previaAlternarFixa(this.checked)">
-        </label>` : ''}</div>
+      <div class="ch-previa-disps">${seletoresDispositivo(pr.dispositivos, 'previaTrocarDispositivo')}</div>
       <p class="ch-previa-quem" id="ch-previa-quem"></p>
     </div>`;
   if(comVideo){
@@ -10570,51 +10566,22 @@ function agendarRenovacaoTurn(){
   }, CHAMADA_RENOVA_TURN_MS);
 }
 
-// Janela flutuante fixa ao entrar. Abrir essa janela exige um clique, e a
-// abertura sozinha ao trocar de aba depende do navegador avisar o site, o
-// que o Arc não faz. Com esta opção, o próprio clique em "Entrar na chamada"
-// abre a janela, e ela fica por cima das outras abas e programas até a pessoa
-// trazer a chamada de volta. Vem ligada no Arc (que injeta as variáveis
-// --arc-palette-* na página) e desligada no resto, onde a troca de aba já
-// abre a janela; a escolha fica guardada no aparelho.
-function navegadorArc(){
-  try{ return !!getComputedStyle(document.documentElement).getPropertyValue('--arc-palette-title').trim(); }catch(e){ return false; }
-}
-
-function flutuanteAoEntrar(){
-  let v = null;
-  try{ v = localStorage.getItem('chamadaFixa'); }catch(e){}
-  return v === null ? navegadorArc() : v === 'sim';
-}
-
-function previaAlternarFixa(ligada){
-  try{ localStorage.setItem('chamadaFixa', ligada ? 'sim' : 'nao'); }catch(e){}
-  desenharPreviaChamada();
-}
-
+// Entrar abre a chamada na página inteira; a janela flutuante fica para o
+// botão de minimizar (e para a troca de aba, nos navegadores que avisam).
 async function entrarNaChamada(){
   const pr = previaChamada;
   if(!pr || pr.entrando) return;
-  // Pedida já, dentro do clique: depois das esperas abaixo o navegador não
-  // considera mais que houve um gesto.
-  const pedidoJanela = flutuanteAoEntrar() && janelaFlutuanteSuportada() && !janelaFlutuante
-    ? window.documentPictureInPicture.requestWindow({width: 380, height: 270})
-      .then(w=>{ w.document.body.style.cssText = 'margin:0;background:#10151b'; return w; })
-      .catch(()=>null) : null;
   pr.entrando = true;
   desenharPreviaChamada();
   const reg = canalChamada(pr.pid);
   const pronto = await Promise.race([reg.pronto, new Promise(ok=>setTimeout(()=>ok(false), 10000))]);
-  if(previaChamada !== pr){ if(pedidoJanela) pedidoJanela.then(w=>w && w.close()); return; }
-  const falhar = (msg)=>{
-    pr.entrando = false; pr.erro = msg; desenharPreviaChamada();
-    if(pedidoJanela) pedidoJanela.then(w=>w && w.close());
-  };
+  if(previaChamada !== pr) return;
+  const falhar = (msg)=>{ pr.entrando = false; pr.erro = msg; desenharPreviaChamada(); };
   if(!pronto) return falhar('O canal da chamada não abriu. Confira a conexão. Se é a primeira chamada do app, falta rodar o supabase/chamadas.sql no Supabase.');
   const eu = session.user.id;
   if(reg.emChamada.some(p=>p.uid === eu)) return falhar('Você já está nesta chamada em outra aba ou aparelho.');
   const ice = await buscarTurnChamada(pr.pid);
-  if(previaChamada !== pr){ if(pedidoJanela) pedidoJanela.then(w=>w && w.close()); return; }
+  if(previaChamada !== pr) return;
 
   const agora = Date.now();
   chamada = {
@@ -10639,8 +10606,6 @@ async function entrarNaChamada(){
   tocarSomChamada('entrar');
   comTransicaoChamada(()=>desenharChamada());
   ligarFlutuanteAutomatico();
-  // A janela pedida no clique chega agora (ou já chegou): a chamada vai para ela.
-  if(pedidoJanela) pedidoJanela.then(w=>{ if(w) adotarJanelaFlutuante(w, 'entrada'); });
   chamada.vigiaConexoes = setInterval(vigiarConexoesChamada, 3000);
   iniciarRelogioChamada();
   await atualizarPresencaChamada();
@@ -11293,35 +11258,8 @@ function adotarJanelaFlutuante(win, origem){
   janelaFlutuante.raiz = raiz;
   win.addEventListener('pagehide', ()=>voltarDaJanelaFlutuante(win), {once: true});
   janelaFlutuante.vigia = setInterval(conferirJanelaFlutuante, 1000);
-  ouvirQuietudeFlutuante(win);
   trocarRelogioFala();
   desenharChamada();
-}
-
-// Na janela flutuante, nome e controles ficam por cima do vídeo e somem quando
-// o mouse sai da janela ou para por um tempo, como num player; voltam com o
-// mouse, um toque ou o teclado.
-function ouvirQuietudeFlutuante(win){
-  const d = win.document;
-  let timer = null;
-  const raiz = ()=>d.getElementById('chamada');
-  // O foco do teclado segura os controles; o que fica no botão depois de um
-  // clique, não.
-  const aquietar = ()=>{
-    const r = raiz(), a = d.activeElement;
-    let teclado = false;
-    try{ teclado = !!a && r && r.contains(a) && a.matches(':focus-visible'); }catch(e){}
-    if(r && !teclado) r.classList.add('quieta');
-  };
-  const acordar = ()=>{
-    const r = raiz();
-    if(r) r.classList.remove('quieta');
-    clearTimeout(timer);
-    timer = setTimeout(aquietar, 2500);
-  };
-  for(const ev of ['pointermove', 'pointerdown', 'keydown', 'focusin']) d.addEventListener(ev, acordar, {passive: true});
-  d.documentElement.addEventListener('mouseleave', ()=>{ clearTimeout(timer); timer = setTimeout(aquietar, 400); });
-  acordar();
 }
 
 // A janela flutuante nasce em branco: leva os estilos e o tema do app.
