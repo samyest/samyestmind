@@ -10492,14 +10492,20 @@ function desenharPreviaChamada(){
       <p class="ch-previa-quem" id="ch-previa-quem"></p>
     </div>`;
   if(comVideo){
-    const v = document.createElement('video');
-    v.autoplay = true; v.playsInline = true; v.muted = true;
-    v.className = 'ch-video espelho';
-    marcarVideoQuandoPronto(v);
-    v.srcObject = new MediaStream([pr.cam]);
+    // O mesmo <video> volta para o slot novo a cada redesenho (mutar, trocar
+    // opção): um elemento novo começa preto até o primeiro quadro e pisca.
+    let v = pr.video;
+    if(!v || v.srcObject?.getVideoTracks()[0] !== pr.cam){
+      v = document.createElement('video');
+      v.autoplay = true; v.playsInline = true; v.muted = true;
+      v.className = 'ch-video espelho';
+      marcarVideoQuandoPronto(v);
+      v.srcObject = new MediaStream([pr.cam]);
+      pr.video = v;
+    }
     corpo.querySelector('.ch-previa-slot').appendChild(v);
     v.play().catch(()=>{});
-  }
+  }else pr.video = null;
   desenharQuemEstaNaPrevia();
   const btn = document.getElementById('chamada-previa-entrar');
   if(btn){ btn.disabled = pr.entrando; btn.textContent = pr.entrando ? 'Entrando…' : 'Entrar na chamada'; }
@@ -11166,6 +11172,17 @@ function chamadaTelaCheia(chave, e){
 function chamadaMinimizar(){
   const c = chamada;
   if(!c || c.modo === 'mini') return;
+  // Minimizar leva a chamada para a janela flutuante fixa, por cima das outras
+  // abas e programas. Sem ela (navegador sem suporte ou pedido recusado), fica
+  // minimizada no canto da página.
+  if(janelaFlutuanteSuportada() && !janelaFlutuante){
+    abrirJanelaFlutuante('minimizar').then(abriu=>{ if(!abriu && chamada === c && c.modo !== 'mini') minimizarNaPagina(c); });
+    return;
+  }
+  minimizarNaPagina(c);
+}
+
+function minimizarNaPagina(c){
   comTransicaoChamada(()=>{
     c.modo = 'mini';
     c.painelDisp = false;
@@ -11246,18 +11263,19 @@ function docsChamada(){
 // transmissão). Só o botão avisa quando o navegador não abre.
 async function abrirJanelaFlutuante(origem){
   const c = chamada;
-  if(!c || janelaFlutuante || !janelaFlutuanteSuportada()) return;
+  if(!c || janelaFlutuante || !janelaFlutuanteSuportada()) return false;
   let win;
   try{
     win = await window.documentPictureInPicture.requestWindow({width: 380, height: 270});
   }catch(e){
     if(!origem) showToast('O navegador não abriu a janela flutuante.', 'erro');
-    return;
+    return false;
   }
-  if(chamada !== c || janelaFlutuante){ win.close(); return; }
+  if(chamada !== c || janelaFlutuante){ win.close(); return false; }
   // Aberta junto com a transmissão, mas a pessoa já desistiu do seletor.
-  if(origem === 'tela' && !c.pedindoTela && !c.tela){ win.close(); return; }
+  if(origem === 'tela' && !c.pedindoTela && !c.tela){ win.close(); return false; }
   adotarJanelaFlutuante(win, origem);
+  return true;
 }
 
 // Leva a chamada para uma janela flutuante já aberta.
@@ -11266,7 +11284,7 @@ function adotarJanelaFlutuante(win, origem){
   if(!c || janelaFlutuante){ try{ win.close(); }catch(e){} return; }
   prepararJanelaFlutuante(win);
   const raiz = document.getElementById('chamada');
-  janelaFlutuante = {win, origem: origem || 'botao', auto: origem === 'auto', modoAntes: c.modo, voltarExpandida: false};
+  janelaFlutuante = {win, origem: origem || 'botao', auto: origem === 'auto', modoAntes: origem === 'minimizar' ? 'mini' : c.modo, voltarExpandida: false};
   c.modo = 'mini';
   c.painelDisp = false;
   c.painelTela = false;
@@ -11275,8 +11293,35 @@ function adotarJanelaFlutuante(win, origem){
   janelaFlutuante.raiz = raiz;
   win.addEventListener('pagehide', ()=>voltarDaJanelaFlutuante(win), {once: true});
   janelaFlutuante.vigia = setInterval(conferirJanelaFlutuante, 1000);
+  ouvirQuietudeFlutuante(win);
   trocarRelogioFala();
   desenharChamada();
+}
+
+// Na janela flutuante, nome e controles ficam por cima do vídeo e somem quando
+// o mouse sai da janela ou para por um tempo, como num player; voltam com o
+// mouse, um toque ou o teclado.
+function ouvirQuietudeFlutuante(win){
+  const d = win.document;
+  let timer = null;
+  const raiz = ()=>d.getElementById('chamada');
+  // O foco do teclado segura os controles; o que fica no botão depois de um
+  // clique, não.
+  const aquietar = ()=>{
+    const r = raiz(), a = d.activeElement;
+    let teclado = false;
+    try{ teclado = !!a && r && r.contains(a) && a.matches(':focus-visible'); }catch(e){}
+    if(r && !teclado) r.classList.add('quieta');
+  };
+  const acordar = ()=>{
+    const r = raiz();
+    if(r) r.classList.remove('quieta');
+    clearTimeout(timer);
+    timer = setTimeout(aquietar, 2500);
+  };
+  for(const ev of ['pointermove', 'pointerdown', 'keydown', 'focusin']) d.addEventListener(ev, acordar, {passive: true});
+  d.documentElement.addEventListener('mouseleave', ()=>{ clearTimeout(timer); timer = setTimeout(aquietar, 400); });
+  acordar();
 }
 
 // A janela flutuante nasce em branco: leva os estilos e o tema do app.
@@ -11743,9 +11788,7 @@ function desenharChamada(){
           <span class="ch-topo-meta"><span class="ch-tempo"></span> · ${pessoas} ${pessoas === 1 ? 'pessoa' : 'pessoas'}</span>
         </div>
         <div class="ch-topo-acoes">
-          ${c.semTurn ? '<span class="ch-aviso-turn" title="Sem o servidor de apoio (TURN), em algumas redes a conexão não sai.">Conexão direta</span>' : ''}
-          ${janelaFlutuanteSuportada() ? `<button type="button" id="ch-btn-flutuar" class="ch-botao ch-botao-leve" onclick="abrirJanelaFlutuante()" aria-label="Janela flutuante, por cima dos outros programas" title="Janela flutuante">${iconeChamada('flutuar', 18)}</button>` : ''}
-          <button type="button" id="ch-btn-minimizar" class="ch-botao ch-botao-leve" onclick="chamadaMinimizar()" aria-label="Minimizar a chamada (Esc)" title="Minimizar (Esc)">${iconeChamada('minimizar', 18)}</button>
+          <button type="button" id="ch-btn-minimizar" class="ch-botao ch-botao-leve" onclick="chamadaMinimizar()" aria-label="${janelaFlutuanteSuportada() ? 'Minimizar para a janela flutuante (Esc)' : 'Minimizar a chamada (Esc)'}" title="${janelaFlutuanteSuportada() ? 'Minimizar para a janela flutuante (Esc)' : 'Minimizar (Esc)'}">${iconeChamada('minimizar', 18)}</button>
         </div>
       </header>
       ${palco}
