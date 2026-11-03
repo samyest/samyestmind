@@ -10492,14 +10492,20 @@ function desenharPreviaChamada(){
       <p class="ch-previa-quem" id="ch-previa-quem"></p>
     </div>`;
   if(comVideo){
-    const v = document.createElement('video');
-    v.autoplay = true; v.playsInline = true; v.muted = true;
-    v.className = 'ch-video espelho';
-    marcarVideoQuandoPronto(v);
-    v.srcObject = new MediaStream([pr.cam]);
+    // O mesmo <video> volta para o slot novo a cada redesenho (mutar, trocar
+    // opção): um elemento novo começa preto até o primeiro quadro e pisca.
+    let v = pr.video;
+    if(!v || v.srcObject?.getVideoTracks()[0] !== pr.cam){
+      v = document.createElement('video');
+      v.autoplay = true; v.playsInline = true; v.muted = true;
+      v.className = 'ch-video espelho';
+      marcarVideoQuandoPronto(v);
+      v.srcObject = new MediaStream([pr.cam]);
+      pr.video = v;
+    }
     corpo.querySelector('.ch-previa-slot').appendChild(v);
     v.play().catch(()=>{});
-  }
+  }else pr.video = null;
   desenharQuemEstaNaPrevia();
   const btn = document.getElementById('chamada-previa-entrar');
   if(btn){ btn.disabled = pr.entrando; btn.textContent = pr.entrando ? 'Entrando…' : 'Entrar na chamada'; }
