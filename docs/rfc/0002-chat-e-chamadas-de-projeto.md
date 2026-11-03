@@ -78,9 +78,11 @@ continua.
 | Q26 | Câmera e tela ao mesmo tempo, e mais de uma pessoa pode transmitir. Clicar numa transmissão põe ela em destaque; dá para ir para tela cheia. A tela leva o áudio da aba ou do sistema quando o navegador oferece. Substitui a Q20. |
 | Q27 | Qualidade: tela em até 1080p e até 60 quadros com uma pessoa do outro lado, priorizando nitidez (texto legível). A taxa de cada envio cai conforme cresce o número de pessoas, porque na malha quem transmite manda uma cópia para cada um. Câmera em 720p. Câmera e tela usam `maintain-resolution`: medido no Chromium, com `balanced` a câmera começava em 320x180 e levava mais de 15 s para subir, mesmo com banda sobrando. |
 | Q28 | Anel verde em quem está falando. |
-| Q29 | Ensurdecer (não ouve ninguém e fecha o próprio microfone) e volume individual de cada pessoa. |
+| Q29 | Ensurdecer (não ouve ninguém e fecha o próprio microfone) e volume individual de cada pessoa, como no Discord: de 0 a 200% (acima de 100% o som passa por um `GainNode`, com o `<audio>` tocando mudo), "silenciar para mim" à parte do volume e um volume separado para o som da transmissão de tela, quando ela tem som. Tudo só neste aparelho. Com alto-falante escolhido e sem `setSinkId` no `AudioContext`, o teto fica em 100%. |
 | Q30 | Escolher microfone, câmera e alto-falante na prévia e durante a chamada. |
 | Q31 | Som curto quando alguém entra ou sai, que respeita o "Som" das Configurações. |
+| Q32 | Antes do seletor do navegador, a própria janela da chamada pergunta o que transmitir (tela inteira, janela ou aba), a qualidade (720p, 1080p ou 1080p a 60 quadros) e se o som vai junto, como no Discord. O navegador abre já na fonte escolhida (`displaySurface`), só para confirmar qual. A escolha fica guardada no aparelho. A qualidade escolhida é teto: vale a menor entre ela e a da Q27. |
+| Q33 | Janela flutuante, como no Meet: a chamada sai numa janela pequena por cima das outras abas e programas (Document Picture-in-Picture, Chrome e Edge no computador). Abre pelo botão no topo da chamada ou no mini, e sozinha ao trocar de aba onde o navegador permite (`mediaSession` `enterpictureinpicture`); a que abriu sozinha fecha quando a pessoa volta. Tem microfone, fone, câmera, voltar para a aba e sair. É a própria janela da chamada movida para o documento da flutuante; os `<audio>` ficam na página. |
 
 ### Fora do escopo
 
@@ -286,9 +288,12 @@ reescreve, como o `alarm-banner`. A janela minimiza, expande e vai para tela che
 tem botões de microfone, câmera, tela e sair:
 
 - **Tela.** O botão só aparece se `navigator.mediaDevices.getDisplayMedia` existir (no
-  celular ele some). A tela vai no transceptor próprio, ao lado da câmera (Q26), com
-  `contentHint = 'detail'` e `degradationPreference = 'maintain-resolution'`: quando a
-  banda aperta, cai o número de quadros antes da nitidez.
+  celular ele some). Clicar abre a escolha da Q32; o `getDisplayMedia` sai do clique em
+  "Transmitir" dessa escolha, antes de qualquer espera, para o navegador reconhecer o
+  gesto. A tela vai no transceptor próprio, ao lado da câmera (Q26), com
+  `contentHint = 'detail'` (ou `'motion'` em 1080p a 60) e
+  `degradationPreference = 'maintain-resolution'`: quando a banda aperta, cai o número
+  de quadros antes da nitidez.
 - **Sair.** Para todas as faixas com `track.stop()`, para o indicador de câmera do
   sistema apagar, fecha as conexões e sai da Presence. Fechar a aba faz o mesmo pelo
   `pagehide`.

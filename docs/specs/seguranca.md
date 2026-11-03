@@ -209,9 +209,13 @@ e os membros aceitos que ele carregou. Quando `project_members` muda, cada
 participante fecha na hora a conexão com quem perdeu o acesso, e o cliente de quem
 saiu deixa a chamada e para câmera e microfone. O JWT do Supabase continua valendo 1
 hora. O limite de 4 pessoas é do cliente e não conta como controle de acesso.
+Quem aparece no canal sem estar na lista carregada (entrou no projeto depois) faz o
+cliente recarregar os projetos (`membroNovoNaChamada`, no máximo 3 vezes por pessoa)
+e só entra se vier na lista nova: a recusa continua valendo para quem não é membro.
 **Por quê:** o Realtime confere a policy ao entrar no canal e guarda o resultado até
 o JWT vencer, então quem é removido no meio da chamada continuaria nela.
-**Verificação:** revisão + navegador (remover um membro no meio de uma chamada).
+**Verificação:** revisão + navegador (remover um membro no meio de uma chamada;
+entrar no projeto com a chamada em andamento).
 
 ### SEC-077 — Credencial TURN de curta duração, emitida só por `api/` *(fase 2, atendido em `api/chamada/turn.mjs` e `supabase/chamadas.sql`; falta aplicar no Supabase e configurar a Cloudflare)*
 A credencial sai de `api/chamada/turn`, vale no máximo 1 hora e, durante a chamada, é
@@ -230,8 +234,8 @@ SEC-031 já cobrem a rota nova) + revisão (validade, limites, corpo da resposta
 
 ### SEC-078 — Câmera, microfone e tela só no próprio site e só depois de um clique *(fase 2, atendido em `vercel.json` e `script.js`)*
 `Permissions-Policy` libera `camera`, `microphone` e `display-capture` só para
-`self`. `getUserMedia` e `getDisplayMedia` só rodam a partir de um clique na prévia
-ou na barra da chamada. Sair da chamada, ou fechar a aba, para todas as faixas.
+`self`. `getUserMedia` e `getDisplayMedia` só rodam a partir de um clique na prévia,
+na barra da chamada ou no "Transmitir" da escolha da tela. Sair da chamada, ou fechar a aba, para todas as faixas.
 **Por quê:** `*` deixaria qualquer iframe ou origem usar a permissão, e uma faixa
 esquecida mantém a câmera ligada depois que a pessoa acha que saiu.
 **Verificação:** auto (`Permissions-Policy` com os três presentes e só `self`) +

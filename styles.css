@@ -1960,21 +1960,91 @@
   .ch-acao{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;background:rgba(8,12,16,0.62);color:var(--ch-texto);}
   .ch-acao:hover{background:rgba(8,12,16,0.85);}
   .ch-acao[aria-pressed="true"]{background:var(--ch-texto);color:var(--ch-fundo);}
+  .ch-acao.silenciado{color:var(--ch-desligado-texto);}
+  /* Volume de uma pessoa (ou do som da tela dela), só para quem ajusta. Vai
+     até 200%: a marca no meio da barra é o volume original, e o trecho acima
+     dela fica âmbar para avisar que é reforço. */
   .ch-volume{
     position:absolute;
     top:44px;
     right:8px;
-    display:flex;
-    align-items:center;
-    gap:8px;
-    padding:8px 12px;
-    border-radius:10px;
-    background:rgba(8,12,16,0.88);
-    font-size:12px;
+    z-index:2;
+    width:min(264px, calc(100% - 16px));
+    display:grid;
+    gap:10px;
+    padding:12px 14px 10px;
+    border-radius:14px;
+    background:rgba(16,21,27,0.94);
+    box-shadow:0 14px 34px rgba(0,0,0,0.42), 0 0 0 1px rgba(255,255,255,0.07);
+    backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
     cursor:default;
   }
-  .ch-volume input{width:120px;accent-color:var(--ch-fala);}
-  .ch-volume span{min-width:34px;text-align:right;font-variant-numeric:tabular-nums;color:var(--ch-suave);}
+  .ch-volume-topo{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
+  .ch-volume-titulo{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;}
+  .ch-volume-valor{flex-shrink:0;font-size:13px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--ch-texto);}
+  .ch-volume.mudo .ch-volume-valor{color:var(--ch-desligado-texto);}
+  .ch-volume-linha{display:flex;align-items:center;gap:10px;}
+  .ch-volume-mudo{flex-shrink:0;width:32px;height:32px;display:grid;place-items:center;border-radius:9px;background:var(--ch-botao);color:var(--ch-texto);transition:background-color .15s ease, color .15s ease, transform .12s ease;}
+  .ch-volume-mudo:hover{background:var(--ch-botao-hover);}
+  .ch-volume-mudo:active{transform:scale(.92);}
+  .ch-volume-mudo[aria-pressed="true"]{background:var(--ch-desligado);color:var(--ch-desligado-texto);}
+  .ch-volume-trilho{position:relative;flex:1;min-width:0;display:flex;align-items:center;height:32px;}
+  .ch-volume-barra{
+    --fim:calc(8px + (100% - 16px) * var(--f));
+    --meio:calc(8px + (100% - 16px) * var(--m));
+    position:relative;
+    z-index:1;
+    -webkit-appearance:none;
+    appearance:none;
+    width:100%;
+    height:20px;
+    margin:0;
+    background:transparent;
+    cursor:pointer;
+    transition:opacity .15s ease;
+  }
+  .ch-volume-barra::-webkit-slider-runnable-track{
+    height:6px;
+    border-radius:3px;
+    background:linear-gradient(90deg, var(--ch-fala) 0 min(var(--fim), var(--meio)), #e0a43c 0 var(--fim), rgba(255,255,255,0.14) 0);
+  }
+  .ch-volume-barra::-moz-range-track{
+    height:6px;
+    border-radius:3px;
+    background:linear-gradient(90deg, var(--ch-fala) 0 min(var(--fim), var(--meio)), #e0a43c 0 var(--fim), rgba(255,255,255,0.14) 0);
+  }
+  .ch-volume-barra::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width:16px;
+    height:16px;
+    margin-top:-5px;
+    border-radius:50%;
+    background:#fff;
+    box-shadow:0 1px 4px rgba(0,0,0,0.45);
+    transition:transform .12s ease;
+  }
+  .ch-volume-barra::-moz-range-thumb{width:16px;height:16px;border:0;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,0.45);}
+  .ch-volume-barra:active::-webkit-slider-thumb{transform:scale(1.15);}
+  .ch-volume-barra:focus-visible{outline:none;}
+  .ch-volume-barra:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px rgba(255,255,255,0.35), 0 1px 4px rgba(0,0,0,0.45);}
+  .ch-volume-barra:focus-visible::-moz-range-thumb{box-shadow:0 0 0 3px rgba(255,255,255,0.35), 0 1px 4px rgba(0,0,0,0.45);}
+  .ch-volume.mudo .ch-volume-barra{opacity:.4;}
+  .ch-volume-marca{
+    position:absolute;
+    left:calc(8px + (100% - 16px) * 0.5);
+    top:50%;
+    width:2px;
+    height:14px;
+    margin:-7px 0 0 -1px;
+    border-radius:1px;
+    background:rgba(255,255,255,0.4);
+    pointer-events:none;
+  }
+  .ch-volume-pe{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:24px;font-size:11.5px;color:var(--ch-suave);}
+  .ch-volume-redefinir{padding:3px 9px;border-radius:999px;background:var(--ch-botao);color:var(--ch-texto);font-size:11.5px;font-weight:500;white-space:nowrap;transition:background-color .15s ease;}
+  .ch-volume-redefinir:hover{background:var(--ch-botao-hover);}
+  .ch-volume-redefinir[hidden]{display:none;}
   .ch-ladrilho:fullscreen{border-radius:0;}
 
   .ch-rodape{position:relative;padding:12px 20px 20px;}
@@ -2145,6 +2215,126 @@
   .ch-volume.abrindo{animation:chVolumeDesce .2s var(--mov-curva) both;}
   @keyframes chPainelSobe{from{opacity:0;transform:translate(-50%, 8px);}}
   @keyframes chVolumeDesce{from{opacity:0;transform:translateY(-6px);}}
+
+  /* Janela flutuante (Document Picture-in-Picture): a chamada minimizada ocupa
+     a janela inteira, e o palco cresce com ela quando a pessoa a redimensiona. */
+  body.corpo-flutuante{margin:0;min-height:100vh;overflow:hidden;background:#10151b;}
+  .chamada.na-janela[data-modo="mini"]{inset:0;width:100%;height:100%;border-radius:0;box-shadow:none;display:flex;flex-direction:column;}
+  .chamada.na-janela .ch-mini-palco{flex:1;min-height:0;aspect-ratio:auto;}
+  .chamada.na-janela .ch-mini-barra{flex-shrink:0;}
+
+  /* Escolha da tela, antes do seletor do navegador: o que transmitir, em que
+     qualidade e se o som vai junto. Cobre o palco, no tom escuro da chamada. */
+  .ch-dialogo-fundo{
+    position:absolute;
+    inset:0;
+    z-index:5;
+    display:grid;
+    place-items:center;
+    padding:16px;
+    background:rgba(6,9,12,0.58);
+    backdrop-filter:blur(6px);
+    -webkit-backdrop-filter:blur(6px);
+  }
+  .ch-dialogo{
+    width:min(540px, 100%);
+    max-height:calc(100% - 16px);
+    overflow-y:auto;
+    display:grid;
+    gap:20px;
+    padding:26px;
+    border-radius:20px;
+    background:var(--ch-ladrilho);
+    box-shadow:0 28px 70px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.07);
+  }
+  .ch-dialogo-titulo{margin:0;font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:21px;letter-spacing:-0.02em;line-height:1.15;}
+  .ch-dialogo-texto{margin:-14px 0 0;font-size:13px;line-height:1.5;color:var(--ch-suave);}
+  .ch-fontes, .ch-qualidade{margin:0;padding:0;border:0;min-width:0;}
+  .ch-fontes{display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:10px;}
+  .ch-fonte{
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    padding:16px 14px 14px;
+    border-radius:14px;
+    background:var(--ch-fundo);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);
+    cursor:pointer;
+    transition:box-shadow .15s ease, background-color .15s ease;
+  }
+  .ch-fonte:hover{background:#141b23;}
+  .ch-fonte.marcada{background:#18212b;box-shadow:inset 0 0 0 2px var(--ch-texto);}
+  .ch-fonte:has(input:focus-visible){outline:2px solid #fff;outline-offset:3px;}
+  .ch-fonte-icone{display:grid;margin-bottom:10px;color:var(--ch-suave);transition:color .15s ease;}
+  .ch-fonte.marcada .ch-fonte-icone{color:var(--ch-texto);}
+  .ch-fonte-nome{font-size:14px;font-weight:600;}
+  .ch-fonte-desc{font-size:12px;line-height:1.35;color:var(--ch-suave);}
+  .ch-qualidade{display:grid;gap:8px;}
+  .ch-dialogo-rotulo{padding:0;margin-bottom:2px;font-size:12.5px;font-weight:600;color:var(--ch-suave);}
+  .ch-segmentos{display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:4px;padding:4px;border-radius:12px;background:var(--ch-fundo);}
+  .ch-segmento{
+    display:grid;
+    place-items:center;
+    height:36px;
+    border-radius:9px;
+    font-size:13px;
+    font-weight:500;
+    font-variant-numeric:tabular-nums;
+    color:var(--ch-suave);
+    cursor:pointer;
+    transition:background-color .15s ease, color .15s ease;
+  }
+  .ch-segmento:hover{color:var(--ch-texto);}
+  .ch-segmento.marcado{background:var(--ch-botao-hover);color:var(--ch-texto);}
+  .ch-segmento:has(input:focus-visible){outline:2px solid #fff;outline-offset:-2px;}
+  .ch-dialogo-dica{margin:0;font-size:12px;line-height:1.45;font-weight:400;color:var(--ch-suave);}
+  .ch-som{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;border-radius:12px;background:var(--ch-fundo);cursor:pointer;}
+  .ch-som-texto{display:flex;flex-direction:column;gap:2px;font-size:13.5px;font-weight:500;}
+  .ch-interruptor{
+    appearance:none;
+    -webkit-appearance:none;
+    position:relative;
+    flex-shrink:0;
+    width:40px;
+    height:24px;
+    margin:0;
+    border-radius:12px;
+    background:var(--ch-botao-hover);
+    cursor:pointer;
+    transition:background-color .18s ease;
+  }
+  .ch-interruptor::after{
+    content:'';
+    position:absolute;
+    top:3px;
+    left:3px;
+    width:18px;
+    height:18px;
+    border-radius:50%;
+    background:#fff;
+    transition:transform .2s var(--mov-curva);
+  }
+  .ch-interruptor:checked{background:var(--ch-fala);}
+  .ch-interruptor:checked::after{transform:translateX(16px);}
+  .ch-interruptor:focus-visible{outline:2px solid #fff;outline-offset:2px;}
+  .ch-dialogo-acoes{display:flex;justify-content:flex-end;gap:10px;}
+  .ch-dialogo-cancelar, .ch-dialogo-ok{height:42px;border-radius:21px;font-size:13.5px;transition:background-color .15s ease, filter .15s ease, transform .12s ease;}
+  .ch-dialogo-cancelar{padding:0 18px;background:var(--ch-botao);color:var(--ch-texto);font-weight:500;}
+  .ch-dialogo-cancelar:hover{background:var(--ch-botao-hover);}
+  .ch-dialogo-ok{display:inline-flex;align-items:center;gap:8px;padding:0 20px;background:var(--ch-texto);color:var(--ch-fundo);font-weight:600;}
+  .ch-dialogo-ok:hover{filter:brightness(0.92);}
+  .ch-dialogo-cancelar:active, .ch-dialogo-ok:active{transform:scale(.95);}
+  .ch-dialogo-fundo.abrindo{animation:chFundoEntra .2s ease both;}
+  .ch-dialogo-fundo.abrindo .ch-dialogo{animation:chDialogoEntra .3s var(--mov-curva) both;}
+  @keyframes chFundoEntra{from{opacity:0;}}
+  @keyframes chDialogoEntra{from{opacity:0;transform:translateY(12px) scale(.98);}}
+  @media (max-width:600px){
+    .ch-dialogo{padding:20px;gap:16px;}
+    .ch-fontes{grid-template-columns:1fr;}
+    .ch-fonte{flex-direction:row;align-items:center;gap:12px;padding:12px 14px;}
+    .ch-fonte-icone{margin:0;}
+    .ch-fonte-desc{margin-left:auto;text-align:right;}
+  }
 
   @media (prefers-reduced-motion:reduce){
     .chamada *, .ch-faixa *, .ch-previa *{transition:none !important;animation:none !important;}

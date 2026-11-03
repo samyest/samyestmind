@@ -2081,15 +2081,34 @@ function safeRerender(){
   render();
 }
 
+// Eventos seguidos de tipos diferentes se juntam: 'projects' já recarrega as
+// tarefas, então ganha de 'tasks'. Antes valia só o último, e um 'tasks' logo
+// depois de alguém entrar no projeto engolia a recarga dos membros.
+let realtimeKindPendente = null;
 function scheduleRealtimeReload(kind){
   if(realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
+  realtimeKindPendente = realtimeKindPendente ? {kind: juntarCargas(realtimeKindPendente.kind, kind)} : {kind};
   realtimeDebounceTimer = setTimeout(async ()=>{
-    await refreshAll(kind, true);
+    const {kind: k} = realtimeKindPendente || {};
+    realtimeKindPendente = null;
+    await refreshAll(k, true);
   }, 500);
 }
 
+// Pedido que chega com outra carga em andamento roda logo depois dela, em vez
+// de ser descartado.
+let refreshDepois = null;
+function juntarCargas(a, b){
+  if(!a || !b) return undefined;
+  if(a === b) return a;
+  if((a === 'projects' || b === 'projects') && (a === 'tasks' || b === 'tasks')) return 'projects';
+  return undefined;
+}
 async function refreshAll(kind, silent){
-  if(isRefreshing) return;
+  if(isRefreshing){
+    refreshDepois = refreshDepois ? {kind: juntarCargas(refreshDepois.kind, kind)} : {kind};
+    return;
+  }
   isRefreshing = true;
   const btns = document.querySelectorAll('.refresh-btn');
   btns.forEach(b=>b.classList.add('spinning'));
@@ -2110,6 +2129,11 @@ async function refreshAll(kind, silent){
   }catch(e){}
   isRefreshing = false;
   setTimeout(()=>btns.forEach(b=>b.classList.remove('spinning')), 400);
+  if(refreshDepois){
+    const {kind: k} = refreshDepois;
+    refreshDepois = null;
+    refreshAll(k, true);
+  }
 }
 
 let alarmedTaskKeys = new Set();
@@ -9367,6 +9391,8 @@ const canaisChamada = {};
 const chamadaVideos = {};
 const falaMedidores = new Map();
 let falaTimer = null;
+// {win, auto, modoAntes, voltarExpandida} com a chamada na janela flutuante.
+let janelaFlutuante = null;
 let chamadaRelogio = null;
 let dispositivosChamada = {mic: [], cam: [], saida: []};
 // O que o último desenho da janela mostrou, para animar só o que é novo, e
@@ -9389,7 +9415,9 @@ const ICONES_CHAMADA = {
   minimizar: '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>',
   expandir: '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>',
   telaCheia: '<path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/>',
-  volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/>'
+  volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/>',
+  volumeOff: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/>',
+  flutuar: '<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="11" width="7" height="6" rx="1"/>'
 };
 
 function iconeChamada(nome, tam){
@@ -9420,6 +9448,27 @@ function projetoDaChamada(pid){
 function permitidoNaChamada(pid, uid){
   const p = projetoDaChamada(pid);
   return !!p && projectPeople(p).some(pe=>pe.id === uid);
+}
+
+// Quem entrou no projeto depois que este aparelho carregou a lista de membros
+// aparece no canal da chamada (que o Supabase só abre para membros) sem estar
+// na lista daqui, e era ignorado até a próxima recarga. Agora isso puxa a
+// lista de novo: no fim do loadProjects a presença é conferida outra vez.
+// No máximo uma recarga a cada 8 s por projeto e 3 por pessoa, para alguém
+// já removido que siga no canal não virar recarga sem fim.
+const recargaMembrosChamada = {};
+function membroNovoNaChamada(pid, uid){
+  if(!CHAMADA_UUID.test(uid) || !projetoDaChamada(pid)) return;
+  const r = recargaMembrosChamada[pid] || (recargaMembrosChamada[pid] = {ultima: 0, timer: null, vezes: {}});
+  if((r.vezes[uid] || 0) >= 3 || r.timer) return;
+  r.vezes[uid] = (r.vezes[uid] || 0) + 1;
+  r.timer = setTimeout(async ()=>{
+    r.ultima = Date.now();
+    try{ await loadProjects(); safeRerender(); }catch(e){}
+    r.timer = null;
+    // Reconfere: se a pessoa ainda não estiver na lista, tenta de novo depois.
+    if(projetoDaChamada(pid) && !permitidoNaChamada(pid, uid)) presencaChamada(pid);
+  }, Math.max(0, r.ultima + 8000 - Date.now()));
 }
 
 function nomeNaChamada(pid, uid){
@@ -9501,13 +9550,14 @@ function presencaChamada(pid){
   const estado = reg.canal.presenceState();
   const lista = [];
   for(const [uid, metas] of Object.entries(estado || {})){
-    if(!CHAMADA_UUID.test(uid) || !permitidoNaChamada(pid, uid)) continue;
+    if(!CHAMADA_UUID.test(uid)) continue;
+    if(!permitidoNaChamada(pid, uid)){ membroNovoNaChamada(pid, uid); continue; }
     const ativas = (metas || []).filter(m=>m && m.em_chamada && typeof m.sessao === 'string');
     if(!ativas.length) continue;
     const m = ativas.reduce((a, b)=>(Number(b.desde) || 0) > (Number(a.desde) || 0) ? b : a);
     lista.push({
       uid, sessao: m.sessao.slice(0, 64), desde: Number(m.desde) || Date.now(),
-      mic: m.mic !== false, ensurdecido: !!m.ensurdecido, camera: !!m.camera, tela: !!m.tela
+      mic: m.mic !== false, ensurdecido: !!m.ensurdecido, camera: !!m.camera, tela: !!m.tela, telaSom: !!(m.tela && m.telaSom)
     });
   }
   // Ordem de chegada, com desempate pelo id: todos precisam ver a mesma ordem
@@ -9525,7 +9575,7 @@ function atualizarPresencaChamada(){
   if(!reg || !reg.assinado) return Promise.resolve();
   return reg.canal.track({
     sessao: c.sessao, em_chamada: true, desde: c.entrouEm,
-    mic: c.mic && !!c.local.voz, ensurdecido: c.ensurdecido, camera: c.camera, tela: c.tela
+    mic: c.mic && !!c.local.voz, ensurdecido: c.ensurdecido, camera: c.camera, tela: c.tela, telaSom: !!(c.tela && c.local.telaAudio)
   }).catch(e=>console.warn('chamada: presença', e));
 }
 
@@ -9560,7 +9610,7 @@ function receberSinalChamada(pid, s){
   if(!c || c.pid !== pid || !sinalChamadaValido(s)) return;
   if(s.para !== session.user.id || s.paraSessao !== c.sessao || s.de === session.user.id) return;
   // SEC-076: sinal de quem não é (mais) do projeto é ignorado.
-  if(!permitidoNaChamada(pid, s.de)) return;
+  if(!permitidoNaChamada(pid, s.de)){ membroNovoNaChamada(pid, s.de); return; }
   let par = c.pares.get(s.de);
   if(s.tipo === 'oferta'){
     if(par && par.sessao !== s.deSessao){ fecharParChamada(par); par = null; }
@@ -9610,7 +9660,7 @@ function enfileirarPar(par, fn){
 function criarParChamada(uid, sessao, ofertante){
   const c = chamada;
   const pc = new RTCPeerConnection({iceServers: c.iceServers, bundlePolicy: 'max-bundle'});
-  const par = {uid, sessao, pc, ofertante, transceptores: {}, remotas: {}, pendentes: [], fila: Promise.resolve(), audio: {}, timer: null, pedidos: 0};
+  const par = {uid, sessao, pc, ofertante, transceptores: {}, remotas: {}, pendentes: [], fila: Promise.resolve(), audio: {}, reforcos: {}, timer: null, pedidos: 0};
   c.pares.set(uid, par);
   const adiantados = c.iceAdiantado[`${uid}:${sessao}`];
   if(adiantados){ par.pendentes.push(...adiantados); delete c.iceAdiantado[`${uid}:${sessao}`]; }
@@ -9711,20 +9761,102 @@ function tocarAudioRemoto(par, tipo, track){
   el.play().catch(()=>{});
 }
 
+// Volume que cada um escolhe para os outros, só neste aparelho. A chave é o
+// id da pessoa (voz) ou `<id>:tela` (som da transmissão), e o valor vai de 0
+// a 2 (200%), com "silenciado para mim" à parte, para o volume voltar igual.
+// Guardado antes como número solto; os dois formatos são lidos.
 function volumesChamada(){
-  try{ return JSON.parse(localStorage.getItem('chamadaVolumes') || '{}') || {}; }catch(e){ return {}; }
+  try{ const v = JSON.parse(localStorage.getItem('chamadaVolumes') || '{}'); return v && typeof v === 'object' ? v : {}; }catch(e){ return {}; }
 }
 
-function volumeDe(uid){
-  const v = Number(volumesChamada()[uid]);
-  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+function chaveVolumeValida(chave){
+  const [uid, extra, ...resto] = String(chave).split(':');
+  return CHAMADA_UUID.test(uid) && !resto.length && (extra === undefined || extra === 'tela');
+}
+
+function ajusteDeVolume(chave){
+  const bruto = volumesChamada()[chave];
+  const v = Number(bruto && typeof bruto === 'object' ? bruto.v : bruto);
+  return {v: Number.isFinite(v) ? Math.min(2, Math.max(0, v)) : 1, mudo: !!(bruto && bruto.mudo)};
+}
+
+function guardarAjusteDeVolume(chave, ajuste){
+  const todos = volumesChamada();
+  todos[chave] = {v: ajuste.v, mudo: ajuste.mudo};
+  try{ localStorage.setItem('chamadaVolumes', JSON.stringify(todos)); }catch(e){}
+}
+
+// Acima de 100% o som passa por um GainNode, porque o <audio> não vai além
+// de 1. Com alto-falante escolhido, só se o AudioContext também souber
+// mandar para ele; senão o teto fica em 100%.
+function volumeAcimaDe100(){
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if(!Ctx) return false;
+  return !(chamada && chamada.dispositivos.saida) || 'setSinkId' in Ctx.prototype;
+}
+
+function volumeMaximoChamada(){
+  return volumeAcimaDe100() ? 200 : 100;
+}
+
+let chamadaAudioCtx = null;
+function contextoReforcoChamada(){
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if(!Ctx) return null;
+  if(!chamadaAudioCtx || chamadaAudioCtx.state === 'closed'){
+    chamadaAudioCtx = new Ctx();
+    const saida = chamada && chamada.dispositivos.saida;
+    if(saida && chamadaAudioCtx.setSinkId) chamadaAudioCtx.setSinkId(saida).catch(()=>{});
+  }
+  if(chamadaAudioCtx.state === 'suspended') chamadaAudioCtx.resume().catch(()=>{});
+  return chamadaAudioCtx;
+}
+
+// O <audio> continua tocando, mudo: o Chromium só entrega o áudio remoto do
+// WebRTC ao Web Audio enquanto a faixa está presa a um elemento.
+function reforcoDoAudio(par, tipo, el){
+  const track = el.srcObject && el.srcObject.getAudioTracks()[0];
+  const atual = par.reforcos[tipo];
+  if(atual && atual.track === track) return atual;
+  desligarReforco(par, tipo);
+  const ctx = track && contextoReforcoChamada();
+  if(!ctx) return null;
+  try{
+    const fonte = ctx.createMediaStreamSource(new MediaStream([track]));
+    const ganho = ctx.createGain();
+    fonte.connect(ganho).connect(ctx.destination);
+    par.reforcos[tipo] = {track, fonte, ganho};
+    return par.reforcos[tipo];
+  }catch(e){ return null; }
+}
+
+function desligarReforco(par, tipo){
+  const r = par.reforcos[tipo];
+  if(!r) return;
+  try{ r.fonte.disconnect(); r.ganho.disconnect(); }catch(e){}
+  delete par.reforcos[tipo];
+}
+
+function desligarReforcosPar(par){
+  for(const tipo of Object.keys(par.reforcos || {})) desligarReforco(par, tipo);
 }
 
 function aplicarVolumePar(par){
-  const vol = volumeDe(par.uid);
-  for(const el of Object.values(par.audio)){
-    el.volume = vol;
-    el.muted = !!(chamada && chamada.ensurdecido);
+  const c = chamada;
+  if(!par.reforcos) par.reforcos = {};
+  for(const [tipo, el] of Object.entries(par.audio)){
+    const a = ajusteDeVolume(tipo === 'telaAudio' ? `${par.uid}:tela` : par.uid);
+    const calado = !!(c && c.ensurdecido) || a.mudo;
+    const r = a.v > 1 && volumeAcimaDe100() ? reforcoDoAudio(par, tipo, el) : null;
+    if(r){
+      el.volume = 1;
+      el.muted = true;
+      r.ganho.gain.setTargetAtTime(calado ? 0 : a.v, r.ganho.context.currentTime, 0.015);
+    }else{
+      desligarReforco(par, tipo);
+      el.volume = Math.min(1, a.v);
+      el.muted = calado;
+    }
   }
 }
 
@@ -9773,6 +9905,7 @@ function fecharParChamada(par){
   const c = chamada;
   clearTimeout(par.timer);
   try{ par.pc.close(); }catch(e){}
+  desligarReforcosPar(par);
   for(const el of Object.values(par.audio)){ el.srcObject = null; el.remove(); }
   pararMedicaoFala(par.uid);
   for(const tipo of ['cam', 'tela']) delete chamadaVideos[`${par.uid}:${tipo}`];
@@ -9860,7 +9993,10 @@ function ajustarQualidadePar(par){
   const teto = CHAMADA_TETOS[Math.max(1, Math.min(3, c.pares.size))];
   definirEnvioChamada(par.transceptores.voz, {maxBitrate: 64000});
   definirEnvioChamada(par.transceptores.cam, {maxBitrate: teto.cam, maxFramerate: 30}, 'maintain-resolution');
-  definirEnvioChamada(par.transceptores.tela, {maxBitrate: teto.tela, maxFramerate: teto.telaQuadros}, 'maintain-resolution');
+  // A qualidade escolhida para a tela é um teto a mais: 720p não precisa da
+  // taxa do 1080p, e 30 quadros não mandam 60.
+  const q = QUALIDADES_TELA[c.qualidadeTela] || QUALIDADES_TELA['1080'];
+  definirEnvioChamada(par.transceptores.tela, {maxBitrate: Math.min(teto.tela, q.taxa), maxFramerate: Math.min(teto.telaQuadros, q.quadros)}, 'maintain-resolution');
   definirEnvioChamada(par.transceptores.telaAudio, {maxBitrate: 128000});
 }
 
@@ -9882,7 +10018,28 @@ function medirFala(chave, track){
     fonte.connect(analisador);
     falaMedidores.set(chave, {fonte, analisador, track, buffer: new Float32Array(analisador.fftSize), falando: false, ate: 0, nivel: 0});
   }catch(e){ return; }
-  if(!falaTimer) falaTimer = setInterval(lerFala, 100);
+  if(!falaTimer) ligarRelogioFala();
+}
+
+// Com a janela flutuante aberta, a página costuma estar escondida (outra aba
+// ou outro programa na frente) e o navegador segura os timers dela em um por
+// segundo; o anel de quem fala ficaria atrasado. Aí o relógio do medidor roda
+// na janela flutuante, que está visível.
+function ligarRelogioFala(){
+  const dono = janelaFlutuante ? janelaFlutuante.win : window;
+  falaTimer = {dono, id: dono.setInterval(lerFala, 100)};
+}
+
+function desligarRelogioFala(){
+  if(!falaTimer) return;
+  try{ falaTimer.dono.clearInterval(falaTimer.id); }catch(e){}
+  falaTimer = null;
+}
+
+function trocarRelogioFala(){
+  if(!falaTimer) return;
+  desligarRelogioFala();
+  if(falaMedidores.size) ligarRelogioFala();
 }
 
 function pararMedicaoFala(chave){
@@ -9890,7 +10047,7 @@ function pararMedicaoFala(chave){
   if(!m) return;
   try{ m.fonte.disconnect(); }catch(e){}
   falaMedidores.delete(chave);
-  if(!falaMedidores.size && falaTimer){ clearInterval(falaTimer); falaTimer = null; }
+  if(!falaMedidores.size && falaTimer) desligarRelogioFala();
 }
 
 function lerFala(){
@@ -9918,7 +10075,7 @@ function lerFala(){
 }
 
 function marcarFalaChamada(uid, falando){
-  document.querySelectorAll(`[data-fala="${uid}"]`).forEach(el=>el.classList.toggle('falando', falando));
+  for(const d of docsChamada()) d.querySelectorAll(`[data-fala="${uid}"]`).forEach(el=>el.classList.toggle('falando', falando));
 }
 
 /* --- sons (Q31) --- */
@@ -9947,7 +10104,7 @@ function tocarSomChamada(tipo){
 }
 
 function anunciarNaChamada(texto){
-  const el = document.getElementById('ch-anuncio');
+  const el = docChamada().getElementById('ch-anuncio');
   if(el) el.textContent = texto;
 }
 
@@ -10225,6 +10382,7 @@ async function entrarNaChamada(){
   agendarRenovacaoTurn();
   tocarSomChamada('entrar');
   comTransicaoChamada(()=>desenharChamada());
+  ligarFlutuanteAutomatico();
   iniciarRelogioChamada();
   await atualizarPresencaChamada();
   if(!chamada) return;
@@ -10249,7 +10407,17 @@ async function sairDaChamada(opts){
   const o = opts || {};
   const c = chamada;
   if(!c) return;
+  // A janela da chamada pode estar na flutuante: pega ela antes de fechar.
+  const flutuante = janelaFlutuante;
+  const raizFlutuante = flutuante ? flutuante.win.document.getElementById('chamada') : null;
+  janelaFlutuante = null;
+  trocarRelogioFala();
+  desligarFlutuanteAutomatico();
   chamada = null;
+  if(flutuante){
+    if(raizFlutuante) raizFlutuante.remove();
+    try{ flutuante.win.close(); }catch(e){}
+  }
   clearTimeout(c.turnTimer);
   clearTimeout(c.timerInicio);
   Object.values(c.esperas).forEach(clearTimeout);
@@ -10257,8 +10425,10 @@ async function sairDaChamada(opts){
   for(const par of [...c.pares.values()]){
     clearTimeout(par.timer);
     try{ par.pc.close(); }catch(e){}
+    desligarReforcosPar(par);
     for(const el of Object.values(par.audio)){ el.srcObject = null; el.remove(); }
   }
+  if(chamadaAudioCtx){ chamadaAudioCtx.close().catch(()=>{}); chamadaAudioCtx = null; }
   // SEC-078: sair para todas as faixas, para o indicador de câmera apagar.
   for(const t of Object.values(c.local)) if(t) t.stop();
   for(const chave of [...falaMedidores.keys()]) if(chave !== 'previa') pararMedicaoFala(chave);
@@ -10386,20 +10556,153 @@ async function chamadaAlternarCamera(){
   desenharChamada();
 }
 
+// Transmitir a tela começa por uma escolha do app, como no Discord: o que
+// transmitir, em que qualidade e se o som vai junto. O seletor do navegador
+// vem depois, já na aba certa (displaySurface), só para confirmar; o visual
+// dele é do navegador e nenhum site muda.
+const QUALIDADES_TELA = {
+  '720': {rotulo: '720p', dica: 'Mais leve para a internet de quem assiste', largura: 1280, altura: 720, quadros: 30, taxa: 2500000},
+  '1080': {rotulo: '1080p', dica: 'Texto e detalhes nítidos', largura: 1920, altura: 1080, quadros: 30, taxa: 6000000},
+  '1080-60': {rotulo: '1080p · 60', dica: 'Movimento suave, para jogos e vídeos', largura: 1920, altura: 1080, quadros: 60, taxa: 8000000}
+};
+const FONTES_TELA = {
+  monitor: {nome: 'Tela inteira', desc: 'Tudo o que está no monitor'},
+  window: {nome: 'Janela', desc: 'Um programa só'},
+  browser: {nome: 'Aba', desc: 'Uma aba do navegador, com o som dela'}
+};
+const ICONES_FONTE = {
+  monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+  window: '<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><circle cx="6" cy="6.5" r=".6" fill="currentColor"/><circle cx="8.5" cy="6.5" r=".6" fill="currentColor"/>',
+  browser: '<rect x="2" y="5" width="20" height="15" rx="2"/><path d="M2 9h20"/><path d="M6 5V3.5h6V5"/>'
+};
+
+function escolhaTelaSalva(){
+  let e = {};
+  try{ e = JSON.parse(localStorage.getItem('chamadaTela') || '{}') || {}; }catch(err){}
+  return {
+    fonte: FONTES_TELA[e.fonte] ? e.fonte : 'monitor',
+    qualidade: QUALIDADES_TELA[e.qualidade] ? e.qualidade : '1080',
+    som: e.som !== false
+  };
+}
+
+function ehMac(){
+  const p = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+  return /mac/i.test(p);
+}
+
 async function chamadaAlternarTela(){
   const c = chamada;
   if(!c || !telaSuportada()) return;
   if(c.tela){ await pararTelaChamada(); return; }
+  c.painelTela = true;
+  c.painelDisp = false;
+  c.volumeAberto = null;
+  c.escolhaTela = escolhaTelaSalva();
+  c.animarPainel = true;
+  desenharChamada();
+  const marcada = document.getElementById(`ch-fonte-${c.escolhaTela.fonte}`);
+  if(marcada) marcada.focus();
+}
+
+function escolherTela(campo, valor){
+  const c = chamada;
+  if(!c || !c.escolhaTela) return;
+  if(campo === 'fonte' && FONTES_TELA[valor]) c.escolhaTela.fonte = valor;
+  else if(campo === 'qualidade' && QUALIDADES_TELA[valor]) c.escolhaTela.qualidade = valor;
+  else if(campo === 'som') c.escolhaTela.som = !!valor;
+  else return;
+  try{ localStorage.setItem('chamadaTela', JSON.stringify(c.escolhaTela)); }catch(e){}
+  desenharChamada();
+}
+
+function fecharEscolhaTela(){
+  const c = chamada;
+  if(!c || !c.painelTela) return;
+  c.painelTela = false;
+  desenharChamada();
+  const b = document.getElementById('ch-btn-tela');
+  if(b) b.focus();
+}
+
+function escolhaTelaHtml(){
+  const c = chamada;
+  const e = c.escolhaTela;
+  const q = QUALIDADES_TELA[e.qualidade];
+  const somDica = !e.som ? 'Só a imagem vai para a chamada.'
+    : e.fonte === 'browser' ? 'O som da aba vai junto com a imagem.'
+    : ehMac() ? 'No Mac, o navegador só manda o som quando você transmite uma aba.'
+    : 'O som do computador vai junto, se o navegador permitir.';
+  return `
+    <div class="ch-dialogo-fundo">
+      <div class="ch-dialogo" role="dialog" aria-modal="true" aria-labelledby="ch-tela-titulo" aria-describedby="ch-tela-texto">
+        <h3 class="ch-dialogo-titulo" id="ch-tela-titulo">Transmitir a tela</h3>
+        <p class="ch-dialogo-texto" id="ch-tela-texto">Escolha o que mostrar. Depois o navegador pede para confirmar qual.</p>
+        <fieldset class="ch-fontes">
+          <legend class="sr-only">O que transmitir</legend>
+          ${Object.entries(FONTES_TELA).map(([k, f])=>`
+            <label class="ch-fonte ${e.fonte === k ? 'marcada' : ''}">
+              <input type="radio" class="sr-only" name="ch-fonte" id="ch-fonte-${k}" value="${k}" ${e.fonte === k ? 'checked' : ''} onchange="escolherTela('fonte', this.value)">
+              <span class="ch-fonte-icone" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONES_FONTE[k]}</svg></span>
+              <span class="ch-fonte-nome">${esc(f.nome)}</span>
+              <span class="ch-fonte-desc">${esc(f.desc)}</span>
+            </label>`).join('')}
+        </fieldset>
+        <fieldset class="ch-qualidade">
+          <legend class="ch-dialogo-rotulo">Qualidade</legend>
+          <div class="ch-segmentos">
+            ${Object.entries(QUALIDADES_TELA).map(([k, qq])=>`
+              <label class="ch-segmento ${e.qualidade === k ? 'marcado' : ''}">
+                <input type="radio" class="sr-only" name="ch-qualidade" id="ch-qualidade-${k}" value="${k}" ${e.qualidade === k ? 'checked' : ''} onchange="escolherTela('qualidade', this.value)">
+                ${esc(qq.rotulo)}
+              </label>`).join('')}
+          </div>
+          <p class="ch-dialogo-dica">${esc(q.dica)}</p>
+        </fieldset>
+        <label class="ch-som">
+          <span class="ch-som-texto"><span>Transmitir o som</span><span class="ch-dialogo-dica">${esc(somDica)}</span></span>
+          <input type="checkbox" role="switch" class="ch-interruptor" id="ch-tela-som" ${e.som ? 'checked' : ''} onchange="escolherTela('som', this.checked)">
+        </label>
+        <div class="ch-dialogo-acoes">
+          <button type="button" class="ch-dialogo-cancelar" id="ch-tela-cancelar" onclick="fecharEscolhaTela()">Cancelar</button>
+          <button type="button" class="ch-dialogo-ok" id="ch-tela-transmitir" onclick="transmitirTelaEscolhida()">${iconeChamada('tela', 17)}Transmitir</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// O clique em "Transmitir" é o gesto que o navegador exige para pedir a
+// tela (SEC-078): getDisplayMedia é chamado antes de qualquer espera.
+function transmitirTelaEscolhida(){
+  const c = chamada;
+  if(!c || !c.escolhaTela) return;
+  const e = c.escolhaTela;
+  const q = QUALIDADES_TELA[e.qualidade];
   const pedido = {
-    video: {width: {ideal: 1920, max: 1920}, height: {ideal: 1080, max: 1080}, frameRate: {ideal: 60, max: 60}},
-    audio: {echoCancellation: false, noiseSuppression: false, autoGainControl: false},
-    selfBrowserSurface: 'exclude', surfaceSwitching: 'include', systemAudio: 'include'
+    video: {displaySurface: e.fonte, width: {ideal: q.largura, max: q.largura}, height: {ideal: q.altura, max: q.altura}, frameRate: {ideal: q.quadros, max: q.quadros}},
+    audio: e.som ? {echoCancellation: false, noiseSuppression: false, autoGainControl: false} : false,
+    selfBrowserSurface: 'exclude', surfaceSwitching: 'include', systemAudio: e.som ? 'include' : 'exclude', monitorTypeSurfaces: 'include'
   };
+  const pedirTela = navigator.mediaDevices.getDisplayMedia(pedido);
+  c.pedindoTela = true;
+  const soltar = ()=>{ c.pedindoTela = false; c.telaPedidaAte = Date.now() + 800; };
+  pedirTela.then(soltar, soltar);
+  c.painelTela = false;
+  c.qualidadePedida = e.qualidade;
+  desenharChamada();
+  iniciarTelaChamada(c, pedirTela, pedido, q);
+}
+
+async function iniciarTelaChamada(c, pedirTela, pedido, q){
   let s;
-  try{ s = await navigator.mediaDevices.getDisplayMedia(pedido); }
+  try{ s = await pedirTela; }
   catch(e){
+    // Navegador que não conhece algum campo do pedido: tenta só com o vídeo.
     if(e && e.name === 'TypeError'){
-      try{ s = await navigator.mediaDevices.getDisplayMedia({video: pedido.video}); }catch(e2){ e = e2; }
+      c.pedindoTela = true;
+      try{ s = await navigator.mediaDevices.getDisplayMedia({video: {width: pedido.video.width, height: pedido.video.height, frameRate: pedido.video.frameRate}}); }catch(e2){ e = e2; }
+      c.pedindoTela = false;
+      c.telaPedidaAte = Date.now() + 800;
     }
     if(!s){
       if(e && e.name !== 'NotAllowedError' && e.name !== 'AbortError') showToast('Não deu para transmitir a tela.', 'erro');
@@ -10409,9 +10712,11 @@ async function chamadaAlternarTela(){
   if(chamada !== c){ s.getTracks().forEach(t=>t.stop()); return; }
   const video = s.getVideoTracks()[0];
   const audio = s.getAudioTracks()[0] || null;
-  // Nitidez antes de fluidez: texto e código continuam legíveis quando a banda
-  // aperta, e o que cai é o número de quadros (Q27).
-  try{ video.contentHint = 'detail'; }catch(e){}
+  // A 30 quadros, nitidez antes de fluidez (texto e código legíveis); a 60,
+  // o pedido é movimento. Em todos, quando a banda aperta, cai o número de
+  // quadros e não a resolução (Q27).
+  try{ video.contentHint = q.quadros >= 60 ? 'motion' : 'detail'; }catch(e){}
+  c.qualidadeTela = c.qualidadePedida || '1080';
   // "Parar de compartilhar" na barra do navegador encerra a faixa por fora.
   video.addEventListener('ended', ()=>{ if(chamada === c && c.local.tela === video) pararTelaChamada(); });
   c.tela = true;
@@ -10449,6 +10754,10 @@ async function chamadaTrocarDispositivo(tipo, id){
       for(const par of c.pares.values()){
         for(const el of Object.values(par.audio)) if(el.setSinkId) el.setSinkId(id).catch(()=>{});
       }
+      if(chamadaAudioCtx && chamadaAudioCtx.setSinkId) chamadaAudioCtx.setSinkId(id).catch(()=>{});
+      // Sem setSinkId no AudioContext, o reforço acima de 100% sairia no
+      // alto-falante padrão: volta todo mundo para o <audio>.
+      for(const par of c.pares.values()) aplicarVolumePar(par);
     }
   }catch(e){
     showToast(mensagemErroMidia(e, tipo === 'cam' ? 'a câmera' : 'o microfone'), 'erro');
@@ -10467,31 +10776,87 @@ async function chamadaAlternarDispositivos(){
   desenharChamada();
 }
 
-function chamadaVolume(uid, valor){
-  const c = chamada;
-  if(!c || !CHAMADA_UUID.test(uid)) return;
-  const v = Math.min(100, Math.max(0, Number(valor) || 0)) / 100;
-  const todos = volumesChamada();
-  todos[uid] = v;
-  try{ localStorage.setItem('chamadaVolumes', JSON.stringify(todos)); }catch(e){}
-  const par = c.pares.get(uid);
-  if(par) aplicarVolumePar(par);
-  const rotulo = document.getElementById(`ch-vol-valor-${uid}`);
-  if(rotulo) rotulo.textContent = `${Math.round(v * 100)}%`;
+function idVolume(chave){
+  return String(chave).replace(':', '-');
 }
 
-function chamadaAbrirVolume(uid, e){
+function textoVolume(a){
+  return a.mudo ? 'Silenciado' : `${Math.round(Math.min(a.v * 100, volumeMaximoChamada()))}%`;
+}
+
+function aplicarVolumeDaChave(chave){
+  const par = chamada && chamada.pares.get(String(chave).split(':')[0]);
+  if(par) aplicarVolumePar(par);
+}
+
+// No arraste, atualiza só o painel, sem redesenhar a chamada (redesenhar
+// soltaria o controle da mão). Mexer no volume tira o "silenciado".
+function chamadaVolume(chave, valor){
+  const c = chamada;
+  if(!c || !chaveVolumeValida(chave)) return;
+  const pct = Math.min(volumeMaximoChamada(), Math.max(0, Math.round(Number(valor) || 0)));
+  guardarAjusteDeVolume(chave, {v: pct / 100, mudo: false});
+  aplicarVolumeDaChave(chave);
+  atualizarPainelVolume(chave);
+}
+
+function atualizarPainelVolume(chave){
+  const id = idVolume(chave);
+  const a = ajusteDeVolume(chave);
+  const max = volumeMaximoChamada();
+  const pct = Math.min(max, Math.round(a.v * 100));
+  const barra = document.getElementById(`ch-vol-${id}`);
+  if(!barra) return;
+  if(Number(barra.value) !== pct) barra.value = String(pct);
+  barra.style.setProperty('--f', String(pct / max));
+  barra.setAttribute('aria-valuetext', textoVolume(a));
+  const caixa = barra.closest('.ch-volume');
+  if(caixa) caixa.classList.toggle('mudo', a.mudo);
+  const valor = document.getElementById(`ch-vol-valor-${id}`);
+  if(valor) valor.textContent = textoVolume(a);
+  const mudo = document.getElementById(`ch-vol-mudo-${id}`);
+  if(mudo){ mudo.setAttribute('aria-pressed', String(a.mudo)); mudo.innerHTML = iconeChamada(a.mudo ? 'volumeOff' : 'volume', 16); }
+  const redefinir = document.getElementById(`ch-vol-redefinir-${id}`);
+  if(redefinir) redefinir.hidden = pct === 100;
+}
+
+function chamadaSilenciar(chave){
+  const c = chamada;
+  if(!c || !chaveVolumeValida(chave)) return;
+  const a = ajusteDeVolume(chave);
+  guardarAjusteDeVolume(chave, {v: a.v, mudo: !a.mudo});
+  aplicarVolumeDaChave(chave);
+  desenharChamada();
+}
+
+function chamadaRedefinirVolume(chave){
+  chamadaVolume(chave, 100);
+  desenharChamada();
+  const barra = document.getElementById(`ch-vol-${idVolume(chave)}`);
+  if(barra) barra.focus();
+}
+
+function chamadaAbrirVolume(chave, e){
   if(e) e.stopPropagation();
   const c = chamada;
-  if(!c) return;
-  c.volumeAberto = c.volumeAberto === uid ? null : uid;
+  if(!c || !chaveVolumeValida(chave)) return;
+  c.volumeAberto = c.volumeAberto === chave ? null : chave;
   if(c.volumeAberto) c.animarPainel = true;
   desenharChamada();
   if(c.volumeAberto){
-    const r = document.getElementById(`ch-vol-${uid}`);
+    const r = document.getElementById(`ch-vol-${idVolume(chave)}`);
     if(r) r.focus();
   }
 }
+
+// Clique fora fecha o painel de volume (depois da ação do próprio clique).
+document.addEventListener('click', (e)=>{
+  const c = chamada;
+  if(!c || !c.volumeAberto) return;
+  if(e.target.closest && e.target.closest('.ch-volume, [data-volume-botao]')) return;
+  c.volumeAberto = null;
+  desenharChamada();
+});
 
 function chamadaDestacar(chave, e){
   if(e) e.stopPropagation();
@@ -10516,6 +10881,7 @@ function chamadaMinimizar(){
   comTransicaoChamada(()=>{
     c.modo = 'mini';
     c.painelDisp = false;
+    c.painelTela = false;
     c.volumeAberto = null;
     desenharChamada();
   }).then(()=>{
@@ -10525,6 +10891,7 @@ function chamadaMinimizar(){
 }
 
 function chamadaExpandir(){
+  if(janelaFlutuante){ chamadaVoltarParaAba(); return; }
   const c = chamada;
   if(!c || c.modo === 'expandida') return;
   comTransicaoChamada(()=>{
@@ -10539,11 +10906,151 @@ function chamadaExpandir(){
 document.addEventListener('keydown', (e)=>{
   if(e.key !== 'Escape' || !chamada || e.defaultPrevented) return;
   if(topOpenModal() || document.fullscreenElement) return;
+  // O Esc que fecha o seletor de tela do navegador pode chegar aqui também; não
+  // é para minimizar a chamada.
+  if(chamada.pedindoTela || Date.now() < (chamada.telaPedidaAte || 0)) return;
+  if(chamada.painelTela){ fecharEscolhaTela(); return; }
   if(chamada.painelDisp || chamada.volumeAberto){
+    const voltar = chamada.volumeAberto ? document.getElementById(`ch-vol-btn-${idVolume(chamada.volumeAberto)}`) : null;
     chamada.painelDisp = false;
     chamada.volumeAberto = null;
     desenharChamada();
+    const b = voltar && document.getElementById(voltar.id);
+    if(b) b.focus();
   }else if(chamada.modo === 'expandida') chamadaMinimizar();
+});
+
+// Com a escolha da tela aberta, o Tab fica dentro dela, como nos modais.
+document.addEventListener('keydown', (e)=>{
+  if(e.key !== 'Tab' || !chamada || !chamada.painelTela) return;
+  const caixa = document.querySelector('#chamada .ch-dialogo');
+  if(!caixa) return;
+  const alvos = focusablesIn(caixa).filter(el=>!(el.type === 'radio' && !el.checked));
+  if(!alvos.length) return;
+  const primeiro = alvos[0], ultimo = alvos[alvos.length - 1];
+  if(e.shiftKey && document.activeElement === primeiro){ e.preventDefault(); ultimo.focus(); }
+  else if(!e.shiftKey && document.activeElement === ultimo){ e.preventDefault(); primeiro.focus(); }
+  else if(!caixa.contains(document.activeElement)){ e.preventDefault(); primeiro.focus(); }
+});
+
+/* --- janela flutuante (Document Picture-in-Picture) --- */
+
+// Como no Meet: a chamada sai numa janela pequena que fica por cima das
+// outras abas e dos outros programas. É a própria janela da chamada,
+// minimizada, movida para o documento da janela flutuante; os <audio>
+// continuam na página. Abre pelo botão ou sozinha ao trocar de aba, onde o
+// navegador permite. Só Chrome e Edge no computador têm a API. O estado fica
+// em `janelaFlutuante`, declarada no topo do bloco da chamada.
+
+function janelaFlutuanteSuportada(){
+  return 'documentPictureInPicture' in window;
+}
+
+function docChamada(){
+  return janelaFlutuante ? janelaFlutuante.win.document : document;
+}
+
+function docsChamada(){
+  return janelaFlutuante ? [document, janelaFlutuante.win.document] : [document];
+}
+
+async function abrirJanelaFlutuante(auto){
+  const c = chamada;
+  if(!c || janelaFlutuante || !janelaFlutuanteSuportada()) return;
+  let win;
+  try{
+    win = await window.documentPictureInPicture.requestWindow({width: 380, height: 270});
+  }catch(e){
+    if(auto !== true) showToast('O navegador não abriu a janela flutuante.', 'erro');
+    return;
+  }
+  if(chamada !== c || janelaFlutuante){ win.close(); return; }
+  prepararJanelaFlutuante(win);
+  const raiz = document.getElementById('chamada');
+  janelaFlutuante = {win, auto: auto === true, modoAntes: c.modo, voltarExpandida: false};
+  c.modo = 'mini';
+  c.painelDisp = false;
+  c.painelTela = false;
+  c.volumeAberto = null;
+  if(raiz) win.document.body.appendChild(raiz);
+  win.addEventListener('pagehide', ()=>voltarDaJanelaFlutuante(win), {once: true});
+  trocarRelogioFala();
+  desenharChamada();
+}
+
+// A janela flutuante nasce em branco: leva os estilos e o tema do app.
+function prepararJanelaFlutuante(win){
+  const d = win.document;
+  for(const folha of document.querySelectorAll('link[rel="stylesheet"], style')){
+    let copia;
+    if(folha.tagName === 'LINK'){
+      copia = d.createElement('link');
+      copia.rel = 'stylesheet';
+      copia.href = folha.href;
+    }else{
+      copia = d.createElement('style');
+      copia.textContent = folha.textContent;
+    }
+    d.head.appendChild(copia);
+  }
+  d.documentElement.className = document.documentElement.className;
+  const tema = document.documentElement.getAttribute('data-theme');
+  if(tema !== null) d.documentElement.setAttribute('data-theme', tema);
+  d.documentElement.lang = document.documentElement.lang || 'pt-BR';
+  d.body.className = `${document.body.className} corpo-flutuante`;
+  const p = projetoDaChamada(chamada.pid);
+  d.title = `Chamada · ${p ? p.name : 'Projeto'}`;
+}
+
+// Os onclick do HTML da chamada rodam no escopo global da janela onde o
+// elemento está. Na flutuante, as funções do app precisam existir lá também.
+function exporFuncoesNaJanela(win, html){
+  for(const atributo of html.matchAll(/\son[a-z]+="([^"]*)"/g)){
+    for(const chamadaJs of atributo[1].matchAll(/([A-Za-z_$][\w$]*)\s*\(/g)){
+      const nome = chamadaJs[1];
+      if(typeof window[nome] === 'function' && win[nome] !== window[nome]) win[nome] = window[nome];
+    }
+  }
+}
+
+// Fechou a flutuante (pelo X, pelo "voltar para a aba" do navegador ou pelo
+// nosso): a janela da chamada volta para a página, no modo em que estava.
+function voltarDaJanelaFlutuante(win){
+  const j = janelaFlutuante;
+  if(!j || j.win !== win) return;
+  janelaFlutuante = null;
+  trocarRelogioFala();
+  const raiz = win.document.getElementById('chamada');
+  const c = chamada;
+  if(!c){ if(raiz) raiz.remove(); return; }
+  if(raiz) document.body.appendChild(raiz);
+  c.modo = j.voltarExpandida ? 'expandida' : j.modoAntes;
+  desenharChamada();
+}
+
+function chamadaVoltarParaAba(){
+  const j = janelaFlutuante;
+  if(!j) return;
+  j.voltarExpandida = true;
+  try{ window.focus(); }catch(e){}
+  j.win.close();
+}
+
+// Troca de aba com a chamada aberta: o navegador oferece abrir a flutuante
+// sozinho (Chrome 134+, e a pessoa pode desligar). Ao voltar para a aba, a
+// que abriu sozinha fecha.
+function ligarFlutuanteAutomatico(){
+  if(!janelaFlutuanteSuportada() || !('mediaSession' in navigator)) return;
+  try{ navigator.mediaSession.setActionHandler('enterpictureinpicture', ()=>abrirJanelaFlutuante(true)); }catch(e){}
+}
+
+function desligarFlutuanteAutomatico(){
+  if(!('mediaSession' in navigator)) return;
+  try{ navigator.mediaSession.setActionHandler('enterpictureinpicture', null); }catch(e){}
+}
+
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible' && janelaFlutuante && janelaFlutuante.auto) janelaFlutuante.win.close();
 });
 
 /* --- desenho da janela --- */
@@ -10558,7 +11065,7 @@ function ladrilhosChamada(){
   if(!c) return [];
   const eu = session.user.id;
   const pessoas = [
-    {uid: eu, mic: c.mic && !!c.local.voz, ensurdecido: c.ensurdecido, camera: c.camera, tela: c.tela},
+    {uid: eu, mic: c.mic && !!c.local.voz, ensurdecido: c.ensurdecido, camera: c.camera, tela: c.tela, telaSom: !!(c.tela && c.local.telaAudio)},
     ...c.participantes.values()
   ];
   const lista = [];
@@ -10614,15 +11121,23 @@ function marcarVideoQuandoPronto(v){
 // Troca de modo com a View Transition do navegador: o palco encolhe até a
 // janela do canto e ela cresce de volta, no lugar de trocar de uma vez. Sem
 // suporte, ou com movimento reduzido, troca direto.
+// Enquanto uma View Transition está em andamento, a página não recebe clique.
+// Sem foco (o seletor de tela do navegador aberto ou fechando, outra janela na
+// frente) ou com a aba escondida, o navegador pode não desenhar o quadro que
+// a transição espera, e ela ficava parada: o site travava até trocar de aba,
+// que é quando o navegador a pula. Nesses casos troca direto, e uma transição
+// que passe de 1,5 s (a mais longa dura 0,4 s) é pulada.
 function comTransicaoChamada(mudar){
   const reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(!document.startViewTransition || reduzir){ mudar(); return Promise.resolve(); }
+  if(!document.startViewTransition || reduzir || janelaFlutuante || document.visibilityState !== 'visible' || !document.hasFocus()){ mudar(); return Promise.resolve(); }
   try{
     const t = document.startViewTransition(mudar);
     // Uma transição nova no meio de outra faz o navegador pular a antiga e
     // rejeitar as promessas dela; não é erro, só não anima.
     t.ready.catch(()=>{});
     t.finished.catch(()=>{});
+    const vigia = setTimeout(()=>{ try{ t.skipTransition(); }catch(e){} }, 1500);
+    t.finished.then(()=>clearTimeout(vigia), ()=>clearTimeout(vigia));
     return t.updateCallbackDone.catch(()=>{});
   }catch(e){
     mudar();
@@ -10651,15 +11166,41 @@ function ladrilhoChamadaHtml(l, opts){
   const rotulo = tela ? (eu ? 'Sua tela' : `Tela de ${nome}`) : (eu ? `${nome} (você)` : nome);
   const estado = tela ? '' : estadoDoLadrilho(l.uid);
   const destacado = c.destaque === l.chave;
-  const icones = !tela ? `${l.p.ensurdecido ? `<span class="ch-rotulo-icone" title="Ensurdecido">${iconeChamada('foneOff', 14)}</span>` : (!l.p.mic ? `<span class="ch-rotulo-icone" title="Microfone fechado">${iconeChamada('micOff', 14)}</span>` : '')}` : '';
-  const volume = !eu && !tela && !o.mini ? `
-      <button type="button" class="ch-acao" onclick="chamadaAbrirVolume('${l.uid}', event)" aria-expanded="${c.volumeAberto === l.uid}" aria-label="Volume de ${esc(nome)}" title="Volume">${iconeChamada('volume', 15)}</button>` : '';
-  const painelVolume = c.volumeAberto === l.uid && !o.mini ? `
-      <div class="ch-volume">
-        <label for="ch-vol-${l.uid}">Volume</label>
-        <input type="range" id="ch-vol-${l.uid}" min="0" max="100" step="5" value="${Math.round(volumeDe(l.uid) * 100)}" oninput="chamadaVolume('${l.uid}', this.value)">
-        <span id="ch-vol-valor-${l.uid}">${Math.round(volumeDe(l.uid) * 100)}%</span>
-      </div>` : '';
+  // Volume de cada um, só para mim: a voz no ladrilho da pessoa e o som da
+  // transmissão no ladrilho da tela, quando ela vem com som.
+  const chaveVol = eu || o.mini ? null : tela ? (l.p.telaSom ? `${l.uid}:tela` : null) : l.uid;
+  const aVol = chaveVol ? ajusteDeVolume(chaveVol) : null;
+  const silenciado = chaveVol && aVol.mudo ? `<span class="ch-rotulo-icone" title="Silenciado para você">${iconeChamada('volumeOff', 14)}</span>` : '';
+  const icones = (!tela ? `${l.p.ensurdecido ? `<span class="ch-rotulo-icone" title="Ensurdecido">${iconeChamada('foneOff', 14)}</span>` : (!l.p.mic ? `<span class="ch-rotulo-icone" title="Microfone fechado">${iconeChamada('micOff', 14)}</span>` : '')}` : '') + silenciado;
+  const volAberto = !!chaveVol && c.volumeAberto === chaveVol;
+  const rotuloVol = tela ? 'Som da tela' : 'Volume';
+  const volume = chaveVol ? `
+      <button type="button" class="ch-acao ${aVol.mudo ? 'silenciado' : ''}" id="ch-vol-btn-${idVolume(chaveVol)}" data-volume-botao onclick="chamadaAbrirVolume('${chaveVol}', event)" aria-expanded="${volAberto}" aria-label="${rotuloVol} de ${esc(nome)}: ${textoVolume(aVol)}"${volAberto ? '' : ` title="${rotuloVol}"`}>${iconeChamada(aVol.mudo ? 'volumeOff' : 'volume', 15)}</button>` : '';
+  let painelVolume = '';
+  if(volAberto){
+    const id = idVolume(chaveVol);
+    const max = volumeMaximoChamada();
+    const pct = Math.min(max, Math.round(aVol.v * 100));
+    const quem = tela ? `a tela de ${nome}` : nome;
+    painelVolume = `
+      <div class="ch-volume ${aVol.mudo ? 'mudo' : ''}" role="group" aria-labelledby="ch-vol-titulo-${id}">
+        <div class="ch-volume-topo">
+          <span class="ch-volume-titulo" id="ch-vol-titulo-${id}">${esc(tela ? `Som da tela de ${nome}` : nome)}</span>
+          <span class="ch-volume-valor" id="ch-vol-valor-${id}" aria-hidden="true">${textoVolume(aVol)}</span>
+        </div>
+        <div class="ch-volume-linha">
+          <button type="button" class="ch-volume-mudo" id="ch-vol-mudo-${id}" onclick="chamadaSilenciar('${chaveVol}')" aria-pressed="${aVol.mudo}" aria-label="Silenciar ${esc(quem)} para você" title="Silenciar para você">${iconeChamada(aVol.mudo ? 'volumeOff' : 'volume', 16)}</button>
+          <span class="ch-volume-trilho">
+            ${max > 100 ? '<span class="ch-volume-marca" aria-hidden="true"></span>' : ''}
+            <input type="range" class="ch-volume-barra" id="ch-vol-${id}" min="0" max="${max}" step="5" value="${pct}" style="--f:${pct / max};--m:${100 / max}" aria-label="Volume de ${esc(quem)}" aria-valuetext="${textoVolume(aVol)}" oninput="chamadaVolume('${chaveVol}', this.value)" onchange="desenharChamada()">
+          </span>
+        </div>
+        <div class="ch-volume-pe">
+          <span>Só para você</span>
+          <button type="button" class="ch-volume-redefinir" id="ch-vol-redefinir-${id}" onclick="chamadaRedefinirVolume('${chaveVol}')"${pct === 100 ? ' hidden' : ''}>Voltar a 100%</button>
+        </div>
+      </div>`;
+  }
   // O ladrilho inteiro é um botão (transparente, por baixo do nome e das
   // ações) que põe ou tira do destaque.
   return `
@@ -10692,7 +11233,13 @@ function controlesChamadaHtml(mini){
     partes.push(botaoChamada('ch-btn-cam', 'chamadaAlternarCamera()', c.camera ? 'cam' : 'camOff', c.camera ? 'Desligar a câmera' : 'Ligar a câmera', c.camera ? '' : 'desligado', !c.camera));
     if(telaSuportada()) partes.push(botaoChamada('ch-btn-tela', 'chamadaAlternarTela()', 'tela', c.tela ? 'Parar de transmitir a tela' : 'Transmitir a tela', c.tela ? 'ativo' : '', c.tela));
     partes.push(botaoChamada('ch-btn-disp', 'chamadaAlternarDispositivos()', 'ajustes', 'Microfone, câmera e alto-falante', c.painelDisp ? 'ativo' : '', c.painelDisp));
+  }else if(janelaFlutuante){
+    // Na janela flutuante, a câmera também, e a volta para a aba no lugar de
+    // abrir a chamada.
+    partes.push(botaoChamada('ch-btn-cam-mini', 'chamadaAlternarCamera()', c.camera ? 'cam' : 'camOff', c.camera ? 'Desligar a câmera' : 'Ligar a câmera', c.camera ? '' : 'desligado', !c.camera));
+    partes.push(botaoChamada('ch-btn-voltar-aba', 'chamadaVoltarParaAba()', 'expandir', 'Voltar para a aba da chamada', ''));
   }else{
+    if(janelaFlutuanteSuportada()) partes.push(botaoChamada('ch-btn-flutuar-mini', 'abrirJanelaFlutuante()', 'flutuar', 'Janela flutuante, por cima dos outros programas', ''));
     partes.push(botaoChamada('ch-btn-expandir', 'chamadaExpandir()', 'expandir', 'Abrir a chamada', ''));
   }
   partes.push(`<button type="button" id="${mini ? 'ch-btn-sair-mini' : 'ch-btn-sair'}" class="ch-sair" onclick="chamadaSair()" aria-label="Sair da chamada" title="Sair da chamada">${iconeChamada('sair')}${mini ? '' : '<span>Sair</span>'}</button>`);
@@ -10722,19 +11269,21 @@ function colunasDaGrade(n){
 
 function desenharChamada(){
   const c = chamada;
-  let raiz = document.getElementById('chamada');
+  const doc = docChamada();
+  let raiz = doc.getElementById('chamada');
   if(!c){ if(raiz) raiz.remove(); return; }
   if(!raiz){
-    raiz = document.createElement('section');
+    raiz = doc.createElement('section');
     raiz.id = 'chamada';
     raiz.className = 'chamada';
-    document.body.appendChild(raiz);
+    doc.body.appendChild(raiz);
   }
+  raiz.classList.toggle('na-janela', doc !== document);
   const p = projetoDaChamada(c.pid);
   const nomeProjeto = p ? p.name : 'Projeto';
   raiz.dataset.modo = c.modo;
   raiz.setAttribute('aria-label', `Chamada em ${nomeProjeto}`);
-  const foco = document.activeElement && raiz.contains(document.activeElement) ? document.activeElement.id : null;
+  const foco = doc.activeElement && raiz.contains(doc.activeElement) ? doc.activeElement.id : null;
   const ladrilhos = ladrilhosChamada();
   const pessoas = 1 + c.participantes.size;
   let html;
@@ -10792,6 +11341,7 @@ function desenharChamada(){
         </div>
         <div class="ch-topo-acoes">
           ${c.semTurn ? '<span class="ch-aviso-turn" title="Sem o servidor de apoio (TURN), em algumas redes a conexão não sai.">Conexão direta</span>' : ''}
+          ${janelaFlutuanteSuportada() ? `<button type="button" id="ch-btn-flutuar" class="ch-botao ch-botao-leve" onclick="abrirJanelaFlutuante()" aria-label="Janela flutuante, por cima dos outros programas" title="Janela flutuante">${iconeChamada('flutuar', 18)}</button>` : ''}
           <button type="button" id="ch-btn-minimizar" class="ch-botao ch-botao-leve" onclick="chamadaMinimizar()" aria-label="Minimizar a chamada (Esc)" title="Minimizar (Esc)">${iconeChamada('minimizar', 18)}</button>
         </div>
       </header>
@@ -10800,10 +11350,12 @@ function desenharChamada(){
         ${c.painelDisp ? `<div class="ch-painel-disp" role="group" aria-label="Dispositivos">${seletoresDispositivo(c.dispositivos, 'chamadaTrocarDispositivo') || '<p>Nenhum dispositivo encontrado.</p>'}</div>` : ''}
         <div class="ch-controles">${controlesChamadaHtml(false)}</div>
       </div>
+      ${c.painelTela && c.escolhaTela ? escolhaTelaHtml() : ''}
       <div class="sr-only" aria-live="polite" id="ch-anuncio"></div>`;
   }
-  const anuncio = document.getElementById('ch-anuncio');
+  const anuncio = doc.getElementById('ch-anuncio');
   const textoAnuncio = anuncio ? anuncio.textContent : '';
+  if(doc !== document) exporFuncoesNaJanela(doc.defaultView, html);
   raiz.innerHTML = html;
   raiz.querySelectorAll('[data-slot]').forEach(slot=>{
     const v = videoDaChamada(slot.dataset.slot);
@@ -10831,15 +11383,15 @@ function desenharChamada(){
   });
   chamadaDesenho = {modo: c.modo, chaves};
   if(c.animarPainel){
-    raiz.querySelectorAll('.ch-painel-disp, .ch-volume').forEach(el=>el.classList.add('abrindo'));
+    raiz.querySelectorAll('.ch-painel-disp, .ch-volume, .ch-dialogo-fundo').forEach(el=>el.classList.add('abrindo'));
     c.animarPainel = false;
   }
-  const novoAnuncio = document.getElementById('ch-anuncio');
+  const novoAnuncio = doc.getElementById('ch-anuncio');
   if(novoAnuncio && textoAnuncio) novoAnuncio.textContent = textoAnuncio;
   for(const [chave, m] of falaMedidores) if(m.falando) marcarFalaChamada(chave, true);
   atualizarTempoChamada();
   if(foco){
-    const el = document.getElementById(foco);
+    const el = doc.getElementById(foco);
     if(el) el.focus();
   }
 }
@@ -10847,7 +11399,7 @@ function desenharChamada(){
 function atualizarTempoChamada(){
   if(!chamada) return;
   const t = formatarDuracaoChamada(Date.now() - chamada.inicio);
-  document.querySelectorAll('.ch-tempo').forEach(el=>{ el.textContent = t; });
+  for(const d of docsChamada()) d.querySelectorAll('.ch-tempo').forEach(el=>{ el.textContent = t; });
 }
 
 function iniciarRelogioChamada(){
