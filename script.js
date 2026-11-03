@@ -9718,10 +9718,35 @@ function criarParChamada(uid, sessao, ofertante){
     for(const tipo of CHAMADA_FAIXAS){
       par.transceptores[tipo] = pc.addTransceiver(tipo === 'voz' || tipo === 'telaAudio' ? 'audio' : 'video', {direction: 'sendrecv'});
     }
+    preferirCodecsDeVideo(par);
     aplicarFaixasLocaisNoPar(par);
     enfileirarPar(par, ()=>enviarOfertaChamada(par, false));
   }
   return par;
+}
+
+// H.264 primeiro na câmera e na tela. Na malha, cada um codifica o próprio
+// vídeo uma vez para cada pessoa; o VP8, que o navegador usa por padrão, roda
+// no processador, e com 4 pessoas e uma tela transmitida o computador não dava
+// conta: as câmeras chegavam aos trancos (uns 8 quadros por segundo). O H.264
+// é codificado e decodificado no hardware no Mac, no iPhone e na maioria dos
+// PCs. Cada lado manda no codec que o outro lista primeiro, então os dois
+// listam o H.264 na frente; quem não tem H.264 (o Firefox sem o OpenH264, por
+// exemplo) segue no VP8, que continua na lista.
+function preferirCodecsDeVideo(par){
+  if(!window.RTCRtpReceiver || !RTCRtpReceiver.getCapabilities) return;
+  const caps = RTCRtpReceiver.getCapabilities('video');
+  if(!caps || !caps.codecs) return;
+  const h264 = caps.codecs.filter(c=>/^video\/h264$/i.test(c.mimeType) && /packetization-mode=1/.test(c.sdpFmtpLine || ''));
+  if(!h264.length) return;
+  // Constrained Baseline (42e0) na frente: é o perfil que todo codificador
+  // de hardware aceita.
+  h264.sort((a, b)=>Number(/profile-level-id=42e0/i.test(b.sdpFmtpLine)) - Number(/profile-level-id=42e0/i.test(a.sdpFmtpLine)));
+  const ordem = [...h264, ...caps.codecs.filter(c=>!h264.includes(c))];
+  for(const tipo of ['cam', 'tela']){
+    const t = par.transceptores[tipo];
+    if(t && t.setCodecPreferences){ try{ t.setCodecPreferences(ordem); }catch(e){} }
+  }
 }
 
 async function enviarOfertaChamada(par, reiniciarIce){
@@ -9745,6 +9770,7 @@ async function aceitarOfertaChamada(par, oferta){
       par.transceptores[tipo] = t;
       t.direction = 'sendrecv';
     });
+    preferirCodecsDeVideo(par);
   }
   // Toda oferta, não só a primeira, recoloca as faixas de agora: numa
   // renegociação a câmera religada ficava de fora e quem recebia via preto.
@@ -10098,16 +10124,30 @@ async function definirEnvioChamada(transceptor, enc, preferencia){
   }
 }
 
-// Câmera e tela com 'maintain-resolution': medido no Chromium, com 'balanced'
-// ou sem preferência a câmera começava em 320x180 e levava mais de 15 s para
-// subir, mesmo com banda sobrando; assim ela já sai em 720p, e quando a banda
-// aperta o que cai é o número de quadros, não a nitidez (Q27).
+// A tela vai com 'maintain-resolution': quando a banda ou o processador
+// apertam, cai o número de quadros e o texto continua legível (Q27). A
+// câmera ia assim também, e numa chamada de 4 com tela transmitida as caras
+// chegavam aos trancos (uns 8 quadros por segundo, com congelamentos de até
+// 0,7 s). Rosto pede movimento: a câmera vai com 'maintain-framerate', que
+// mantém os quadros e baixa a resolução quando falta banda ou processador.
+// Só que, com ela, a conexão nova começa em 320x180 e leva uns 15 s para
+// chegar a 720p. Por isso os primeiros 12 s de cada conexão vão com
+// 'maintain-resolution', que já sai em 720p, e depois troca.
+const CHAMADA_ARRANQUE_MS = 12000;
 function ajustarQualidadePar(par){
   const c = chamada;
   if(!c) return;
   const teto = tetoDaChamada(c.pares.size);
+  const idade = Date.now() - (par.criadoEm || 0);
+  const arrancando = idade < CHAMADA_ARRANQUE_MS;
+  if(arrancando && !par.trocaDePreferencia){
+    par.trocaDePreferencia = setTimeout(()=>{
+      par.trocaDePreferencia = null;
+      if(chamada && chamada.pares.get(par.uid) === par) ajustarQualidadePar(par);
+    }, CHAMADA_ARRANQUE_MS - idade + 200);
+  }
   definirEnvioChamada(par.transceptores.voz, {maxBitrate: 64000});
-  definirEnvioChamada(par.transceptores.cam, {maxBitrate: teto.cam, maxFramerate: teto.camQuadros, scaleResolutionDownBy: teto.camEscala}, 'maintain-resolution');
+  definirEnvioChamada(par.transceptores.cam, {maxBitrate: teto.cam, maxFramerate: teto.camQuadros, scaleResolutionDownBy: teto.camEscala}, arrancando ? 'maintain-resolution' : 'maintain-framerate');
   // A qualidade escolhida para a tela é um teto a mais: 720p não precisa da
   // taxa do 1080p, e 30 quadros não mandam 60.
   const q = QUALIDADES_TELA[c.qualidadeTela] || QUALIDADES_TELA['1080'];
