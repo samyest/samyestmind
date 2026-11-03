@@ -2245,6 +2245,10 @@
   /* Sair: o telefone inclina, como quem vai pôr no gancho. */
   .ch-sair svg{transition:transform .3s cubic-bezier(.34,1.56,.64,1);}
   .ch-sair:hover svg{transform:rotate(-14deg) translateY(1px);}
+  /* O risco do telefone se desenha de ponta a ponta no hover (e no foco pelo
+     teclado), e se apaga ao sair. */
+  .ch-sair .ch-risco{stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset .28s cubic-bezier(.4,0,.2,1);}
+  .ch-sair:hover .ch-risco, .ch-sair:focus-visible .ch-risco{stroke-dashoffset:0;}
 
   /* Anel de foco só para quem usa o teclado (ver ouvirModalidadeChamada). */
   .chamada.via-ponteiro button:focus-visible{outline:none;}
