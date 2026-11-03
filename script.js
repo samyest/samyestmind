@@ -8982,7 +8982,8 @@ function horaChat(iso){
 }
 
 // Mensagens agrupadas por dia e, dentro do dia, por autor: o nome e a foto
-// aparecem uma vez por sequência, e não a cada mensagem.
+// aparecem uma vez por sequência, e não a cada mensagem. As suas também levam
+// nome e foto, do lado direito, para a conversa ler igual para todo mundo.
 function renderListaChat(p, c){
   if(!c.lista.length){
     return `<div class="chat-vazio"><strong>Nenhuma mensagem ainda.</strong>Todo mundo do projeto lê e escreve aqui, inclusive quem só visualiza.</div>`;
@@ -9012,13 +9013,15 @@ function renderListaChat(p, c){
     const novoGrupo = m.authorId !== autorAnterior || t - ultimaHora > 10 * 60 * 1000;
     autorAnterior = m.authorId;
     ultimaHora = t;
-    const nome = nomeAutorChat(p, m.authorId);
+    // nomeAutorChat diz "Você" para a própria conta (serve à notificação);
+    // no balão vai o nome do perfil, o mesmo que os outros veem.
+    const nome = minha ? (getUserName() || 'Você') : nomeAutorChat(p, m.authorId);
     const podeApagar = !m.apagada && (isOwner || minha);
     html += `
       <div class="chat-msg ${minha ? 'minha' : ''} ${novoGrupo ? 'inicio' : ''}">
-        ${novoGrupo && !minha ? `<div class="chat-msg-avatar">${avatarChip(perfilAutorChat(p, m.authorId), nome[0])}</div>` : ''}
+        ${novoGrupo ? `<div class="chat-msg-avatar">${avatarChip(perfilAutorChat(p, m.authorId), nome[0])}</div>` : ''}
         <div class="chat-msg-corpo">
-          ${novoGrupo ? `<div class="chat-msg-quem">${minha ? '' : `<span class="chat-msg-nome">${esc(nome)}</span>`}<time datetime="${esc(m.created)}">${horaChat(m.created)}</time></div>` : ''}
+          ${novoGrupo ? `<div class="chat-msg-quem"><span class="chat-msg-nome">${esc(nome)}</span><time datetime="${esc(m.created)}">${horaChat(m.created)}</time></div>` : ''}
           <div class="chat-msg-linha">
             ${m.apagada
               ? `<div class="chat-balao apagada">mensagem apagada</div>`
