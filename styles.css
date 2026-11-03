@@ -1677,13 +1677,17 @@
   .chat-sistema{margin:8px 0;text-align:center;font-size:12px;color:var(--text-muted);}
   .chat-msg{display:flex;gap:10px;padding-left:38px;}
   .chat-msg.inicio{margin-top:10px;padding-left:0;}
-  .chat-msg.minha{justify-content:flex-end;padding-left:0;}
+  /* As suas espelham as dos outros: foto à direita, e a sequência recuada da
+     largura dela (28px + 10px de vão) para os balões ficarem alinhados. */
+  .chat-msg.minha{flex-direction:row-reverse;padding-left:0;padding-right:38px;}
+  .chat-msg.minha.inicio{padding-right:0;}
   .chat-msg-avatar{flex-shrink:0;padding-top:20px;}
   .chat-msg-avatar .member-avatar{width:28px;height:28px;}
   .chat-msg-corpo{display:flex;flex-direction:column;align-items:flex-start;min-width:0;max-width:min(78%, 580px);}
   .chat-msg.minha .chat-msg-corpo{align-items:flex-end;}
   .chat-msg-quem{display:flex;align-items:baseline;gap:8px;margin:0 4px 3px;font-size:11.5px;color:var(--text-soft);font-variant-numeric:tabular-nums;}
   .chat-msg-nome{font-weight:500;color:var(--text-strong);}
+  .chat-msg.minha .chat-msg-quem{flex-direction:row-reverse;}
   .chat-msg-linha{display:flex;align-items:center;gap:4px;max-width:100%;}
   .chat-msg.minha .chat-msg-linha{flex-direction:row-reverse;}
   .chat-balao{
