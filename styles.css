@@ -2251,6 +2251,44 @@
     justify-content:space-between;
     gap:10px;
   }
+  /* Criar projeto e entrar com código: um campo só, sem a moldura de
+     cabeçalho e rodapé do modal comum. O título diz o que é; a linha de baixo,
+     o que acontece. */
+  .modal.modal-rapido{max-width:440px;position:relative;}
+  .modal-rapido-corpo{display:flex;flex-direction:column;padding:30px 30px 4px;}
+  .modal-rapido-titulo{
+    margin:0 44px 8px 0;
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:500;
+    font-size:22px;
+    line-height:1.15;
+    letter-spacing:-0.02em;
+    color:var(--text-strong);
+  }
+  .modal-rapido-texto{margin:0 0 20px;font-size:13.5px;line-height:1.55;color:var(--text-muted);text-wrap:pretty;}
+  .modal-rapido .modal-rapido-campo{height:48px;padding:0 16px;font-size:15px;border-radius:12px;}
+  /* No código, o campo tem cara de código: grande, espaçado e no centro. O
+     espaço entre letras sobra depois da última; o recuo à esquerda compensa. */
+  #projeto-rapido[data-modo="codigo"] .modal-rapido-campo{
+    height:62px;
+    padding-left:calc(16px + 0.3em);
+    font-family:'JetBrains Mono',monospace;
+    font-size:24px;
+    letter-spacing:0.3em;
+    text-align:center;
+    text-transform:uppercase;
+  }
+  #projeto-rapido[data-modo="codigo"] .modal-rapido-campo::placeholder{color:color-mix(in srgb, var(--text-soft) 55%, transparent);}
+  .modal-rapido-erro{margin:10px 2px 0;font-size:12.5px;line-height:1.45;color:var(--danger);}
+  .modal-rapido-dica{margin:10px 2px 0;font-size:12.5px;color:var(--text-soft);}
+  .modal-rapido-dica:empty{display:none;}
+  .modal-rapido-acoes{display:flex;justify-content:flex-end;gap:8px;padding:22px 30px 26px;}
+  .modal-rapido-fechar{position:absolute;top:20px;right:20px;}
+  @media (max-width:900px){
+    .modal-rapido-corpo{padding:26px 22px 4px;}
+    .modal-rapido-acoes{padding:20px 22px calc(20px + env(safe-area-inset-bottom));}
+    .modal-rapido-acoes button{flex:1;justify-content:center;}
+  }
   .btn-danger{
     padding:10px 16px;
     color:var(--danger);

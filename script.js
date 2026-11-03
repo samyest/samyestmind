@@ -2811,27 +2811,121 @@ function escolherNovoProjeto(k){
   else novoProjetoRapido();
 }
 
-// Pede o código (ou o link inteiro), entra no projeto e já abre ele.
-async function entrarComCodigoRapido(){
-  const valor = await perguntar('Entrar com código de convite', {label: 'Código ou link do convite', placeholder: 'Ex: 7F3K2A', okLabel: 'Entrar no projeto'});
-  if(!valor) return;
-  const code = codigoDoConvite(valor);
-  if(!code){ showToast('Esse código não parece certo. Confira o que te mandaram e tente de novo.', 'erro'); return; }
-  const r = await aceitarCodigoDeConvite(code);
-  if(!r) return;
-  if(r.project_id && state.projects.some(p=>p.id === r.project_id)) openProjectView(r.project_id);
-  else render();
+function novoProjetoRapido(){ abrirProjetoRapido('criar'); }
+function entrarComCodigoRapido(){ abrirProjetoRapido('codigo'); }
+
+// Diálogo próprio de "Criar projeto" e "Entrar com código", com um campo só,
+// em vez do perguntar() genérico: diz o que acontece, mostra o erro no próprio
+// diálogo e, no código, o campo tem cara de código.
+const PROJETO_RAPIDO = {
+  criar: {
+    titulo: 'Novo projeto',
+    texto: 'Um quadro do time, com chat e chamadas. Depois de criar, chame quem quiser pelo botão Convidar.',
+    rotulo: 'Nome do projeto', placeholder: 'Ex: Lançamento da loja', dica: '',
+    ok: 'Criar projeto', enviando: 'Criando…', max: 80
+  },
+  codigo: {
+    titulo: 'Entrar com código',
+    texto: 'Digite o código que te mandaram para entrar no projeto de outra pessoa.',
+    rotulo: 'Código ou link do convite', placeholder: '7F3K2A', dica: 'Pode colar o link inteiro do convite.',
+    ok: 'Entrar no projeto', enviando: 'Entrando…', max: 300
+  }
+};
+let projetoRapidoModo = null;
+let projetoRapidoEnviando = false;
+
+function abrirProjetoRapido(modo){
+  const m = PROJETO_RAPIDO[modo];
+  if(!m) return;
+  projetoRapidoModo = modo;
+  projetoRapidoEnviando = false;
+  const caixa = document.getElementById('projeto-rapido');
+  caixa.dataset.modo = modo;
+  document.getElementById('projeto-rapido-titulo').textContent = m.titulo;
+  document.getElementById('projeto-rapido-texto').textContent = m.texto;
+  document.getElementById('projeto-rapido-rotulo').textContent = m.rotulo;
+  document.getElementById('projeto-rapido-dica').textContent = m.dica;
+  const campo = document.getElementById('projeto-rapido-campo');
+  campo.value = '';
+  campo.placeholder = m.placeholder;
+  campo.maxLength = m.max;
+  campo.spellcheck = modo !== 'codigo';
+  campo.setAttribute('autocapitalize', modo === 'codigo' ? 'characters' : 'sentences');
+  document.getElementById('projeto-rapido-ok').textContent = m.ok;
+  erroProjetoRapido('');
+  atualizarOkProjetoRapido();
+  caixa.classList.add('open');
+  // O fundo leva alguns quadros para deixar de ser invisível, e focar antes
+  // disso não pega. Um setTimeout fixo de 50 ms às vezes chegava cedo e o foco
+  // se perdia; repete até o campo estar mesmo com o foco.
+  const focar = (resta)=>{
+    if(projetoRapidoModo !== modo) return;
+    campo.focus();
+    if(document.activeElement !== campo && resta > 0) setTimeout(()=>focar(resta - 1), 40);
+  };
+  setTimeout(()=>focar(10), 30);
 }
 
-// Criar projeto: pede só o nome, cria e já abre o quadro.
-async function novoProjetoRapido(){
-  const name = await perguntar('Novo projeto', {label: 'Nome do projeto', placeholder: 'Ex: Lançamento da loja', okLabel: 'Criar projeto'});
-  if(!name) return;
-  const criado = await criarProjetoRemoto(name.slice(0, 80));
-  if(!criado) return;
-  await loadProjects();
-  openProjectView(criado.id);
-  showToast('Projeto criado');
+function fecharProjetoRapido(){
+  document.getElementById('projeto-rapido').classList.remove('open');
+  projetoRapidoModo = null;
+}
+
+function erroProjetoRapido(msg){
+  const el = document.getElementById('projeto-rapido-erro');
+  el.textContent = msg;
+  el.hidden = !msg;
+  document.getElementById('projeto-rapido-campo').setAttribute('aria-invalid', msg ? 'true' : 'false');
+}
+
+function projetoRapidoValido(){
+  const v = document.getElementById('projeto-rapido-campo').value;
+  return projetoRapidoModo === 'codigo' ? codigoDoConvite(v).length >= 4 : v.trim().length > 0;
+}
+
+function atualizarOkProjetoRapido(){
+  document.getElementById('projeto-rapido-ok').disabled = projetoRapidoEnviando || !projetoRapidoValido();
+}
+
+// No código, o link colado vira só o código, em maiúsculas e sem espaços.
+function digitarProjetoRapido(campo){
+  if(projetoRapidoModo === 'codigo'){
+    const limpo = codigoDoConvite(campo.value);
+    if(campo.value !== limpo) campo.value = limpo;
+  }
+  erroProjetoRapido('');
+  atualizarOkProjetoRapido();
+}
+
+async function enviarProjetoRapido(){
+  const modo = projetoRapidoModo;
+  if(!modo || projetoRapidoEnviando || !projetoRapidoValido()) return;
+  const m = PROJETO_RAPIDO[modo];
+  const campo = document.getElementById('projeto-rapido-campo');
+  const ok = document.getElementById('projeto-rapido-ok');
+  projetoRapidoEnviando = true;
+  ok.textContent = m.enviando;
+  atualizarOkProjetoRapido();
+  try{
+    if(modo === 'criar'){
+      const criado = await criarProjetoRemoto(campo.value.trim().slice(0, 80));
+      if(!criado) return;
+      await loadProjects();
+      fecharProjetoRapido();
+      openProjectView(criado.id);
+      showToast('Projeto criado');
+    }else{
+      const r = await aceitarCodigoDeConvite(codigoDoConvite(campo.value), {noDialogo: true});
+      if(!r) return;
+      if(r.erro){ erroProjetoRapido(r.erro); campo.focus(); campo.select(); return; }
+      fecharProjetoRapido();
+      if(r.project_id && state.projects.some(p=>p.id === r.project_id)) openProjectView(r.project_id);
+      else render();
+    }
+  }finally{
+    projetoRapidoEnviando = false;
+    if(projetoRapidoModo === modo){ ok.textContent = m.ok; atualizarOkProjetoRapido(); }
+  }
 }
 
 // Atalho do cabeçalho do projeto: abre a lista de projetos já no campo de
@@ -2901,12 +2995,17 @@ async function generateInviteCode(projectId){
 
 // Aceita o convite por código: recarrega os projetos e avisa. Devolve a
 // resposta do banco (com project_id) ou null, já com o aviso de erro dado.
-async function aceitarCodigoDeConvite(code){
+// Com noDialogo, o erro volta como {erro} para aparecer no próprio diálogo.
+async function aceitarCodigoDeConvite(code, opts){
+  const noDialogo = !!(opts && opts.noDialogo);
+  const falhar = (msg)=>{ if(noDialogo) return {erro: msg}; showToast(msg, 'erro'); return null; };
   const {data, error} = await sb.rpc('accept_invite_by_code', {p_code: code});
-  if(error){console.error(error);showToast('Não deu para concluir a ação. Tente de novo em instantes.', 'erro');return null;}
+  if(error){console.error(error);return falhar('Não deu para entrar agora. Confira a conexão e tente de novo.');}
   if(!data || !data.success){
-    showToast(data && data.error ? data.error : 'Código inválido ou já usado. Peça um novo para quem te convidou.', 'erro');
-    return null;
+    const msg = data && data.error ? String(data.error) : '';
+    return falhar(!msg || /inválido|usado/i.test(msg)
+      ? 'Esse código está errado ou já foi usado. Peça um novo para quem te convidou.'
+      : `${msg.replace(/\.$/, '')}.`);
   }
   await loadProjects();
   showToast(data.already_member ? 'Você já era membro desse projeto' : 'Você entrou no projeto!');
@@ -5597,6 +5696,7 @@ const FECHAR_MODAL = {
   'metas-intro-modal': ()=>fecharApresentacaoMetas(),
   'metas-historico-modal': ()=>fecharHistoricoMetas(),
   'chamada-previa': ()=>fecharPreviaChamada(),
+  'projeto-rapido': ()=>fecharProjetoRapido(),
   'confirm-modal': ()=>resolveDialog(null)
 };
 const SALVAR_MODAL = {

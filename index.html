@@ -747,6 +747,29 @@
   </div>
 </div>
 
+<!-- Criar projeto e entrar com código (o + de Projetos). O texto muda com o
+     modo, em abrirProjetoRapido() no script.js. O fechar vem por último no
+     HTML para o foco cair primeiro no campo. -->
+<div class="modal-bg" id="projeto-rapido" role="dialog" aria-modal="true" aria-labelledby="projeto-rapido-titulo" aria-describedby="projeto-rapido-texto">
+  <form class="modal modal-rapido" onsubmit="event.preventDefault();enviarProjetoRapido()" novalidate>
+    <div class="modal-rapido-corpo">
+      <h2 class="modal-rapido-titulo" id="projeto-rapido-titulo">Novo projeto</h2>
+      <p class="modal-rapido-texto" id="projeto-rapido-texto"></p>
+      <label class="sr-only" for="projeto-rapido-campo" id="projeto-rapido-rotulo">Nome do projeto</label>
+      <input type="text" class="input modal-rapido-campo" id="projeto-rapido-campo" autocomplete="off" oninput="digitarProjetoRapido(this)">
+      <p class="modal-rapido-erro" id="projeto-rapido-erro" role="alert" hidden></p>
+      <p class="modal-rapido-dica" id="projeto-rapido-dica"></p>
+    </div>
+    <div class="modal-rapido-acoes">
+      <button type="button" class="btn-secondary" onclick="fecharProjetoRapido()">Cancelar</button>
+      <button type="submit" class="btn-primary" id="projeto-rapido-ok" disabled>Criar projeto</button>
+    </div>
+    <button type="button" class="modal-close modal-rapido-fechar" onclick="fecharProjetoRapido()" aria-label="Fechar">
+      <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </form>
+</div>
+
 <div class="modal-bg" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
   <div class="modal modal-narrow">
     <div class="modal-head">
