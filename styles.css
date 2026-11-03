@@ -2208,6 +2208,12 @@
   ::view-transition-old(chamada):only-child{animation:chJanelaFecha .22s ease-in both;}
   @keyframes chJanelaAbre{from{opacity:0;transform:scale(.96) translateY(10px);}}
   @keyframes chJanelaFecha{to{opacity:0;transform:scale(.97) translateY(6px);}}
+  /* Indo para a janela flutuante, a chamada encolhe até o aviso do canto da
+     página (mesmo nome de transição); voltando, o aviso cresce até ela. Na
+     flutuante, o conteúdo entra com um fade curto em vez de surgir de vez. */
+  .ch-na-flutuante{view-transition-name:chamada;}
+  .chamada.na-janela{animation:chFlutuanteEntra .32s var(--mov-curva) both;}
+  @keyframes chFlutuanteEntra{from{opacity:0;transform:scale(1.03);}}
 
   /* Quem entra (ou a tela que começa) chega com um respiro; o vídeo aparece
      com fade no primeiro quadro, em vez de piscar preto. */
@@ -2435,7 +2441,7 @@
   }
 
   @media (prefers-reduced-motion:reduce){
-    .chamada *, .ch-faixa *, .ch-previa *, .ch-na-flutuante, .ch-na-flutuante *{transition:none !important;animation:none !important;}
+    .chamada *, .ch-faixa *, .ch-previa *, .ch-na-flutuante, .ch-na-flutuante *, .chamada.na-janela{transition:none !important;animation:none !important;}
     .ch-botao.trocou::after{content:none;}
     .alarm-banner.ch-aviso{animation:none;}
   }
