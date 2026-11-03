@@ -9599,6 +9599,16 @@ function sinalChamadaValido(s){
   return s.tipo === 'pedir';
 }
 
+function impressaoDtls(sdp){
+  const m = /a=fingerprint:\S+ (\S+)/.exec(sdp || '');
+  return m ? m[1] : '';
+}
+
+function ufragDe(sdp){
+  const m = /a=ice-ufrag:(\S+)/.exec(sdp || '');
+  return m ? m[1] : '';
+}
+
 function candidatoIce(d){
   return {candidate: d.candidate, sdpMid: typeof d.sdpMid === 'string' ? d.sdpMid : null,
     sdpMLineIndex: Number.isInteger(d.sdpMLineIndex) ? d.sdpMLineIndex : null,
@@ -9615,7 +9625,17 @@ function receberSinalChamada(pid, s){
   if(s.tipo === 'oferta'){
     if(par && par.sessao !== s.deSessao){ fecharParChamada(par); par = null; }
     if(par && par.ofertante) return;
+    // Oferta de uma conexão nova do outro lado (ele recomeçou do zero: o
+    // certificado DTLS muda). O Chrome aceita aplicar por cima da conexão
+    // velha, mas nem todo navegador aceita: aqui também recomeça do zero.
+    if(par && par.pc.remoteDescription && impressaoDtls(par.pc.remoteDescription.sdp) !== impressaoDtls(s.dados.sdp)){
+      fecharParChamada(par);
+      par = null;
+    }
     if(!par) par = criarParChamada(s.de, s.deSessao, false);
+    // Oferta nova (do zero ou reinício de ICE): a conferência da imagem recomeça.
+    par.criadoEm = Date.now();
+    par.imagem = {};
     const oferta = {type: 'offer', sdp: s.dados.sdp};
     enfileirarPar(par, ()=>aceitarOfertaChamada(par, oferta));
   }else if(s.tipo === 'resposta'){
@@ -9630,6 +9650,14 @@ function receberSinalChamada(pid, s){
     const cand = candidatoIce(s.dados);
     if(!par || par.sessao !== s.deSessao){
       // O candidato chegou antes da oferta: guarda até o par existir.
+      const k = `${s.de}:${s.deSessao}`;
+      (c.iceAdiantado[k] = c.iceAdiantado[k] || []).push(cand);
+      return;
+    }
+    // Candidato de outra negociação (conexão nova ou reinício de ICE do outro
+    // lado) que chegou antes da oferta dela: guarda até a oferta chegar.
+    const rd = par.pc.remoteDescription;
+    if(!par.ofertante && rd && cand.usernameFragment && ufragDe(rd.sdp) && cand.usernameFragment !== ufragDe(rd.sdp)){
       const k = `${s.de}:${s.deSessao}`;
       (c.iceAdiantado[k] = c.iceAdiantado[k] || []).push(cand);
       return;
@@ -9701,8 +9729,13 @@ async function aceitarOfertaChamada(par, oferta){
       par.transceptores[tipo] = t;
       t.direction = 'sendrecv';
     });
-    aplicarFaixasLocaisNoPar(par);
   }
+  // Toda oferta, não só a primeira, recoloca as faixas de agora: numa
+  // renegociação a câmera religada ficava de fora e quem recebia via preto.
+  aplicarFaixasLocaisNoPar(par);
+  // Candidatos que chegaram antes desta oferta (reinício de ICE do outro lado).
+  const k = `${par.uid}:${par.sessao}`;
+  if(chamada.iceAdiantado[k]){ par.pendentes.push(...chamada.iceAdiantado[k]); delete chamada.iceAdiantado[k]; }
   const resposta = await pc.createAnswer();
   await pc.setLocalDescription(resposta);
   enviarSinalChamada(par.uid, par.sessao, 'resposta', {type: resposta.type, sdp: resposta.sdp});
@@ -9900,7 +9933,15 @@ function vigiarConexoesChamada(){
     const v = c.vigias[chave] || (c.vigias[chave] = {desde: 0, tentativas: 0, proxima: 0});
     const par = c.pares.get(p.uid);
     const st = par && par.sessao === p.sessao ? par.pc.connectionState : 'sem-par';
-    if(st === 'connected'){ v.desde = 0; v.tentativas = 0; continue; }
+    if(st === 'connected' && !imagemParadaChamada(p, par, agora)){
+      v.desde = 0;
+      v.tentativas = 0;
+      conferirImagemChamada(p, par);
+      continue;
+    }
+    // Conectada mas com a imagem parada: refaz já, sem esperar a carência
+    // (depois, as tentativas seguintes respeitam os intervalos).
+    if(st === 'connected' && !v.desde){ v.desde = agora - 8000; v.proxima = agora; }
     if(!v.desde){ v.desde = agora; v.proxima = agora + 8000; continue; }
     if(agora < v.proxima) continue;
     v.tentativas++;
@@ -9916,6 +9957,41 @@ function vigiarConexoesChamada(){
     const p = c.participantes.get(uid);
     if(!p || p.sessao !== sessao) delete c.vigias[chave];
   }
+}
+
+// Imagem parada: a conexão está de pé e a pessoa diz que a câmera (ou a tela)
+// está ligada, mas nenhum quadro novo foi decodificado em 9 s. Acontecia ao
+// religar a câmera, com algumas câmeras, navegadores e redes: quem recebia via
+// o ladrilho preto para sempre. A vigia refaz a conexão do zero, que chega com
+// a faixa atual. Conta quadros pelas estatísticas do receptor, que não
+// dependem de o vídeo estar na tela.
+async function conferirImagemChamada(p, par){
+  if(par.lendoImagem) return;
+  const tipos = [p.camera && 'cam', p.tela && 'tela'].filter(Boolean);
+  const imagem = par.imagem || (par.imagem = {});
+  for(const tipo of Object.keys(imagem)) if(!tipos.includes(tipo)) delete imagem[tipo];
+  if(!tipos.length) return;
+  par.lendoImagem = true;
+  try{
+    for(const tipo of tipos){
+      const t = par.transceptores[tipo];
+      if(!t || !t.receiver) continue;
+      let quadros = null;
+      const stats = await t.receiver.getStats();
+      stats.forEach(s=>{ if(s.type === 'inbound-rtp' && s.kind === 'video') quadros = s.framesDecoded || 0; });
+      if(quadros === null) continue;
+      // Qualquer mudança conta como quadro novo: numa renegociação a contagem
+      // pode recomeçar do zero.
+      const r = imagem[tipo];
+      if(!r || quadros !== r.quadros) imagem[tipo] = {quadros, desde: Date.now()};
+    }
+  }catch(e){}
+  par.lendoImagem = false;
+}
+
+function imagemParadaChamada(p, par, agora){
+  if(!par || !par.imagem || agora - par.criadoEm < 12000) return false;
+  return Object.entries(par.imagem).some(([tipo, r])=>(tipo === 'cam' ? p.camera : p.tela) && agora - r.desde > 9000);
 }
 
 function tentativasDeConexao(uid){
@@ -9963,6 +10039,10 @@ function reconciliarChamada(){
     if(p.uid === eu) continue;
     vistos.add(p.uid);
     const antes = c.participantes.get(p.uid);
+    // Câmera ou tela desligada: o vídeo é jogado fora, e o da próxima vez nasce
+    // escondido até o primeiro quadro (a foto aparece no lugar do preto).
+    if(antes && antes.camera && !p.camera) delete chamadaVideos[`${p.uid}:cam`];
+    if(antes && antes.tela && !p.tela) delete chamadaVideos[`${p.uid}:tela`];
     if(antes && antes.tela !== p.tela && p.tela && !c.destaque) c.destaque = `${p.uid}:tela`;
     if(!antes && p.tela && !c.destaque) c.destaque = `${p.uid}:tela`;
     c.participantes.set(p.uid, p);
@@ -10103,17 +10183,18 @@ function marcarFalaChamada(uid, falando){
 /* --- sons (Q31) --- */
 
 // Sons da chamada, gerados na hora (sem arquivo). Entrar e sair são dois tons
-// em seno. Microfone e fone, como no Discord, são mais curtos e em triângulo,
-// para não confundir com alguém entrando: descem ao fechar e sobem ao abrir.
+// em seno. Microfone e fone são um toque só, curto, baixo e em seno, com a
+// altura deslizando de leve: desce ao fechar e sobe ao abrir; o do fone é
+// mais grave que o do microfone. Uma nota [de, para] desliza entre as duas.
 // Só quem clicou ouve. Respeitam o "Som" das Configurações.
 const SONS_CHAMADA = {
   entrar: {notas: [587.33, 880], onda: 'sine', passo: 0.11, dura: 0.2, volume: 0.12},
   sair: {notas: [659.25, 440], onda: 'sine', passo: 0.11, dura: 0.2, volume: 0.12},
   chamando: {notas: [659.25, 830.61, 987.77], onda: 'sine', passo: 0.11, dura: 0.2, volume: 0.12},
-  mutar: {notas: [698.46, 523.25], onda: 'triangle', passo: 0.07, dura: 0.11, volume: 0.16},
-  desmutar: {notas: [523.25, 698.46], onda: 'triangle', passo: 0.07, dura: 0.11, volume: 0.16},
-  ensurdecer: {notas: [440, 349.23, 261.63], onda: 'triangle', passo: 0.065, dura: 0.11, volume: 0.15},
-  ouvir: {notas: [261.63, 349.23, 440], onda: 'triangle', passo: 0.065, dura: 0.11, volume: 0.15}
+  mutar: {notas: [[620, 500]], onda: 'sine', passo: 0, dura: 0.09, volume: 0.07},
+  desmutar: {notas: [[500, 620]], onda: 'sine', passo: 0, dura: 0.09, volume: 0.07},
+  ensurdecer: {notas: [[440, 350]], onda: 'sine', passo: 0, dura: 0.12, volume: 0.07},
+  ouvir: {notas: [[350, 440]], onda: 'sine', passo: 0, dura: 0.12, volume: 0.07}
 };
 
 function tocarSomChamada(tipo){
@@ -10122,16 +10203,21 @@ function tocarSomChamada(tipo){
   try{
     const ctx = alarmContext();
     if(!ctx) return;
-    som.notas.forEach((freq, i)=>{
+    som.notas.forEach((nota, i)=>{
+      const [de, para] = Array.isArray(nota) ? nota : [nota, nota];
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = som.onda;
-      osc.frequency.value = freq;
+      osc.frequency.value = de;
       osc.connect(gain);
       gain.connect(ctx.destination);
       const ini = ctx.currentTime + i * som.passo;
+      if(para !== de){
+        osc.frequency.setValueAtTime(de, ini);
+        osc.frequency.exponentialRampToValueAtTime(para, ini + som.dura * 0.7);
+      }
       gain.gain.setValueAtTime(0, ini);
-      gain.gain.linearRampToValueAtTime(som.volume, ini + 0.012);
+      gain.gain.linearRampToValueAtTime(som.volume, ini + 0.008);
       gain.gain.exponentialRampToValueAtTime(0.001, ini + som.dura);
       osc.start(ini);
       osc.stop(ini + som.dura + 0.02);
@@ -10146,8 +10232,23 @@ function anunciarNaChamada(texto){
 
 /* --- dispositivos (Q30) --- */
 
+// Supressão de ruído do navegador, mais o isolamento de voz onde ele existe:
+// ligada por padrão (já era, sem controle); quem toca um instrumento ou quer o
+// som ambiente desliga. Fica guardada no aparelho.
+function ruidoLigado(){
+  try{ return localStorage.getItem('chamadaRuido') !== 'nao'; }catch(e){ return true; }
+}
+
+function guardarRuido(ligado){
+  try{ localStorage.setItem('chamadaRuido', ligado ? 'sim' : 'nao'); }catch(e){}
+}
+
 function restricoesMicrofone(deviceId){
-  return {audio: {deviceId: deviceId ? {exact: deviceId} : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true}};
+  const ruido = ruidoLigado();
+  const audio = {deviceId: deviceId ? {exact: deviceId} : undefined, echoCancellation: true, noiseSuppression: ruido, autoGainControl: true};
+  const aceitas = navigator.mediaDevices && navigator.mediaDevices.getSupportedConstraints ? navigator.mediaDevices.getSupportedConstraints() : {};
+  if(aceitas.voiceIsolation) audio.voiceIsolation = ruido;
+  return {audio};
 }
 
 function restricoesCamera(deviceId){
@@ -10186,7 +10287,11 @@ function seletoresDispositivo(atual, acao){
         ${lista.map(d=>`<option value="${esc(d.deviceId)}" ${d.deviceId === sel ? 'selected' : ''}>${esc(d.label)}</option>`).join('')}
       </select></label>`;
   };
-  return campo('mic', 'Microfone') + campo('cam', 'Câmera') + campo('saida', 'Saída de áudio');
+  const ruido = `<label class="ch-disp-ruido">
+      <span class="ch-disp-ruido-texto"><span>Supressão de ruído</span><small>Tira o barulho de fundo, como teclado e ventilador. Desligue para tocar música.</small></span>
+      <input type="checkbox" role="switch" class="ch-interruptor" ${ruidoLigado() ? 'checked' : ''} onchange="${acao}('ruido', this.checked)">
+    </label>`;
+  return campo('mic', 'Microfone') + campo('cam', 'Câmera') + campo('saida', 'Saída de áudio') + ruido;
 }
 
 /* --- prévia (Q22) --- */
@@ -10271,7 +10376,15 @@ async function previaAlternarCamera(){
 
 async function previaTrocarDispositivo(tipo, id){
   const pr = previaChamada;
-  if(!pr || !['mic', 'cam', 'saida'].includes(tipo)) return;
+  if(!pr || !['mic', 'cam', 'saida', 'ruido'].includes(tipo)) return;
+  if(tipo === 'ruido'){
+    guardarRuido(!!id);
+    // Fecha antes de abrir de novo: com o microfone ainda aberto, o navegador
+    // reaproveita o processamento de áudio dele e ignora a escolha nova.
+    if(pr.voz){ pr.voz.stop(); await previaLigarMicrofone(); }
+    desenharPreviaChamada();
+    return;
+  }
   pr.dispositivos[tipo] = id;
   if(tipo === 'mic' && pr.voz) await previaLigarMicrofone();
   if(tipo === 'cam' && pr.camera){
@@ -10793,11 +10906,17 @@ async function pararTelaChamada(){
 
 async function chamadaTrocarDispositivo(tipo, id){
   const c = chamada;
-  if(!c || !['mic', 'cam', 'saida'].includes(tipo)) return;
-  c.dispositivos[tipo] = id;
+  if(!c || !['mic', 'cam', 'saida', 'ruido'].includes(tipo)) return;
+  if(tipo === 'ruido') guardarRuido(!!id);
+  else c.dispositivos[tipo] = id;
   try{
-    if(tipo === 'mic' && c.local.voz){
-      const s = await navigator.mediaDevices.getUserMedia(restricoesMicrofone(id));
+    // A supressão de ruído vem na hora de abrir o microfone: trocar ela é
+    // abrir o microfone de novo, com a escolha nova, e pôr no lugar. Fecha o
+    // atual antes (um corte de fração de segundo): aberto, o navegador
+    // reaproveitaria o processamento dele e ignoraria a escolha nova.
+    if((tipo === 'mic' || tipo === 'ruido') && c.local.voz){
+      if(tipo === 'ruido') c.local.voz.stop();
+      const s = await navigator.mediaDevices.getUserMedia(restricoesMicrofone(c.dispositivos.mic));
       if(chamada !== c){ s.getTracks().forEach(t=>t.stop()); return; }
       await trocarFaixaLocal('voz', s.getAudioTracks()[0]);
     }else if(tipo === 'cam' && c.camera){
@@ -10815,6 +10934,13 @@ async function chamadaTrocarDispositivo(tipo, id){
     }
   }catch(e){
     showToast(mensagemErroMidia(e, tipo === 'cam' ? 'a câmera' : 'o microfone'), 'erro');
+    // O microfone foi fechado para trocar a supressão e não reabriu: fica
+    // fechado de verdade, e o botão de microfone abre de novo quando der.
+    if(chamada === c && c.local.voz && c.local.voz.readyState === 'ended'){
+      c.mic = false;
+      await trocarFaixaLocal('voz', null);
+      atualizarPresencaChamada();
+    }
   }
   desenharChamada();
 }
@@ -11217,14 +11343,19 @@ function videoDaChamada(chave){
   return v;
 }
 
-// O vídeo aparece com um fade quando chega o primeiro quadro, em vez de
-// piscar preto. Se o evento não vier (navegador que não avisa), aparece
-// mesmo assim depois de 1,5 s.
+// O vídeo aparece com um fade quando chega o primeiro quadro; até lá, o que
+// se vê é a foto da pessoa, por baixo dele, e não um quadro preto. Se o
+// navegador não avisar pelos eventos, uma conferência a cada 300 ms vê quando
+// o vídeo ganhou tamanho (o primeiro quadro foi decodificado). Antes ele
+// aparecia de qualquer jeito depois de 1,5 s: preto, se nada tivesse chegado.
 function marcarVideoQuandoPronto(v){
   const pronto = ()=>{ v.dataset.pronto = '1'; v.classList.add('pronto'); };
   v.addEventListener('loadeddata', pronto, {once: true});
   v.addEventListener('playing', pronto, {once: true});
-  setTimeout(pronto, 1500);
+  const espia = setInterval(()=>{
+    if(v.videoWidth > 0) pronto();
+    if(v.dataset.pronto || !Object.values(chamadaVideos).includes(v)) clearInterval(espia);
+  }, 300);
 }
 
 // Troca de modo com a View Transition do navegador: o palco encolhe até a
@@ -11319,8 +11450,8 @@ function ladrilhoChamadaHtml(l, opts){
   // ações) que põe ou tira do destaque.
   return `
     <div class="ch-ladrilho ${tela ? 'tela' : ''} ${comVideo ? 'com-video' : ''} ${destacado ? 'destacado' : ''}" data-chave="${l.chave}" ${tela ? '' : `data-fala="${l.uid}"`}>
+      <div class="ch-ladrilho-avatar">${tela ? iconeChamada('tela', 40) : avatarChip(perfilNaChamada(c.pid, l.uid), nome[0])}</div>
       <div class="ch-ladrilho-video" data-slot="${l.chave}"></div>
-      ${comVideo ? '' : `<div class="ch-ladrilho-avatar">${tela ? iconeChamada('tela', 40) : avatarChip(perfilNaChamada(c.pid, l.uid), nome[0])}</div>`}
       ${o.mini ? '' : `<button type="button" class="ch-alvo" id="ch-destacar-${l.chave.replace(':', '-')}" onclick="chamadaDestacar('${l.chave}')" aria-pressed="${destacado}" aria-label="${destacado ? 'Tirar do destaque' : 'Pôr em destaque'}: ${esc(rotulo)}"></button>`}
       ${o.semRotulo ? '' : `<div class="ch-rotulo">${icones}<span class="ch-rotulo-nome">${esc(rotulo)}</span></div>`}
       ${estado ? `<div class="ch-estado">${esc(estado)}</div>` : ''}

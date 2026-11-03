@@ -80,7 +80,8 @@ continua.
 | Q28 | Anel verde em quem está falando. |
 | Q29 | Ensurdecer (não ouve ninguém e fecha o próprio microfone) e volume individual de cada pessoa, como no Discord: de 0 a 200% (acima de 100% o som passa por um `GainNode`, com o `<audio>` tocando mudo), "silenciar para mim" à parte do volume e um volume separado para o som da transmissão de tela, quando ela tem som. Tudo só neste aparelho. Com alto-falante escolhido e sem `setSinkId` no `AudioContext`, o teto fica em 100%. |
 | Q30 | Escolher microfone, câmera e alto-falante na prévia e durante a chamada. |
-| Q31 | Som curto quando alguém entra ou sai, que respeita o "Som" das Configurações. Como no Discord, também ao fechar e abrir o microfone e ao ensurdecer e voltar a ouvir: mais curtos e em outro timbre, descendo ao fechar e subindo ao abrir. Só quem clicou ouve. |
+| Q31 | Som curto quando alguém entra ou sai, que respeita o "Som" das Configurações. Também ao fechar e abrir o microfone e ao ensurdecer e voltar a ouvir: um toque só, curto, baixo e em seno, com a altura deslizando de leve (desce ao fechar, sobe ao abrir; o do fone mais grave). A primeira versão, com notas em onda triangular, soou "gamer" e foi trocada. Só quem clicou ouve. |
+| Q34 | Supressão de ruído do navegador (e isolamento de voz onde houver), ligada por padrão, com interruptor na prévia e no painel de dispositivos e guardada no aparelho. Trocar reabre o microfone, fechando o atual antes: aberto, o navegador reaproveita o processamento dele e ignora a escolha nova. |
 | Q32 | Antes do seletor do navegador, a própria janela da chamada pergunta o que transmitir (tela inteira, janela ou aba), a qualidade (720p, 1080p ou 1080p a 60 quadros) e se o som vai junto, como no Discord. O navegador abre já na fonte escolhida (`displaySurface`), só para confirmar qual. A escolha fica guardada no aparelho. A qualidade escolhida é teto: vale a menor entre ela e a da Q27. |
 | Q33 | Janela flutuante, como no Meet: a chamada sai numa janela pequena por cima das outras abas e programas (Document Picture-in-Picture, Chrome e Edge no computador). Abre pelo botão no topo da chamada ou no mini; junto com a transmissão de tela, pelo mesmo clique em "Transmitir" (opção "Janela flutuante" na escolha da tela, ligada por padrão; fecha se a pessoa desistir no seletor); e sozinha ao trocar de aba onde o navegador permite (`mediaSession` `enterpictureinpicture`; o Chrome faz desde a versão 120; no Arc ela não abriu sozinha), e a que abriu sozinha fecha quando a pessoa volta. Minimizar a janela ou ir para outro programa não dispara nada em navegador nenhum: abrir a flutuante exige um clique. Enquanto a chamada está na flutuante, a página mostra no canto um aviso com o relógio e "Trazer para cá", que devolve a chamada minimizada. Se a flutuante sumir sem o `pagehide` chegar, uma vigia (a cada segundo, ao voltar para a aba e no foco da página) percebe e devolve a chamada para a página. Tem microfone, fone, câmera, voltar para a aba e sair. É a própria janela da chamada movida para o documento da flutuante; os `<audio>` ficam na página. |
 
@@ -215,7 +216,12 @@ permissão para os alarmes.
   quem oferece recomeça do zero, quem espera manda `pedir`. Um `pedir` que chega com a
   conexão recomeçada há menos de 5 s é ignorado. Depois de duas tentativas, o ladrilho
   troca "Conectando…" por "Ainda não conectou. Tentando de novo…" e, sem TURN, cita o
-  servidor de apoio.
+  servidor de apoio. A vigia também refaz a conexão quando a imagem para: a pessoa diz
+  que a câmera (ou a tela) está ligada, mas o receptor não decodifica quadro novo em
+  9 s (contado pelo `framesDecoded` das estatísticas). Toda oferta aceita recoloca as
+  faixas locais de agora, e uma oferta de conexão nova do outro lado (certificado DTLS
+  diferente) refaz a conexão também do lado de quem responde. Até o primeiro quadro, o
+  ladrilho mostra a foto da pessoa, não um vídeo preto.
 
 **Autorização do canal** (SEC-075). As policies ficam em `realtime.messages`:
 
