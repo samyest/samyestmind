@@ -9389,7 +9389,8 @@ const ICONES_CHAMADA = {
   minimizar: '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>',
   expandir: '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>',
   telaCheia: '<path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/>',
-  volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/>'
+  volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/>',
+  volumeOff: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/>'
 };
 
 function iconeChamada(nome, tam){
@@ -9507,7 +9508,7 @@ function presencaChamada(pid){
     const m = ativas.reduce((a, b)=>(Number(b.desde) || 0) > (Number(a.desde) || 0) ? b : a);
     lista.push({
       uid, sessao: m.sessao.slice(0, 64), desde: Number(m.desde) || Date.now(),
-      mic: m.mic !== false, ensurdecido: !!m.ensurdecido, camera: !!m.camera, tela: !!m.tela
+      mic: m.mic !== false, ensurdecido: !!m.ensurdecido, camera: !!m.camera, tela: !!m.tela, telaSom: !!(m.tela && m.telaSom)
     });
   }
   // Ordem de chegada, com desempate pelo id: todos precisam ver a mesma ordem
@@ -9525,7 +9526,7 @@ function atualizarPresencaChamada(){
   if(!reg || !reg.assinado) return Promise.resolve();
   return reg.canal.track({
     sessao: c.sessao, em_chamada: true, desde: c.entrouEm,
-    mic: c.mic && !!c.local.voz, ensurdecido: c.ensurdecido, camera: c.camera, tela: c.tela
+    mic: c.mic && !!c.local.voz, ensurdecido: c.ensurdecido, camera: c.camera, tela: c.tela, telaSom: !!(c.tela && c.local.telaAudio)
   }).catch(e=>console.warn('chamada: presença', e));
 }
 
@@ -9610,7 +9611,7 @@ function enfileirarPar(par, fn){
 function criarParChamada(uid, sessao, ofertante){
   const c = chamada;
   const pc = new RTCPeerConnection({iceServers: c.iceServers, bundlePolicy: 'max-bundle'});
-  const par = {uid, sessao, pc, ofertante, transceptores: {}, remotas: {}, pendentes: [], fila: Promise.resolve(), audio: {}, timer: null, pedidos: 0};
+  const par = {uid, sessao, pc, ofertante, transceptores: {}, remotas: {}, pendentes: [], fila: Promise.resolve(), audio: {}, reforcos: {}, timer: null, pedidos: 0};
   c.pares.set(uid, par);
   const adiantados = c.iceAdiantado[`${uid}:${sessao}`];
   if(adiantados){ par.pendentes.push(...adiantados); delete c.iceAdiantado[`${uid}:${sessao}`]; }
@@ -9711,20 +9712,102 @@ function tocarAudioRemoto(par, tipo, track){
   el.play().catch(()=>{});
 }
 
+// Volume que cada um escolhe para os outros, só neste aparelho. A chave é o
+// id da pessoa (voz) ou `<id>:tela` (som da transmissão), e o valor vai de 0
+// a 2 (200%), com "silenciado para mim" à parte, para o volume voltar igual.
+// Guardado antes como número solto; os dois formatos são lidos.
 function volumesChamada(){
-  try{ return JSON.parse(localStorage.getItem('chamadaVolumes') || '{}') || {}; }catch(e){ return {}; }
+  try{ const v = JSON.parse(localStorage.getItem('chamadaVolumes') || '{}'); return v && typeof v === 'object' ? v : {}; }catch(e){ return {}; }
 }
 
-function volumeDe(uid){
-  const v = Number(volumesChamada()[uid]);
-  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+function chaveVolumeValida(chave){
+  const [uid, extra, ...resto] = String(chave).split(':');
+  return CHAMADA_UUID.test(uid) && !resto.length && (extra === undefined || extra === 'tela');
+}
+
+function ajusteDeVolume(chave){
+  const bruto = volumesChamada()[chave];
+  const v = Number(bruto && typeof bruto === 'object' ? bruto.v : bruto);
+  return {v: Number.isFinite(v) ? Math.min(2, Math.max(0, v)) : 1, mudo: !!(bruto && bruto.mudo)};
+}
+
+function guardarAjusteDeVolume(chave, ajuste){
+  const todos = volumesChamada();
+  todos[chave] = {v: ajuste.v, mudo: ajuste.mudo};
+  try{ localStorage.setItem('chamadaVolumes', JSON.stringify(todos)); }catch(e){}
+}
+
+// Acima de 100% o som passa por um GainNode, porque o <audio> não vai além
+// de 1. Com alto-falante escolhido, só se o AudioContext também souber
+// mandar para ele; senão o teto fica em 100%.
+function volumeAcimaDe100(){
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if(!Ctx) return false;
+  return !(chamada && chamada.dispositivos.saida) || 'setSinkId' in Ctx.prototype;
+}
+
+function volumeMaximoChamada(){
+  return volumeAcimaDe100() ? 200 : 100;
+}
+
+let chamadaAudioCtx = null;
+function contextoReforcoChamada(){
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if(!Ctx) return null;
+  if(!chamadaAudioCtx || chamadaAudioCtx.state === 'closed'){
+    chamadaAudioCtx = new Ctx();
+    const saida = chamada && chamada.dispositivos.saida;
+    if(saida && chamadaAudioCtx.setSinkId) chamadaAudioCtx.setSinkId(saida).catch(()=>{});
+  }
+  if(chamadaAudioCtx.state === 'suspended') chamadaAudioCtx.resume().catch(()=>{});
+  return chamadaAudioCtx;
+}
+
+// O <audio> continua tocando, mudo: o Chromium só entrega o áudio remoto do
+// WebRTC ao Web Audio enquanto a faixa está presa a um elemento.
+function reforcoDoAudio(par, tipo, el){
+  const track = el.srcObject && el.srcObject.getAudioTracks()[0];
+  const atual = par.reforcos[tipo];
+  if(atual && atual.track === track) return atual;
+  desligarReforco(par, tipo);
+  const ctx = track && contextoReforcoChamada();
+  if(!ctx) return null;
+  try{
+    const fonte = ctx.createMediaStreamSource(new MediaStream([track]));
+    const ganho = ctx.createGain();
+    fonte.connect(ganho).connect(ctx.destination);
+    par.reforcos[tipo] = {track, fonte, ganho};
+    return par.reforcos[tipo];
+  }catch(e){ return null; }
+}
+
+function desligarReforco(par, tipo){
+  const r = par.reforcos[tipo];
+  if(!r) return;
+  try{ r.fonte.disconnect(); r.ganho.disconnect(); }catch(e){}
+  delete par.reforcos[tipo];
+}
+
+function desligarReforcosPar(par){
+  for(const tipo of Object.keys(par.reforcos || {})) desligarReforco(par, tipo);
 }
 
 function aplicarVolumePar(par){
-  const vol = volumeDe(par.uid);
-  for(const el of Object.values(par.audio)){
-    el.volume = vol;
-    el.muted = !!(chamada && chamada.ensurdecido);
+  const c = chamada;
+  if(!par.reforcos) par.reforcos = {};
+  for(const [tipo, el] of Object.entries(par.audio)){
+    const a = ajusteDeVolume(tipo === 'telaAudio' ? `${par.uid}:tela` : par.uid);
+    const calado = !!(c && c.ensurdecido) || a.mudo;
+    const r = a.v > 1 && volumeAcimaDe100() ? reforcoDoAudio(par, tipo, el) : null;
+    if(r){
+      el.volume = 1;
+      el.muted = true;
+      r.ganho.gain.setTargetAtTime(calado ? 0 : a.v, r.ganho.context.currentTime, 0.015);
+    }else{
+      desligarReforco(par, tipo);
+      el.volume = Math.min(1, a.v);
+      el.muted = calado;
+    }
   }
 }
 
@@ -9773,6 +9856,7 @@ function fecharParChamada(par){
   const c = chamada;
   clearTimeout(par.timer);
   try{ par.pc.close(); }catch(e){}
+  desligarReforcosPar(par);
   for(const el of Object.values(par.audio)){ el.srcObject = null; el.remove(); }
   pararMedicaoFala(par.uid);
   for(const tipo of ['cam', 'tela']) delete chamadaVideos[`${par.uid}:${tipo}`];
@@ -10260,8 +10344,10 @@ async function sairDaChamada(opts){
   for(const par of [...c.pares.values()]){
     clearTimeout(par.timer);
     try{ par.pc.close(); }catch(e){}
+    desligarReforcosPar(par);
     for(const el of Object.values(par.audio)){ el.srcObject = null; el.remove(); }
   }
+  if(chamadaAudioCtx){ chamadaAudioCtx.close().catch(()=>{}); chamadaAudioCtx = null; }
   // SEC-078: sair para todas as faixas, para o indicador de câmera apagar.
   for(const t of Object.values(c.local)) if(t) t.stop();
   for(const chave of [...falaMedidores.keys()]) if(chave !== 'previa') pararMedicaoFala(chave);
@@ -10581,6 +10667,10 @@ async function chamadaTrocarDispositivo(tipo, id){
       for(const par of c.pares.values()){
         for(const el of Object.values(par.audio)) if(el.setSinkId) el.setSinkId(id).catch(()=>{});
       }
+      if(chamadaAudioCtx && chamadaAudioCtx.setSinkId) chamadaAudioCtx.setSinkId(id).catch(()=>{});
+      // Sem setSinkId no AudioContext, o reforço acima de 100% sairia no
+      // alto-falante padrão: volta todo mundo para o <audio>.
+      for(const par of c.pares.values()) aplicarVolumePar(par);
     }
   }catch(e){
     showToast(mensagemErroMidia(e, tipo === 'cam' ? 'a câmera' : 'o microfone'), 'erro');
@@ -10599,31 +10689,87 @@ async function chamadaAlternarDispositivos(){
   desenharChamada();
 }
 
-function chamadaVolume(uid, valor){
-  const c = chamada;
-  if(!c || !CHAMADA_UUID.test(uid)) return;
-  const v = Math.min(100, Math.max(0, Number(valor) || 0)) / 100;
-  const todos = volumesChamada();
-  todos[uid] = v;
-  try{ localStorage.setItem('chamadaVolumes', JSON.stringify(todos)); }catch(e){}
-  const par = c.pares.get(uid);
-  if(par) aplicarVolumePar(par);
-  const rotulo = document.getElementById(`ch-vol-valor-${uid}`);
-  if(rotulo) rotulo.textContent = `${Math.round(v * 100)}%`;
+function idVolume(chave){
+  return String(chave).replace(':', '-');
 }
 
-function chamadaAbrirVolume(uid, e){
+function textoVolume(a){
+  return a.mudo ? 'Silenciado' : `${Math.round(Math.min(a.v * 100, volumeMaximoChamada()))}%`;
+}
+
+function aplicarVolumeDaChave(chave){
+  const par = chamada && chamada.pares.get(String(chave).split(':')[0]);
+  if(par) aplicarVolumePar(par);
+}
+
+// No arraste, atualiza só o painel, sem redesenhar a chamada (redesenhar
+// soltaria o controle da mão). Mexer no volume tira o "silenciado".
+function chamadaVolume(chave, valor){
+  const c = chamada;
+  if(!c || !chaveVolumeValida(chave)) return;
+  const pct = Math.min(volumeMaximoChamada(), Math.max(0, Math.round(Number(valor) || 0)));
+  guardarAjusteDeVolume(chave, {v: pct / 100, mudo: false});
+  aplicarVolumeDaChave(chave);
+  atualizarPainelVolume(chave);
+}
+
+function atualizarPainelVolume(chave){
+  const id = idVolume(chave);
+  const a = ajusteDeVolume(chave);
+  const max = volumeMaximoChamada();
+  const pct = Math.min(max, Math.round(a.v * 100));
+  const barra = document.getElementById(`ch-vol-${id}`);
+  if(!barra) return;
+  if(Number(barra.value) !== pct) barra.value = String(pct);
+  barra.style.setProperty('--f', String(pct / max));
+  barra.setAttribute('aria-valuetext', textoVolume(a));
+  const caixa = barra.closest('.ch-volume');
+  if(caixa) caixa.classList.toggle('mudo', a.mudo);
+  const valor = document.getElementById(`ch-vol-valor-${id}`);
+  if(valor) valor.textContent = textoVolume(a);
+  const mudo = document.getElementById(`ch-vol-mudo-${id}`);
+  if(mudo){ mudo.setAttribute('aria-pressed', String(a.mudo)); mudo.innerHTML = iconeChamada(a.mudo ? 'volumeOff' : 'volume', 16); }
+  const redefinir = document.getElementById(`ch-vol-redefinir-${id}`);
+  if(redefinir) redefinir.hidden = pct === 100;
+}
+
+function chamadaSilenciar(chave){
+  const c = chamada;
+  if(!c || !chaveVolumeValida(chave)) return;
+  const a = ajusteDeVolume(chave);
+  guardarAjusteDeVolume(chave, {v: a.v, mudo: !a.mudo});
+  aplicarVolumeDaChave(chave);
+  desenharChamada();
+}
+
+function chamadaRedefinirVolume(chave){
+  chamadaVolume(chave, 100);
+  desenharChamada();
+  const barra = document.getElementById(`ch-vol-${idVolume(chave)}`);
+  if(barra) barra.focus();
+}
+
+function chamadaAbrirVolume(chave, e){
   if(e) e.stopPropagation();
   const c = chamada;
-  if(!c) return;
-  c.volumeAberto = c.volumeAberto === uid ? null : uid;
+  if(!c || !chaveVolumeValida(chave)) return;
+  c.volumeAberto = c.volumeAberto === chave ? null : chave;
   if(c.volumeAberto) c.animarPainel = true;
   desenharChamada();
   if(c.volumeAberto){
-    const r = document.getElementById(`ch-vol-${uid}`);
+    const r = document.getElementById(`ch-vol-${idVolume(chave)}`);
     if(r) r.focus();
   }
 }
+
+// Clique fora fecha o painel de volume (depois da ação do próprio clique).
+document.addEventListener('click', (e)=>{
+  const c = chamada;
+  if(!c || !c.volumeAberto) return;
+  if(e.target.closest && e.target.closest('.ch-volume, [data-volume-botao]')) return;
+  c.volumeAberto = null;
+  desenharChamada();
+});
 
 function chamadaDestacar(chave, e){
   if(e) e.stopPropagation();
@@ -10674,9 +10820,12 @@ document.addEventListener('keydown', (e)=>{
   if(topOpenModal() || document.fullscreenElement) return;
   if(chamada.painelTela){ fecharEscolhaTela(); return; }
   if(chamada.painelDisp || chamada.volumeAberto){
+    const voltar = chamada.volumeAberto ? document.getElementById(`ch-vol-btn-${idVolume(chamada.volumeAberto)}`) : null;
     chamada.painelDisp = false;
     chamada.volumeAberto = null;
     desenharChamada();
+    const b = voltar && document.getElementById(voltar.id);
+    if(b) b.focus();
   }else if(chamada.modo === 'expandida') chamadaMinimizar();
 });
 
@@ -10705,7 +10854,7 @@ function ladrilhosChamada(){
   if(!c) return [];
   const eu = session.user.id;
   const pessoas = [
-    {uid: eu, mic: c.mic && !!c.local.voz, ensurdecido: c.ensurdecido, camera: c.camera, tela: c.tela},
+    {uid: eu, mic: c.mic && !!c.local.voz, ensurdecido: c.ensurdecido, camera: c.camera, tela: c.tela, telaSom: !!(c.tela && c.local.telaAudio)},
     ...c.participantes.values()
   ];
   const lista = [];
@@ -10798,15 +10947,41 @@ function ladrilhoChamadaHtml(l, opts){
   const rotulo = tela ? (eu ? 'Sua tela' : `Tela de ${nome}`) : (eu ? `${nome} (você)` : nome);
   const estado = tela ? '' : estadoDoLadrilho(l.uid);
   const destacado = c.destaque === l.chave;
-  const icones = !tela ? `${l.p.ensurdecido ? `<span class="ch-rotulo-icone" title="Ensurdecido">${iconeChamada('foneOff', 14)}</span>` : (!l.p.mic ? `<span class="ch-rotulo-icone" title="Microfone fechado">${iconeChamada('micOff', 14)}</span>` : '')}` : '';
-  const volume = !eu && !tela && !o.mini ? `
-      <button type="button" class="ch-acao" onclick="chamadaAbrirVolume('${l.uid}', event)" aria-expanded="${c.volumeAberto === l.uid}" aria-label="Volume de ${esc(nome)}" title="Volume">${iconeChamada('volume', 15)}</button>` : '';
-  const painelVolume = c.volumeAberto === l.uid && !o.mini ? `
-      <div class="ch-volume">
-        <label for="ch-vol-${l.uid}">Volume</label>
-        <input type="range" id="ch-vol-${l.uid}" min="0" max="100" step="5" value="${Math.round(volumeDe(l.uid) * 100)}" oninput="chamadaVolume('${l.uid}', this.value)">
-        <span id="ch-vol-valor-${l.uid}">${Math.round(volumeDe(l.uid) * 100)}%</span>
-      </div>` : '';
+  // Volume de cada um, só para mim: a voz no ladrilho da pessoa e o som da
+  // transmissão no ladrilho da tela, quando ela vem com som.
+  const chaveVol = eu || o.mini ? null : tela ? (l.p.telaSom ? `${l.uid}:tela` : null) : l.uid;
+  const aVol = chaveVol ? ajusteDeVolume(chaveVol) : null;
+  const silenciado = chaveVol && aVol.mudo ? `<span class="ch-rotulo-icone" title="Silenciado para você">${iconeChamada('volumeOff', 14)}</span>` : '';
+  const icones = (!tela ? `${l.p.ensurdecido ? `<span class="ch-rotulo-icone" title="Ensurdecido">${iconeChamada('foneOff', 14)}</span>` : (!l.p.mic ? `<span class="ch-rotulo-icone" title="Microfone fechado">${iconeChamada('micOff', 14)}</span>` : '')}` : '') + silenciado;
+  const volAberto = !!chaveVol && c.volumeAberto === chaveVol;
+  const rotuloVol = tela ? 'Som da tela' : 'Volume';
+  const volume = chaveVol ? `
+      <button type="button" class="ch-acao ${aVol.mudo ? 'silenciado' : ''}" id="ch-vol-btn-${idVolume(chaveVol)}" data-volume-botao onclick="chamadaAbrirVolume('${chaveVol}', event)" aria-expanded="${volAberto}" aria-label="${rotuloVol} de ${esc(nome)}: ${textoVolume(aVol)}"${volAberto ? '' : ` title="${rotuloVol}"`}>${iconeChamada(aVol.mudo ? 'volumeOff' : 'volume', 15)}</button>` : '';
+  let painelVolume = '';
+  if(volAberto){
+    const id = idVolume(chaveVol);
+    const max = volumeMaximoChamada();
+    const pct = Math.min(max, Math.round(aVol.v * 100));
+    const quem = tela ? `a tela de ${nome}` : nome;
+    painelVolume = `
+      <div class="ch-volume ${aVol.mudo ? 'mudo' : ''}" role="group" aria-labelledby="ch-vol-titulo-${id}">
+        <div class="ch-volume-topo">
+          <span class="ch-volume-titulo" id="ch-vol-titulo-${id}">${esc(tela ? `Som da tela de ${nome}` : nome)}</span>
+          <span class="ch-volume-valor" id="ch-vol-valor-${id}" aria-hidden="true">${textoVolume(aVol)}</span>
+        </div>
+        <div class="ch-volume-linha">
+          <button type="button" class="ch-volume-mudo" id="ch-vol-mudo-${id}" onclick="chamadaSilenciar('${chaveVol}')" aria-pressed="${aVol.mudo}" aria-label="Silenciar ${esc(quem)} para você" title="Silenciar para você">${iconeChamada(aVol.mudo ? 'volumeOff' : 'volume', 16)}</button>
+          <span class="ch-volume-trilho">
+            ${max > 100 ? '<span class="ch-volume-marca" aria-hidden="true"></span>' : ''}
+            <input type="range" class="ch-volume-barra" id="ch-vol-${id}" min="0" max="${max}" step="5" value="${pct}" style="--f:${pct / max};--m:${100 / max}" aria-label="Volume de ${esc(quem)}" aria-valuetext="${textoVolume(aVol)}" oninput="chamadaVolume('${chaveVol}', this.value)" onchange="desenharChamada()">
+          </span>
+        </div>
+        <div class="ch-volume-pe">
+          <span>Só para você</span>
+          <button type="button" class="ch-volume-redefinir" id="ch-vol-redefinir-${id}" onclick="chamadaRedefinirVolume('${chaveVol}')"${pct === 100 ? ' hidden' : ''}>Voltar a 100%</button>
+        </div>
+      </div>`;
+  }
   // O ladrilho inteiro é um botão (transparente, por baixo do nome e das
   // ações) que põe ou tira do destaque.
   return `
