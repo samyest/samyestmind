@@ -2081,15 +2081,34 @@ function safeRerender(){
   render();
 }
 
+// Eventos seguidos de tipos diferentes se juntam: 'projects' já recarrega as
+// tarefas, então ganha de 'tasks'. Antes valia só o último, e um 'tasks' logo
+// depois de alguém entrar no projeto engolia a recarga dos membros.
+let realtimeKindPendente = null;
 function scheduleRealtimeReload(kind){
   if(realtimeDebounceTimer) clearTimeout(realtimeDebounceTimer);
+  realtimeKindPendente = realtimeKindPendente ? {kind: juntarCargas(realtimeKindPendente.kind, kind)} : {kind};
   realtimeDebounceTimer = setTimeout(async ()=>{
-    await refreshAll(kind, true);
+    const {kind: k} = realtimeKindPendente || {};
+    realtimeKindPendente = null;
+    await refreshAll(k, true);
   }, 500);
 }
 
+// Pedido que chega com outra carga em andamento roda logo depois dela, em vez
+// de ser descartado.
+let refreshDepois = null;
+function juntarCargas(a, b){
+  if(!a || !b) return undefined;
+  if(a === b) return a;
+  if((a === 'projects' || b === 'projects') && (a === 'tasks' || b === 'tasks')) return 'projects';
+  return undefined;
+}
 async function refreshAll(kind, silent){
-  if(isRefreshing) return;
+  if(isRefreshing){
+    refreshDepois = refreshDepois ? {kind: juntarCargas(refreshDepois.kind, kind)} : {kind};
+    return;
+  }
   isRefreshing = true;
   const btns = document.querySelectorAll('.refresh-btn');
   btns.forEach(b=>b.classList.add('spinning'));
@@ -2110,6 +2129,11 @@ async function refreshAll(kind, silent){
   }catch(e){}
   isRefreshing = false;
   setTimeout(()=>btns.forEach(b=>b.classList.remove('spinning')), 400);
+  if(refreshDepois){
+    const {kind: k} = refreshDepois;
+    refreshDepois = null;
+    refreshAll(k, true);
+  }
 }
 
 let alarmedTaskKeys = new Set();
@@ -9423,6 +9447,27 @@ function permitidoNaChamada(pid, uid){
   return !!p && projectPeople(p).some(pe=>pe.id === uid);
 }
 
+// Quem entrou no projeto depois que este aparelho carregou a lista de membros
+// aparece no canal da chamada (que o Supabase só abre para membros) sem estar
+// na lista daqui, e era ignorado até a próxima recarga. Agora isso puxa a
+// lista de novo: no fim do loadProjects a presença é conferida outra vez.
+// No máximo uma recarga a cada 8 s por projeto e 3 por pessoa, para alguém
+// já removido que siga no canal não virar recarga sem fim.
+const recargaMembrosChamada = {};
+function membroNovoNaChamada(pid, uid){
+  if(!CHAMADA_UUID.test(uid) || !projetoDaChamada(pid)) return;
+  const r = recargaMembrosChamada[pid] || (recargaMembrosChamada[pid] = {ultima: 0, timer: null, vezes: {}});
+  if((r.vezes[uid] || 0) >= 3 || r.timer) return;
+  r.vezes[uid] = (r.vezes[uid] || 0) + 1;
+  r.timer = setTimeout(async ()=>{
+    r.ultima = Date.now();
+    try{ await loadProjects(); safeRerender(); }catch(e){}
+    r.timer = null;
+    // Reconfere: se a pessoa ainda não estiver na lista, tenta de novo depois.
+    if(projetoDaChamada(pid) && !permitidoNaChamada(pid, uid)) presencaChamada(pid);
+  }, Math.max(0, r.ultima + 8000 - Date.now()));
+}
+
 function nomeNaChamada(pid, uid){
   if(uid === session.user.id) return getUserName() || 'Você';
   const p = projetoDaChamada(pid);
@@ -9502,7 +9547,8 @@ function presencaChamada(pid){
   const estado = reg.canal.presenceState();
   const lista = [];
   for(const [uid, metas] of Object.entries(estado || {})){
-    if(!CHAMADA_UUID.test(uid) || !permitidoNaChamada(pid, uid)) continue;
+    if(!CHAMADA_UUID.test(uid)) continue;
+    if(!permitidoNaChamada(pid, uid)){ membroNovoNaChamada(pid, uid); continue; }
     const ativas = (metas || []).filter(m=>m && m.em_chamada && typeof m.sessao === 'string');
     if(!ativas.length) continue;
     const m = ativas.reduce((a, b)=>(Number(b.desde) || 0) > (Number(a.desde) || 0) ? b : a);
@@ -9561,7 +9607,7 @@ function receberSinalChamada(pid, s){
   if(!c || c.pid !== pid || !sinalChamadaValido(s)) return;
   if(s.para !== session.user.id || s.paraSessao !== c.sessao || s.de === session.user.id) return;
   // SEC-076: sinal de quem não é (mais) do projeto é ignorado.
-  if(!permitidoNaChamada(pid, s.de)) return;
+  if(!permitidoNaChamada(pid, s.de)){ membroNovoNaChamada(pid, s.de); return; }
   let par = c.pares.get(s.de);
   if(s.tipo === 'oferta'){
     if(par && par.sessao !== s.deSessao){ fecharParChamada(par); par = null; }
