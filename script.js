@@ -10423,15 +10423,17 @@ async function sairDaChamada(opts){
   if(!c) return;
   // A janela da chamada pode estar na flutuante: pega ela antes de fechar.
   const flutuante = janelaFlutuante;
-  const raizFlutuante = flutuante ? flutuante.win.document.getElementById('chamada') : null;
+  const raizFlutuante = flutuante ? flutuante.raiz : null;
   janelaFlutuante = null;
   trocarRelogioFala();
   desligarFlutuanteAutomatico();
   chamada = null;
   if(flutuante){
-    if(raizFlutuante) raizFlutuante.remove();
+    clearInterval(flutuante.vigia);
+    try{ if(raizFlutuante) raizFlutuante.remove(); }catch(e){}
     try{ flutuante.win.close(); }catch(e){}
   }
+  desenharAvisoFlutuante();
   clearTimeout(c.turnTimer);
   clearTimeout(c.timerInicio);
   Object.values(c.esperas).forEach(clearTimeout);
@@ -11005,7 +11007,9 @@ async function abrirJanelaFlutuante(origem){
   c.painelTela = false;
   c.volumeAberto = null;
   if(raiz) win.document.body.appendChild(raiz);
+  janelaFlutuante.raiz = raiz;
   win.addEventListener('pagehide', ()=>voltarDaJanelaFlutuante(win), {once: true});
+  janelaFlutuante.vigia = setInterval(conferirJanelaFlutuante, 1000);
   trocarRelogioFala();
   desenharChamada();
 }
@@ -11051,13 +11055,59 @@ function voltarDaJanelaFlutuante(win){
   const j = janelaFlutuante;
   if(!j || j.win !== win) return;
   janelaFlutuante = null;
+  clearInterval(j.vigia);
   trocarRelogioFala();
-  const raiz = win.document.getElementById('chamada');
+  // O documento da flutuante pode já ter ido embora (fechada sem o pagehide
+  // chegar, ou no meio dele): nada aqui pode falhar, senão a chamada ficava
+  // presa numa janela que não existe mais e sumia da página.
+  let raiz = j.raiz;
+  if(!raiz){ try{ raiz = win.document.getElementById('chamada'); }catch(e){} }
   const c = chamada;
-  if(!c){ if(raiz) raiz.remove(); return; }
-  if(raiz) document.body.appendChild(raiz);
-  c.modo = j.voltarExpandida ? 'expandida' : j.modoAntes;
+  if(!c){ try{ if(raiz) raiz.remove(); }catch(e){} desenharAvisoFlutuante(); return; }
+  try{ if(raiz) document.body.appendChild(raiz); }
+  catch(e){ try{ raiz.remove(); }catch(e2){} }
+  c.modo = j.modoVolta || (j.voltarExpandida ? 'expandida' : j.modoAntes);
   desenharChamada();
+}
+
+// Confere se a flutuante ainda está de pé com a chamada dentro. Roda a cada
+// segundo enquanto ela existe, ao voltar para a aba e quando a página ganha
+// foco; se ela sumiu sem avisar, a chamada volta para a página.
+function conferirJanelaFlutuante(){
+  const j = janelaFlutuante;
+  if(!j) return;
+  let aberta = false;
+  try{ aberta = !j.win.closed && !!j.raiz && j.win.document.body.contains(j.raiz); }catch(e){}
+  if(!aberta) voltarDaJanelaFlutuante(j.win);
+}
+
+// "Trazer para cá" do aviso na página: a chamada volta minimizada no canto.
+function chamadaTrazerParaPagina(){
+  const j = janelaFlutuante;
+  if(!j) return;
+  j.modoVolta = 'mini';
+  try{ j.win.close(); }catch(e){}
+  setTimeout(conferirJanelaFlutuante, 300);
+}
+
+// Enquanto a chamada está na flutuante, a página mostra no canto, no lugar da
+// janela minimizada, que ela está lá, com o relógio e o caminho de volta.
+function desenharAvisoFlutuante(){
+  let el = document.getElementById('chamada-na-flutuante');
+  if(!janelaFlutuante || !chamada){ if(el) el.remove(); return; }
+  const p = projetoDaChamada(chamada.pid);
+  const html = `
+    <span class="ch-ponto" aria-hidden="true"></span>
+    <span class="ch-na-flutuante-texto"><strong>${esc(p ? p.name : 'Chamada')}</strong><span>Na janela flutuante · <span class="ch-tempo"></span></span></span>
+    <button type="button" class="ch-na-flutuante-btn" id="ch-btn-trazer" onclick="chamadaTrazerParaPagina()">Trazer para cá</button>`;
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'chamada-na-flutuante';
+    el.className = 'ch-na-flutuante';
+    el.setAttribute('role', 'status');
+    document.body.appendChild(el);
+    el.innerHTML = html;
+  }else if(!el.querySelector('#ch-btn-trazer')) el.innerHTML = html;
 }
 
 function chamadaVoltarParaAba(){
@@ -11082,8 +11132,11 @@ function desligarFlutuanteAutomatico(){
 }
 
 document.addEventListener('visibilitychange', ()=>{
-  if(document.visibilityState === 'visible' && janelaFlutuante && janelaFlutuante.auto) janelaFlutuante.win.close();
+  if(document.visibilityState !== 'visible' || !janelaFlutuante) return;
+  if(janelaFlutuante.auto){ try{ janelaFlutuante.win.close(); }catch(e){} }
+  conferirJanelaFlutuante();
 });
+window.addEventListener('focus', ()=>conferirJanelaFlutuante());
 
 /* --- desenho da janela --- */
 
@@ -11301,6 +11354,7 @@ function colunasDaGrade(n){
 
 function desenharChamada(){
   const c = chamada;
+  desenharAvisoFlutuante();
   const doc = docChamada();
   let raiz = doc.getElementById('chamada');
   if(!c){ if(raiz) raiz.remove(); return; }
@@ -11311,6 +11365,7 @@ function desenharChamada(){
     doc.body.appendChild(raiz);
   }
   raiz.classList.toggle('na-janela', doc !== document);
+  if(janelaFlutuante && doc !== document) janelaFlutuante.raiz = raiz;
   const p = projetoDaChamada(c.pid);
   const nomeProjeto = p ? p.name : 'Projeto';
   raiz.dataset.modo = c.modo;
