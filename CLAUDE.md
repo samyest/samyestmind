@@ -17,10 +17,10 @@ Sem framework e sem build step. Não existe `package.json`; nada é compilado.
 
 ## Regras do projeto
 
-- `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_SECRET` e `OAUTH_STATE_SECRET` nunca vão
-  para o repositório nem para o navegador — só variáveis de ambiente da Vercel. A
-  service role key ignora todo o RLS; o refresh token do Google só é tocado pelas
-  funções em `api/`.
+- `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_SECRET`, `OAUTH_STATE_SECRET` e
+  `TURN_KEY_API_TOKEN` nunca vão para o repositório nem para o navegador — só
+  variáveis de ambiente da Vercel. A service role key ignora todo o RLS; o refresh
+  token do Google e o token TURN da Cloudflare só são tocados pelas funções em `api/`.
 - `styles.css` e `script.js` são grandes e sem módulos. Antes de adicionar código novo,
   procure o padrão que já existe no arquivo e siga ele, em vez de introduzir uma
   segunda convenção.

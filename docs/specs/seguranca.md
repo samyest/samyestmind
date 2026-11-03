@@ -7,10 +7,11 @@ Requisitos de segurança do samyestmind. Ids são estáveis: não renumere, marq
 ## Segredos
 
 ### SEC-001 — Segredos só em variável de ambiente
-`SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_SECRET` e `OAUTH_STATE_SECRET` nunca
-aparecem em arquivo versionado nem em código que chega ao navegador.
+`SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_SECRET`, `OAUTH_STATE_SECRET` e
+`TURN_KEY_API_TOKEN` nunca aparecem em arquivo versionado nem em código que chega ao
+navegador.
 **Por quê:** a service role ignora todo o RLS; o client secret permite se passar
-pelo app no Google. **Verificação:** auto (nenhum valor com cara de segredo em
+pelo app no Google; o token TURN gera credenciais à vontade na conta da Cloudflare. **Verificação:** auto (nenhum valor com cara de segredo em
 arquivo versionado; `.env*` no `.gitignore`).
 
 ### SEC-002 — Navegador só conhece a chave publicável
@@ -191,7 +192,7 @@ não lidas é função `security invoker`. **Por quê:** a linha revela quando c
 pessoa abriu o chat, e uma contagem `security definer` contaria mensagens de projeto
 alheio. **Verificação:** revisão.
 
-### SEC-075 — Sinalização da chamada só em canal privado autorizado pelo projeto *(fase 2, não implementado)*
+### SEC-075 — Sinalização da chamada só em canal privado autorizado pelo projeto *(fase 2, atendido em `supabase/chamadas.sql`; falta aplicar no Supabase e o teste do passo 6 da RFC)*
 O canal `chamada:<project_id>` é criado com `private: true`. As policies em
 `realtime.messages` (Broadcast e Presence, para receber e para enviar) só deixam
 passar o dono e os membros aceitos daquele projeto, e o formato do tópico é validado
@@ -202,7 +203,7 @@ candidatos ICE carregam o IP de cada participante, e quem os recebe pode entrar 
 negociação da chamada. **Verificação:** revisão + navegador (uma conta de fora do
 projeto tenta assinar o tópico e é recusada).
 
-### SEC-076 — Só dono e membros aceitos ficam na chamada *(fase 2, não implementado)*
+### SEC-076 — Só dono e membros aceitos ficam na chamada *(fase 2, atendido em `script.js`: `permitidoNaChamada` e `conferirAcessoChamada`)*
 Além do SEC-075, cada participante recusa sinal de user id que não está entre o dono
 e os membros aceitos que ele carregou. Quando `project_members` muda, cada
 participante fecha na hora a conexão com quem perdeu o acesso, e o cliente de quem
@@ -212,7 +213,7 @@ hora. O limite de 4 pessoas é do cliente e não conta como controle de acesso.
 o JWT vencer, então quem é removido no meio da chamada continuaria nela.
 **Verificação:** revisão + navegador (remover um membro no meio de uma chamada).
 
-### SEC-077 — Credencial TURN de curta duração, emitida só por `api/` *(fase 2, não implementado)*
+### SEC-077 — Credencial TURN de curta duração, emitida só por `api/` *(fase 2, atendido em `api/chamada/turn.mjs` e `supabase/chamadas.sql`; falta aplicar no Supabase e configurar a Cloudflare)*
 A credencial sai de `api/chamada/turn`, vale no máximo 1 hora e, durante a chamada, é
 renovada chamando a rota de novo, que repete todas as checagens. A rota:
 - usa `userFromRequest()`;
@@ -227,17 +228,18 @@ credencial longa ou sem limite, uma conta recém-criada usa o TURN como intermed
 grátis, e a Cloudflare não tem teto de gasto. **Verificação:** auto (SEC-030 e
 SEC-031 já cobrem a rota nova) + revisão (validade, limites, corpo da resposta).
 
-### SEC-078 — Câmera, microfone e tela só no próprio site e só depois de um clique *(fase 2, não implementado)*
+### SEC-078 — Câmera, microfone e tela só no próprio site e só depois de um clique *(fase 2, atendido em `vercel.json` e `script.js`)*
 `Permissions-Policy` libera `camera`, `microphone` e `display-capture` só para
 `self`. `getUserMedia` e `getDisplayMedia` só rodam a partir de um clique na prévia
 ou na barra da chamada. Sair da chamada, ou fechar a aba, para todas as faixas.
 **Por quê:** `*` deixaria qualquer iframe ou origem usar a permissão, e uma faixa
 esquecida mantém a câmera ligada depois que a pessoa acha que saiu.
-**Verificação:** auto (a acrescentar na fase 2: `Permissions-Policy` sem `*` nesses
-três) + revisão + navegador.
+**Verificação:** auto (`Permissions-Policy` com os três presentes e só `self`) +
+revisão + navegador.
 
-### SEC-079 — Chamada não é gravada *(fase 2, não implementado)*
+### SEC-079 — Chamada não é gravada *(fase 2, atendido; o verificador barra gravação no `script.js`)*
 Nenhum `MediaRecorder` nem captura de quadros sobre os fluxos da chamada.
 **Por quê:** decisão da RFC 0002. Gravar exige o consentimento de todos e um lugar
 para guardar vídeo, e uma gravação que vier depois começa por uma RFC.
-**Verificação:** auto (a acrescentar na fase 2: `MediaRecorder` em `script.js`).
+**Verificação:** auto (`MediaRecorder`, `ImageCapture`, `captureStream` ou
+`requestVideoFrameCallback` em `script.js` são falha).

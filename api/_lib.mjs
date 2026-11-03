@@ -162,6 +162,34 @@ export async function deleteCredential(userId){
   if(!res.ok) throw new Error(`Falha ao apagar credencial: ${res.status} ${await res.text()}`);
 }
 
+// Chama uma função do banco como service role. Só para funções que revogam
+// EXECUTE de anon e authenticated (registrar_emissao_turn): o resto do app
+// fala com o banco pelo token da própria pessoa, com o RLS valendo.
+export async function rpcAdmin(fn, args){
+  const res = await fetch(`${env('SUPABASE_URL')}/rest/v1/rpc/${encodeURIComponent(fn)}`, {
+    method: 'POST',
+    headers: adminHeaders(),
+    body: JSON.stringify(args)
+  });
+  if(!res.ok) throw new Error(`Falha em ${fn}: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+// Lê do PostgREST com o token de quem fez a requisição: o RLS decide o que
+// volta, igual ao que o app veria.
+export async function selectComoUsuario(token, caminho){
+  const res = await fetch(`${env('SUPABASE_URL')}/rest/v1/${caminho}`, {
+    headers: {apikey: env('SUPABASE_ANON_KEY'), Authorization: `Bearer ${token}`}
+  });
+  if(!res.ok) throw new Error(`Falha ao ler ${caminho.split('?')[0]}: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+export function bearerToken(req){
+  const auth = req.headers.authorization || '';
+  return auth.startsWith('Bearer ') ? auth.slice(7) : null;
+}
+
 /* ---------- Google ---------- */
 
 // Falha passageira ao renovar o token (rede, cota, instabilidade do Google).

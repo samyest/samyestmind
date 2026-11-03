@@ -38,7 +38,7 @@ const SEGREDOS = [
   [/sb_secret_[A-Za-z0-9_-]{10,}/, 'chave secreta do Supabase'],
   [/GOCSPX-[A-Za-z0-9_-]{10,}/, 'client secret do Google'],
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, 'chave privada'],
-  [/(OAUTH_STATE_SECRET|SUPABASE_SERVICE_ROLE_KEY|GOOGLE_CLIENT_SECRET)\s*[=:]\s*['"][^'"]{8,}/, 'segredo atribuído em código']
+  [/(OAUTH_STATE_SECRET|SUPABASE_SERVICE_ROLE_KEY|GOOGLE_CLIENT_SECRET|TURN_KEY_API_TOKEN)\s*[=:]\s*['"][^'"]{8,}/, 'segredo atribuído em código']
 ];
 for(const f of deTipo(/\.(js|mjs|html|json|sql|md|css|txt|ya?ml)$/)){
   if(f.startsWith('.claude/skills/')) continue;
@@ -81,6 +81,12 @@ for(const f of deTipo(/^(script\.js|api\/.*\.mjs|scripts\/.*\.mjs)$/)){
     if(/console\.log\(/.test(codigo)) aviso('QUA-002', f, n, 'console.log');
   });
 }
+
+/* ---------- SEC-079: a chamada não é gravada ---------- */
+cadaLinha('script.js', (l, n)=>{
+  const codigo = l.replace(/\/\/.*$/, '');
+  if(/\bMediaRecorder\b|\bImageCapture\b|\.captureStream\s*\(|requestVideoFrameCallback/.test(codigo)) falha('SEC-079', 'script.js', n, 'gravação ou captura de quadros');
+});
 
 /* ---------- SEC-010 (heurística): campo de texto interpolado sem esc() ---------- */
 // Só olha campos que costumam carregar texto do usuário. Pega o erro comum
@@ -162,6 +168,16 @@ try{
   if(!tem(todos, 'X-Frame-Options') && !(csp && /frame-ancestors/.test(csp.value))) falha('SEC-050', 'vercel.json', 0, 'falta proteção contra iframe');
   const cc = tem(api, 'Cache-Control');
   if(!cc || !/no-store/.test(cc.value)) falha('SEC-050', 'vercel.json', 0, '/api/ sem Cache-Control: no-store');
+  // SEC-078: câmera, microfone e tela liberados só para o próprio site.
+  const pp = tem(todos, 'Permissions-Policy');
+  if(pp){
+    for(const recurso of ['camera', 'microphone', 'display-capture']){
+      const m = pp.value.match(new RegExp(`(^|[\\s,])${recurso}=\\(([^)]*)\\)`));
+      if(!m) falha('SEC-078', 'vercel.json', 0, `Permissions-Policy sem ${recurso}`);
+      else if(/\*/.test(m[2])) falha('SEC-078', 'vercel.json', 0, `${recurso} liberado para qualquer origem (*)`);
+      else if(m[2].trim() && m[2].trim() !== 'self') falha('SEC-078', 'vercel.json', 0, `${recurso} liberado para outra origem: ${m[2]}`);
+    }
+  }
   if(csp){
     const scriptSrc = (csp.value.match(/script-src([^;]*)/) || [])[1] || '';
     if(/'unsafe-inline'|'unsafe-eval'/.test(scriptSrc)) aviso('SEC-012', 'vercel.json', 0, `script-src permite ${scriptSrc.match(/'unsafe-[a-z]+'/g).join(' ')} (dívida conhecida)`);

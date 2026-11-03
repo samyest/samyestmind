@@ -726,6 +726,27 @@
   </div>
 </div>
 
+<!-- Prévia da chamada do projeto: microfone, câmera e dispositivos antes de
+     entrar. O corpo é preenchido por desenharPreviaChamada() no script.js. -->
+<div class="modal-bg" id="chamada-previa" role="dialog" aria-modal="true" aria-labelledby="chamada-previa-titulo">
+  <div class="modal chamada-previa-modal">
+    <div class="modal-head">
+      <div class="modal-head-title" id="chamada-previa-titulo">Entrar na chamada</div>
+      <button class="modal-close" onclick="fecharPreviaChamada()" aria-label="Fechar">
+        <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="chamada-previa-corpo"></div>
+    <div class="modal-foot">
+      <div></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-secondary" onclick="fecharPreviaChamada()">Cancelar</button>
+        <button class="btn-primary" id="chamada-previa-entrar" onclick="entrarNaChamada()">Entrar na chamada</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
   <div class="modal modal-narrow">
     <div class="modal-head">

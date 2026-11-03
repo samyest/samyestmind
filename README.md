@@ -61,6 +61,18 @@ mesma reunião de virar duas tarefas quando o app está aberto em mais de um
 aparelho. O passo 1 do arquivo lista duplicatas que já existam (o índice não é
 criado enquanto houver alguma).
 
+Para o chat e as chamadas dos projetos (RFC 0002), rode `supabase/chat_projeto.sql`
+e depois `supabase/chamadas.sql`. A chamada já funciona assim: o canal dela é privado,
+e as policies do `chamadas.sql` só deixam entrar quem é do projeto.
+
+Falta o reforço do SEC-075, que depende do passo 6 da RFC: conferir se uma conta de
+fora do projeto, assinando um canal **público** chamado `chamada:<id do projeto>`,
+recebe os sinais do privado. Se receber, a saída é desligar **Allow public access**
+em **Project Settings → Realtime**. Mas o quadro, as notas e o chat usam canais
+públicos (`app-changes`, `notas-projeto`, `chat-projeto`) e podem parar de atualizar
+sozinhos com isso desligado. Desligue, abra um projeto em duas abas e confira; se
+pararem, ligue de novo e anote na RFC.
+
 ### 2. Google Cloud Console
 
 1. Criar projeto em <https://console.cloud.google.com>
@@ -74,7 +86,21 @@ criado enquanto houver alguma).
    - **URIs de redirecionamento autorizados:** `https://SEU-APP.vercel.app/api/google/callback`
 5. Guardar o **ID do cliente** e a **Chave secreta**
 
-### 3. Variáveis de ambiente (Vercel → Settings → Environment Variables)
+### 3. Cloudflare (TURN das chamadas)
+
+A chamada vai direto entre as pessoas sempre que a rede deixa. Em redes que bloqueiam
+isso (4G de algumas operadoras, Wi-Fi de empresa), o áudio e o vídeo precisam passar
+por um servidor de apoio, o TURN. Sem ele configurado, a chamada funciona, mas nessas
+redes a conexão não sai.
+
+1. Criar uma conta em <https://dash.cloudflare.com>
+2. **Realtime → TURN Server → Create TURN key**
+3. Guardar o **Key ID** e o **API token** (o token aparece uma vez só)
+
+A franquia grátis é de 1.000 GB por mês; depois, US$ 0,05 por GB, sem teto de gasto.
+Confira o uso no painel uma vez por mês.
+
+### 4. Variáveis de ambiente (Vercel → Settings → Environment Variables)
 
 | Variável | Onde obter |
 |---|---|
@@ -86,10 +112,13 @@ criado enquanto houver alguma).
 | `OAUTH_STATE_SECRET` | Qualquer string aleatória longa: `openssl rand -base64 32` |
 | `GOOGLE_REDIRECT_URI` | Opcional. Só se o domínio do callback for diferente do host da requisição |
 | `APP_ORIGIN` | Opcional, mas recomendado. Origem fixa do app (`https://SEU-APP.vercel.app`). Sem ela, o redirect do callback é montado a partir do header `x-forwarded-host`, que vem do cliente |
+| `TURN_KEY_ID` | Cloudflare (passo 3). Sem ela, as chamadas seguem só com conexão direta |
+| `TURN_KEY_API_TOKEN` | Cloudflare (passo 3) (**secreta**) |
 
-> A service role key ignora todo o RLS do Supabase e o client secret dá acesso ao
-> Google em nome do app. Nenhum dos dois pode ir para o repositório nem para o
-> navegador — só nas variáveis de ambiente da Vercel.
+> A service role key ignora todo o RLS do Supabase, o client secret dá acesso ao
+> Google em nome do app e o token TURN gera credenciais à vontade na conta da
+> Cloudflare. Nenhum deles pode ir para o repositório nem para o navegador — só nas
+> variáveis de ambiente da Vercel.
 
 ### Como funciona
 
@@ -107,6 +136,13 @@ criado enquanto houver alguma).
 
 O navegador nunca vê o refresh token; por isso a conexão sobrevive a recarregar a
 página e dura até ser revogada.
+
+- `api/chamada/turn` — credencial TURN da Cloudflare para a chamada de um projeto,
+  válida por 1 hora. Só sai para o dono ou membro aceito de projeto com pelo menos 2
+  pessoas, no máximo 20 por hora por pessoa (SEC-077). O app pede outra aos 45
+  minutos de chamada. Sem `TURN_KEY_ID`, responde 503 e o app segue só com conexão
+  direta. A chamada em si é P2P: o áudio e o vídeo não passam pela Vercel nem pelo
+  Supabase, que só carregam a combinação inicial das conexões.
 
 ### Limitações conhecidas
 
