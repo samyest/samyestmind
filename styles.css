@@ -2289,8 +2289,48 @@
      a janela inteira, e o palco cresce com ela quando a pessoa a redimensiona. */
   body.corpo-flutuante{margin:0;min-height:100vh;overflow:hidden;background:#10151b;}
   .chamada.na-janela[data-modo="mini"]{inset:0;width:100%;height:100%;border-radius:0;box-shadow:none;display:flex;flex-direction:column;}
-  .chamada.na-janela .ch-mini-palco{flex:1;min-height:0;aspect-ratio:auto;}
-  .chamada.na-janela .ch-mini-barra{flex-shrink:0;}
+  /* O vídeo ocupa a janela toda; nome e tempo no alto e os controles numa
+     barra translúcida embaixo ficam por cima dele, sobre uma sombra suave, e
+     somem juntos quando a janela fica quieta (sem mouse). */
+  .chamada.na-janela .ch-mini-palco{position:absolute;inset:0;aspect-ratio:auto;}
+  .chamada.na-janela .ch-mini-palco::before,
+  .chamada.na-janela .ch-mini-palco::after{content:"";position:absolute;left:0;right:0;z-index:3;pointer-events:none;transition:opacity .3s ease;}
+  .chamada.na-janela .ch-mini-palco::before{top:0;height:64px;background:linear-gradient(rgba(8,11,15,0.62), rgba(8,11,15,0));}
+  .chamada.na-janela .ch-mini-palco::after{bottom:0;height:96px;background:linear-gradient(rgba(8,11,15,0), rgba(8,11,15,0.66));}
+  .chamada.na-janela .ch-mini-barra{position:absolute;inset:0;z-index:4;display:block;padding:0;pointer-events:none;}
+  .chamada.na-janela .ch-mini-info{position:absolute;top:12px;left:14px;right:14px;gap:7px;font-size:13px;text-shadow:0 1px 3px rgba(0,0,0,0.45);}
+  .chamada.na-janela .ch-mini-info .ch-tempo{color:rgba(255,255,255,0.72);}
+  .chamada.na-janela .ch-mini-controles{
+    position:absolute;
+    left:50%;
+    bottom:12px;
+    transform:translateX(-50%);
+    gap:6px;
+    padding:6px;
+    border-radius:999px;
+    background:rgba(16,21,27,0.62);
+    backdrop-filter:blur(14px) saturate(1.4);
+    -webkit-backdrop-filter:blur(14px) saturate(1.4);
+    box-shadow:0 8px 24px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.09);
+    pointer-events:auto;
+    transition:opacity .3s ease, transform .3s cubic-bezier(.2,.8,.2,1);
+  }
+  .chamada.na-janela .ch-mini-controles .ch-botao:not(.desligado):not(.ch-sair){background:rgba(255,255,255,0.1);}
+  .chamada.na-janela .ch-mini-controles .ch-botao:not(.desligado):not(.ch-sair):hover{background:rgba(255,255,255,0.18);}
+  .chamada.na-janela .ch-mini-info{transition:opacity .3s ease;}
+  /* Os nomes e a própria câmera sobem para não ficar atrás dos controles. */
+  .chamada.na-janela .ch-mini-palco .ch-rotulo{transition:bottom .3s cubic-bezier(.2,.8,.2,1);}
+  .chamada.na-janela .ch-mini-palco > .ch-ladrilho .ch-rotulo,
+  .chamada.na-janela .ch-mini-grade.n-1 .ch-rotulo,
+  .chamada.na-janela .ch-mini-grade.n-2 .ch-rotulo,
+  .chamada.na-janela .ch-mini-grade .ch-ladrilho:nth-child(n+3) .ch-rotulo{bottom:64px;}
+  .chamada.na-janela .ch-mini-eu{bottom:64px;right:10px;width:30%;border-radius:10px;transition:bottom .3s cubic-bezier(.2,.8,.2,1);}
+  .chamada.na-janela.quieta .ch-mini-palco::before,
+  .chamada.na-janela.quieta .ch-mini-palco::after,
+  .chamada.na-janela.quieta .ch-mini-info{opacity:0;}
+  .chamada.na-janela.quieta .ch-mini-controles{opacity:0;transform:translate(-50%, 8px);}
+  .chamada.na-janela.quieta .ch-mini-palco .ch-ladrilho .ch-rotulo{bottom:6px;}
+  .chamada.na-janela.quieta .ch-mini-eu{bottom:10px;}
 
   /* Escolha da tela, antes do seletor do navegador: o que transmitir, em que
      qualidade e se o som vai junto. Cobre o palco, no tom escuro da chamada. */

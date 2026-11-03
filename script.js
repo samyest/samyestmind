@@ -11281,8 +11281,35 @@ function adotarJanelaFlutuante(win, origem){
   janelaFlutuante.raiz = raiz;
   win.addEventListener('pagehide', ()=>voltarDaJanelaFlutuante(win), {once: true});
   janelaFlutuante.vigia = setInterval(conferirJanelaFlutuante, 1000);
+  ouvirQuietudeFlutuante(win);
   trocarRelogioFala();
   desenharChamada();
+}
+
+// Na janela flutuante, nome e controles ficam por cima do vídeo e somem quando
+// o mouse sai da janela ou para por um tempo, como num player; voltam com o
+// mouse, um toque ou o teclado.
+function ouvirQuietudeFlutuante(win){
+  const d = win.document;
+  let timer = null;
+  const raiz = ()=>d.getElementById('chamada');
+  // O foco do teclado segura os controles; o que fica no botão depois de um
+  // clique, não.
+  const aquietar = ()=>{
+    const r = raiz(), a = d.activeElement;
+    let teclado = false;
+    try{ teclado = !!a && r && r.contains(a) && a.matches(':focus-visible'); }catch(e){}
+    if(r && !teclado) r.classList.add('quieta');
+  };
+  const acordar = ()=>{
+    const r = raiz();
+    if(r) r.classList.remove('quieta');
+    clearTimeout(timer);
+    timer = setTimeout(aquietar, 2500);
+  };
+  for(const ev of ['pointermove', 'pointerdown', 'keydown', 'focusin']) d.addEventListener(ev, acordar, {passive: true});
+  d.documentElement.addEventListener('mouseleave', ()=>{ clearTimeout(timer); timer = setTimeout(aquietar, 400); });
+  acordar();
 }
 
 // A janela flutuante nasce em branco: leva os estilos e o tema do app.
