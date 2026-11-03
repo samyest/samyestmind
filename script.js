@@ -9391,6 +9391,8 @@ const canaisChamada = {};
 const chamadaVideos = {};
 const falaMedidores = new Map();
 let falaTimer = null;
+// {win, auto, modoAntes, voltarExpandida} com a chamada na janela flutuante.
+let janelaFlutuante = null;
 let chamadaRelogio = null;
 let dispositivosChamada = {mic: [], cam: [], saida: []};
 // O que o último desenho da janela mostrou, para animar só o que é novo, e
@@ -9414,7 +9416,8 @@ const ICONES_CHAMADA = {
   expandir: '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>',
   telaCheia: '<path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/>',
   volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/>',
-  volumeOff: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/>'
+  volumeOff: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/>',
+  flutuar: '<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="11" width="7" height="6" rx="1"/>'
 };
 
 function iconeChamada(nome, tam){
@@ -10015,7 +10018,28 @@ function medirFala(chave, track){
     fonte.connect(analisador);
     falaMedidores.set(chave, {fonte, analisador, track, buffer: new Float32Array(analisador.fftSize), falando: false, ate: 0, nivel: 0});
   }catch(e){ return; }
-  if(!falaTimer) falaTimer = setInterval(lerFala, 100);
+  if(!falaTimer) ligarRelogioFala();
+}
+
+// Com a janela flutuante aberta, a página costuma estar escondida (outra aba
+// ou outro programa na frente) e o navegador segura os timers dela em um por
+// segundo; o anel de quem fala ficaria atrasado. Aí o relógio do medidor roda
+// na janela flutuante, que está visível.
+function ligarRelogioFala(){
+  const dono = janelaFlutuante ? janelaFlutuante.win : window;
+  falaTimer = {dono, id: dono.setInterval(lerFala, 100)};
+}
+
+function desligarRelogioFala(){
+  if(!falaTimer) return;
+  try{ falaTimer.dono.clearInterval(falaTimer.id); }catch(e){}
+  falaTimer = null;
+}
+
+function trocarRelogioFala(){
+  if(!falaTimer) return;
+  desligarRelogioFala();
+  if(falaMedidores.size) ligarRelogioFala();
 }
 
 function pararMedicaoFala(chave){
@@ -10023,7 +10047,7 @@ function pararMedicaoFala(chave){
   if(!m) return;
   try{ m.fonte.disconnect(); }catch(e){}
   falaMedidores.delete(chave);
-  if(!falaMedidores.size && falaTimer){ clearInterval(falaTimer); falaTimer = null; }
+  if(!falaMedidores.size && falaTimer) desligarRelogioFala();
 }
 
 function lerFala(){
@@ -10051,7 +10075,7 @@ function lerFala(){
 }
 
 function marcarFalaChamada(uid, falando){
-  document.querySelectorAll(`[data-fala="${uid}"]`).forEach(el=>el.classList.toggle('falando', falando));
+  for(const d of docsChamada()) d.querySelectorAll(`[data-fala="${uid}"]`).forEach(el=>el.classList.toggle('falando', falando));
 }
 
 /* --- sons (Q31) --- */
@@ -10080,7 +10104,7 @@ function tocarSomChamada(tipo){
 }
 
 function anunciarNaChamada(texto){
-  const el = document.getElementById('ch-anuncio');
+  const el = docChamada().getElementById('ch-anuncio');
   if(el) el.textContent = texto;
 }
 
@@ -10358,6 +10382,7 @@ async function entrarNaChamada(){
   agendarRenovacaoTurn();
   tocarSomChamada('entrar');
   comTransicaoChamada(()=>desenharChamada());
+  ligarFlutuanteAutomatico();
   iniciarRelogioChamada();
   await atualizarPresencaChamada();
   if(!chamada) return;
@@ -10382,7 +10407,17 @@ async function sairDaChamada(opts){
   const o = opts || {};
   const c = chamada;
   if(!c) return;
+  // A janela da chamada pode estar na flutuante: pega ela antes de fechar.
+  const flutuante = janelaFlutuante;
+  const raizFlutuante = flutuante ? flutuante.win.document.getElementById('chamada') : null;
+  janelaFlutuante = null;
+  trocarRelogioFala();
+  desligarFlutuanteAutomatico();
   chamada = null;
+  if(flutuante){
+    if(raizFlutuante) raizFlutuante.remove();
+    try{ flutuante.win.close(); }catch(e){}
+  }
   clearTimeout(c.turnTimer);
   clearTimeout(c.timerInicio);
   Object.values(c.esperas).forEach(clearTimeout);
@@ -10856,6 +10891,7 @@ function chamadaMinimizar(){
 }
 
 function chamadaExpandir(){
+  if(janelaFlutuante){ chamadaVoltarParaAba(); return; }
   const c = chamada;
   if(!c || c.modo === 'expandida') return;
   comTransicaoChamada(()=>{
@@ -10895,6 +10931,126 @@ document.addEventListener('keydown', (e)=>{
   if(e.shiftKey && document.activeElement === primeiro){ e.preventDefault(); ultimo.focus(); }
   else if(!e.shiftKey && document.activeElement === ultimo){ e.preventDefault(); primeiro.focus(); }
   else if(!caixa.contains(document.activeElement)){ e.preventDefault(); primeiro.focus(); }
+});
+
+/* --- janela flutuante (Document Picture-in-Picture) --- */
+
+// Como no Meet: a chamada sai numa janela pequena que fica por cima das
+// outras abas e dos outros programas. É a própria janela da chamada,
+// minimizada, movida para o documento da janela flutuante; os <audio>
+// continuam na página. Abre pelo botão ou sozinha ao trocar de aba, onde o
+// navegador permite. Só Chrome e Edge no computador têm a API. O estado fica
+// em `janelaFlutuante`, declarada no topo do bloco da chamada.
+
+function janelaFlutuanteSuportada(){
+  return 'documentPictureInPicture' in window;
+}
+
+function docChamada(){
+  return janelaFlutuante ? janelaFlutuante.win.document : document;
+}
+
+function docsChamada(){
+  return janelaFlutuante ? [document, janelaFlutuante.win.document] : [document];
+}
+
+async function abrirJanelaFlutuante(auto){
+  const c = chamada;
+  if(!c || janelaFlutuante || !janelaFlutuanteSuportada()) return;
+  let win;
+  try{
+    win = await window.documentPictureInPicture.requestWindow({width: 380, height: 270});
+  }catch(e){
+    if(auto !== true) showToast('O navegador não abriu a janela flutuante.', 'erro');
+    return;
+  }
+  if(chamada !== c || janelaFlutuante){ win.close(); return; }
+  prepararJanelaFlutuante(win);
+  const raiz = document.getElementById('chamada');
+  janelaFlutuante = {win, auto: auto === true, modoAntes: c.modo, voltarExpandida: false};
+  c.modo = 'mini';
+  c.painelDisp = false;
+  c.painelTela = false;
+  c.volumeAberto = null;
+  if(raiz) win.document.body.appendChild(raiz);
+  win.addEventListener('pagehide', ()=>voltarDaJanelaFlutuante(win), {once: true});
+  trocarRelogioFala();
+  desenharChamada();
+}
+
+// A janela flutuante nasce em branco: leva os estilos e o tema do app.
+function prepararJanelaFlutuante(win){
+  const d = win.document;
+  for(const folha of document.querySelectorAll('link[rel="stylesheet"], style')){
+    let copia;
+    if(folha.tagName === 'LINK'){
+      copia = d.createElement('link');
+      copia.rel = 'stylesheet';
+      copia.href = folha.href;
+    }else{
+      copia = d.createElement('style');
+      copia.textContent = folha.textContent;
+    }
+    d.head.appendChild(copia);
+  }
+  d.documentElement.className = document.documentElement.className;
+  const tema = document.documentElement.getAttribute('data-theme');
+  if(tema !== null) d.documentElement.setAttribute('data-theme', tema);
+  d.documentElement.lang = document.documentElement.lang || 'pt-BR';
+  d.body.className = `${document.body.className} corpo-flutuante`;
+  const p = projetoDaChamada(chamada.pid);
+  d.title = `Chamada · ${p ? p.name : 'Projeto'}`;
+}
+
+// Os onclick do HTML da chamada rodam no escopo global da janela onde o
+// elemento está. Na flutuante, as funções do app precisam existir lá também.
+function exporFuncoesNaJanela(win, html){
+  for(const atributo of html.matchAll(/\son[a-z]+="([^"]*)"/g)){
+    for(const chamadaJs of atributo[1].matchAll(/([A-Za-z_$][\w$]*)\s*\(/g)){
+      const nome = chamadaJs[1];
+      if(typeof window[nome] === 'function' && win[nome] !== window[nome]) win[nome] = window[nome];
+    }
+  }
+}
+
+// Fechou a flutuante (pelo X, pelo "voltar para a aba" do navegador ou pelo
+// nosso): a janela da chamada volta para a página, no modo em que estava.
+function voltarDaJanelaFlutuante(win){
+  const j = janelaFlutuante;
+  if(!j || j.win !== win) return;
+  janelaFlutuante = null;
+  trocarRelogioFala();
+  const raiz = win.document.getElementById('chamada');
+  const c = chamada;
+  if(!c){ if(raiz) raiz.remove(); return; }
+  if(raiz) document.body.appendChild(raiz);
+  c.modo = j.voltarExpandida ? 'expandida' : j.modoAntes;
+  desenharChamada();
+}
+
+function chamadaVoltarParaAba(){
+  const j = janelaFlutuante;
+  if(!j) return;
+  j.voltarExpandida = true;
+  try{ window.focus(); }catch(e){}
+  j.win.close();
+}
+
+// Troca de aba com a chamada aberta: o navegador oferece abrir a flutuante
+// sozinho (Chrome 134+, e a pessoa pode desligar). Ao voltar para a aba, a
+// que abriu sozinha fecha.
+function ligarFlutuanteAutomatico(){
+  if(!janelaFlutuanteSuportada() || !('mediaSession' in navigator)) return;
+  try{ navigator.mediaSession.setActionHandler('enterpictureinpicture', ()=>abrirJanelaFlutuante(true)); }catch(e){}
+}
+
+function desligarFlutuanteAutomatico(){
+  if(!('mediaSession' in navigator)) return;
+  try{ navigator.mediaSession.setActionHandler('enterpictureinpicture', null); }catch(e){}
+}
+
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible' && janelaFlutuante && janelaFlutuante.auto) janelaFlutuante.win.close();
 });
 
 /* --- desenho da janela --- */
@@ -10973,7 +11129,7 @@ function marcarVideoQuandoPronto(v){
 // que passe de 1,5 s (a mais longa dura 0,4 s) é pulada.
 function comTransicaoChamada(mudar){
   const reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(!document.startViewTransition || reduzir || document.visibilityState !== 'visible' || !document.hasFocus()){ mudar(); return Promise.resolve(); }
+  if(!document.startViewTransition || reduzir || janelaFlutuante || document.visibilityState !== 'visible' || !document.hasFocus()){ mudar(); return Promise.resolve(); }
   try{
     const t = document.startViewTransition(mudar);
     // Uma transição nova no meio de outra faz o navegador pular a antiga e
@@ -11077,7 +11233,13 @@ function controlesChamadaHtml(mini){
     partes.push(botaoChamada('ch-btn-cam', 'chamadaAlternarCamera()', c.camera ? 'cam' : 'camOff', c.camera ? 'Desligar a câmera' : 'Ligar a câmera', c.camera ? '' : 'desligado', !c.camera));
     if(telaSuportada()) partes.push(botaoChamada('ch-btn-tela', 'chamadaAlternarTela()', 'tela', c.tela ? 'Parar de transmitir a tela' : 'Transmitir a tela', c.tela ? 'ativo' : '', c.tela));
     partes.push(botaoChamada('ch-btn-disp', 'chamadaAlternarDispositivos()', 'ajustes', 'Microfone, câmera e alto-falante', c.painelDisp ? 'ativo' : '', c.painelDisp));
+  }else if(janelaFlutuante){
+    // Na janela flutuante, a câmera também, e a volta para a aba no lugar de
+    // abrir a chamada.
+    partes.push(botaoChamada('ch-btn-cam-mini', 'chamadaAlternarCamera()', c.camera ? 'cam' : 'camOff', c.camera ? 'Desligar a câmera' : 'Ligar a câmera', c.camera ? '' : 'desligado', !c.camera));
+    partes.push(botaoChamada('ch-btn-voltar-aba', 'chamadaVoltarParaAba()', 'expandir', 'Voltar para a aba da chamada', ''));
   }else{
+    if(janelaFlutuanteSuportada()) partes.push(botaoChamada('ch-btn-flutuar-mini', 'abrirJanelaFlutuante()', 'flutuar', 'Janela flutuante, por cima dos outros programas', ''));
     partes.push(botaoChamada('ch-btn-expandir', 'chamadaExpandir()', 'expandir', 'Abrir a chamada', ''));
   }
   partes.push(`<button type="button" id="${mini ? 'ch-btn-sair-mini' : 'ch-btn-sair'}" class="ch-sair" onclick="chamadaSair()" aria-label="Sair da chamada" title="Sair da chamada">${iconeChamada('sair')}${mini ? '' : '<span>Sair</span>'}</button>`);
@@ -11107,19 +11269,21 @@ function colunasDaGrade(n){
 
 function desenharChamada(){
   const c = chamada;
-  let raiz = document.getElementById('chamada');
+  const doc = docChamada();
+  let raiz = doc.getElementById('chamada');
   if(!c){ if(raiz) raiz.remove(); return; }
   if(!raiz){
-    raiz = document.createElement('section');
+    raiz = doc.createElement('section');
     raiz.id = 'chamada';
     raiz.className = 'chamada';
-    document.body.appendChild(raiz);
+    doc.body.appendChild(raiz);
   }
+  raiz.classList.toggle('na-janela', doc !== document);
   const p = projetoDaChamada(c.pid);
   const nomeProjeto = p ? p.name : 'Projeto';
   raiz.dataset.modo = c.modo;
   raiz.setAttribute('aria-label', `Chamada em ${nomeProjeto}`);
-  const foco = document.activeElement && raiz.contains(document.activeElement) ? document.activeElement.id : null;
+  const foco = doc.activeElement && raiz.contains(doc.activeElement) ? doc.activeElement.id : null;
   const ladrilhos = ladrilhosChamada();
   const pessoas = 1 + c.participantes.size;
   let html;
@@ -11177,6 +11341,7 @@ function desenharChamada(){
         </div>
         <div class="ch-topo-acoes">
           ${c.semTurn ? '<span class="ch-aviso-turn" title="Sem o servidor de apoio (TURN), em algumas redes a conexão não sai.">Conexão direta</span>' : ''}
+          ${janelaFlutuanteSuportada() ? `<button type="button" id="ch-btn-flutuar" class="ch-botao ch-botao-leve" onclick="abrirJanelaFlutuante()" aria-label="Janela flutuante, por cima dos outros programas" title="Janela flutuante">${iconeChamada('flutuar', 18)}</button>` : ''}
           <button type="button" id="ch-btn-minimizar" class="ch-botao ch-botao-leve" onclick="chamadaMinimizar()" aria-label="Minimizar a chamada (Esc)" title="Minimizar (Esc)">${iconeChamada('minimizar', 18)}</button>
         </div>
       </header>
@@ -11188,8 +11353,9 @@ function desenharChamada(){
       ${c.painelTela && c.escolhaTela ? escolhaTelaHtml() : ''}
       <div class="sr-only" aria-live="polite" id="ch-anuncio"></div>`;
   }
-  const anuncio = document.getElementById('ch-anuncio');
+  const anuncio = doc.getElementById('ch-anuncio');
   const textoAnuncio = anuncio ? anuncio.textContent : '';
+  if(doc !== document) exporFuncoesNaJanela(doc.defaultView, html);
   raiz.innerHTML = html;
   raiz.querySelectorAll('[data-slot]').forEach(slot=>{
     const v = videoDaChamada(slot.dataset.slot);
@@ -11220,12 +11386,12 @@ function desenharChamada(){
     raiz.querySelectorAll('.ch-painel-disp, .ch-volume, .ch-dialogo-fundo').forEach(el=>el.classList.add('abrindo'));
     c.animarPainel = false;
   }
-  const novoAnuncio = document.getElementById('ch-anuncio');
+  const novoAnuncio = doc.getElementById('ch-anuncio');
   if(novoAnuncio && textoAnuncio) novoAnuncio.textContent = textoAnuncio;
   for(const [chave, m] of falaMedidores) if(m.falando) marcarFalaChamada(chave, true);
   atualizarTempoChamada();
   if(foco){
-    const el = document.getElementById(foco);
+    const el = doc.getElementById(foco);
     if(el) el.focus();
   }
 }
@@ -11233,7 +11399,7 @@ function desenharChamada(){
 function atualizarTempoChamada(){
   if(!chamada) return;
   const t = formatarDuracaoChamada(Date.now() - chamada.inicio);
-  document.querySelectorAll('.ch-tempo').forEach(el=>{ el.textContent = t; });
+  for(const d of docsChamada()) d.querySelectorAll('.ch-tempo').forEach(el=>{ el.textContent = t; });
 }
 
 function iniciarRelogioChamada(){
