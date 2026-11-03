@@ -10649,6 +10649,9 @@ function transmitirTelaEscolhida(){
     selfBrowserSurface: 'exclude', surfaceSwitching: 'include', systemAudio: e.som ? 'include' : 'exclude', monitorTypeSurfaces: 'include'
   };
   const pedirTela = navigator.mediaDevices.getDisplayMedia(pedido);
+  c.pedindoTela = true;
+  const soltar = ()=>{ c.pedindoTela = false; c.telaPedidaAte = Date.now() + 800; };
+  pedirTela.then(soltar, soltar);
   c.painelTela = false;
   c.qualidadePedida = e.qualidade;
   desenharChamada();
@@ -10661,7 +10664,10 @@ async function iniciarTelaChamada(c, pedirTela, pedido, q){
   catch(e){
     // Navegador que não conhece algum campo do pedido: tenta só com o vídeo.
     if(e && e.name === 'TypeError'){
+      c.pedindoTela = true;
       try{ s = await navigator.mediaDevices.getDisplayMedia({video: {width: pedido.video.width, height: pedido.video.height, frameRate: pedido.video.frameRate}}); }catch(e2){ e = e2; }
+      c.pedindoTela = false;
+      c.telaPedidaAte = Date.now() + 800;
     }
     if(!s){
       if(e && e.name !== 'NotAllowedError' && e.name !== 'AbortError') showToast('Não deu para transmitir a tela.', 'erro');
@@ -10864,6 +10870,9 @@ function chamadaExpandir(){
 document.addEventListener('keydown', (e)=>{
   if(e.key !== 'Escape' || !chamada || e.defaultPrevented) return;
   if(topOpenModal() || document.fullscreenElement) return;
+  // O Esc que fecha o seletor de tela do navegador pode chegar aqui também; não
+  // é para minimizar a chamada.
+  if(chamada.pedindoTela || Date.now() < (chamada.telaPedidaAte || 0)) return;
   if(chamada.painelTela){ fecharEscolhaTela(); return; }
   if(chamada.painelDisp || chamada.volumeAberto){
     const voltar = chamada.volumeAberto ? document.getElementById(`ch-vol-btn-${idVolume(chamada.volumeAberto)}`) : null;
@@ -10956,15 +10965,23 @@ function marcarVideoQuandoPronto(v){
 // Troca de modo com a View Transition do navegador: o palco encolhe até a
 // janela do canto e ela cresce de volta, no lugar de trocar de uma vez. Sem
 // suporte, ou com movimento reduzido, troca direto.
+// Enquanto uma View Transition está em andamento, a página não recebe clique.
+// Sem foco (o seletor de tela do navegador aberto ou fechando, outra janela na
+// frente) ou com a aba escondida, o navegador pode não desenhar o quadro que
+// a transição espera, e ela ficava parada: o site travava até trocar de aba,
+// que é quando o navegador a pula. Nesses casos troca direto, e uma transição
+// que passe de 1,5 s (a mais longa dura 0,4 s) é pulada.
 function comTransicaoChamada(mudar){
   const reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(!document.startViewTransition || reduzir){ mudar(); return Promise.resolve(); }
+  if(!document.startViewTransition || reduzir || document.visibilityState !== 'visible' || !document.hasFocus()){ mudar(); return Promise.resolve(); }
   try{
     const t = document.startViewTransition(mudar);
     // Uma transição nova no meio de outra faz o navegador pular a antiga e
     // rejeitar as promessas dela; não é erro, só não anima.
     t.ready.catch(()=>{});
     t.finished.catch(()=>{});
+    const vigia = setTimeout(()=>{ try{ t.skipTransition(); }catch(e){} }, 1500);
+    t.finished.then(()=>clearTimeout(vigia), ()=>clearTimeout(vigia));
     return t.updateCallbackDone.catch(()=>{});
   }catch(e){
     mudar();
