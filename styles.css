@@ -1882,7 +1882,6 @@
   .ch-titulo h2{margin:0;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .ch-topo-meta{font-size:13px;color:var(--ch-suave);white-space:nowrap;font-variant-numeric:tabular-nums;}
   .ch-topo-acoes{display:flex;align-items:center;gap:10px;}
-  .ch-aviso-turn{font-size:12px;color:var(--ch-suave);padding:4px 10px;border-radius:999px;background:var(--ch-botao);cursor:help;}
 
   .ch-palco{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:6px 20px;}
   /* A grade nunca passa da altura disponível: a largura máxima sai da altura
@@ -2166,7 +2165,6 @@
   @media (max-width:900px){
     .chamada[data-modo="mini"]{right:12px;bottom:calc(84px + env(safe-area-inset-bottom));width:min(300px, calc(100vw - 24px));}
     .ch-topo{padding:12px 14px 8px;}
-    .ch-aviso-turn{display:none;}
     .ch-grade .ch-ladrilho-avatar{padding-bottom:26px;}
     .ch-palco{padding:4px 12px;}
     .ch-grade{--ch-vao:8px;}
