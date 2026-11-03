@@ -10080,25 +10080,39 @@ function marcarFalaChamada(uid, falando){
 
 /* --- sons (Q31) --- */
 
+// Sons da chamada, gerados na hora (sem arquivo). Entrar e sair são dois tons
+// em seno. Microfone e fone, como no Discord, são mais curtos e em triângulo,
+// para não confundir com alguém entrando: descem ao fechar e sobem ao abrir.
+// Só quem clicou ouve. Respeitam o "Som" das Configurações.
+const SONS_CHAMADA = {
+  entrar: {notas: [587.33, 880], onda: 'sine', passo: 0.11, dura: 0.2, volume: 0.12},
+  sair: {notas: [659.25, 440], onda: 'sine', passo: 0.11, dura: 0.2, volume: 0.12},
+  chamando: {notas: [659.25, 830.61, 987.77], onda: 'sine', passo: 0.11, dura: 0.2, volume: 0.12},
+  mutar: {notas: [698.46, 523.25], onda: 'triangle', passo: 0.07, dura: 0.11, volume: 0.16},
+  desmutar: {notas: [523.25, 698.46], onda: 'triangle', passo: 0.07, dura: 0.11, volume: 0.16},
+  ensurdecer: {notas: [440, 349.23, 261.63], onda: 'triangle', passo: 0.065, dura: 0.11, volume: 0.15},
+  ouvir: {notas: [261.63, 349.23, 440], onda: 'triangle', passo: 0.065, dura: 0.11, volume: 0.15}
+};
+
 function tocarSomChamada(tipo){
   if(state.soundEnabled === false) return;
+  const som = SONS_CHAMADA[tipo] || SONS_CHAMADA.sair;
   try{
     const ctx = alarmContext();
     if(!ctx) return;
-    const notas = tipo === 'entrar' ? [587.33, 880] : tipo === 'chamando' ? [659.25, 830.61, 987.77] : [659.25, 440];
-    notas.forEach((freq, i)=>{
+    som.notas.forEach((freq, i)=>{
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.type = 'sine';
+      osc.type = som.onda;
       osc.frequency.value = freq;
       osc.connect(gain);
       gain.connect(ctx.destination);
-      const ini = ctx.currentTime + i * 0.11;
+      const ini = ctx.currentTime + i * som.passo;
       gain.gain.setValueAtTime(0, ini);
-      gain.gain.linearRampToValueAtTime(0.12, ini + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.001, ini + 0.2);
+      gain.gain.linearRampToValueAtTime(som.volume, ini + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.001, ini + som.dura);
       osc.start(ini);
-      osc.stop(ini + 0.22);
+      osc.stop(ini + som.dura + 0.02);
     });
   }catch(e){}
 }
@@ -10520,6 +10534,7 @@ async function chamadaAlternarMic(){
     if(c.mic && c.ensurdecido){ c.ensurdecido = false; for(const par of c.pares.values()) aplicarVolumePar(par); }
     c.local.voz.enabled = c.mic;
   }
+  tocarSomChamada(c.mic ? 'desmutar' : 'mutar');
   atualizarPresencaChamada();
   desenharChamada();
 }
@@ -10532,6 +10547,7 @@ function chamadaAlternarEnsurdecer(){
   else c.mic = c.micAntes !== false;
   if(c.local.voz) c.local.voz.enabled = c.mic;
   for(const par of c.pares.values()) aplicarVolumePar(par);
+  tocarSomChamada(c.ensurdecido ? 'ensurdecer' : 'ouvir');
   atualizarPresencaChamada();
   desenharChamada();
 }
@@ -10582,7 +10598,8 @@ function escolhaTelaSalva(){
   return {
     fonte: FONTES_TELA[e.fonte] ? e.fonte : 'monitor',
     qualidade: QUALIDADES_TELA[e.qualidade] ? e.qualidade : '1080',
-    som: e.som !== false
+    som: e.som !== false,
+    flutuante: e.flutuante !== false
   };
 }
 
@@ -10611,6 +10628,7 @@ function escolherTela(campo, valor){
   if(campo === 'fonte' && FONTES_TELA[valor]) c.escolhaTela.fonte = valor;
   else if(campo === 'qualidade' && QUALIDADES_TELA[valor]) c.escolhaTela.qualidade = valor;
   else if(campo === 'som') c.escolhaTela.som = !!valor;
+  else if(campo === 'flutuante') c.escolhaTela.flutuante = !!valor;
   else return;
   try{ localStorage.setItem('chamadaTela', JSON.stringify(c.escolhaTela)); }catch(e){}
   desenharChamada();
@@ -10663,6 +10681,10 @@ function escolhaTelaHtml(){
           <span class="ch-som-texto"><span>Transmitir o som</span><span class="ch-dialogo-dica">${esc(somDica)}</span></span>
           <input type="checkbox" role="switch" class="ch-interruptor" id="ch-tela-som" ${e.som ? 'checked' : ''} onchange="escolherTela('som', this.checked)">
         </label>
+        ${janelaFlutuanteSuportada() ? `<label class="ch-som">
+          <span class="ch-som-texto"><span>Janela flutuante</span><span class="ch-dialogo-dica">A chamada fica por cima dos outros programas enquanto você transmite.</span></span>
+          <input type="checkbox" role="switch" class="ch-interruptor" id="ch-tela-flutuante" ${e.flutuante ? 'checked' : ''} onchange="escolherTela('flutuante', this.checked)">
+        </label>` : ''}
         <div class="ch-dialogo-acoes">
           <button type="button" class="ch-dialogo-cancelar" id="ch-tela-cancelar" onclick="fecharEscolhaTela()">Cancelar</button>
           <button type="button" class="ch-dialogo-ok" id="ch-tela-transmitir" onclick="transmitirTelaEscolhida()">${iconeChamada('tela', 17)}Transmitir</button>
@@ -10684,6 +10706,10 @@ function transmitirTelaEscolhida(){
     selfBrowserSurface: 'exclude', surfaceSwitching: 'include', systemAudio: e.som ? 'include' : 'exclude', monitorTypeSurfaces: 'include'
   };
   const pedirTela = navigator.mediaDevices.getDisplayMedia(pedido);
+  // Como no Meet: quem transmite costuma ir para outro programa, e a chamada
+  // vai junto, por cima. Usa o mesmo clique, que é o gesto que o navegador
+  // exige para abrir a janela; o pedido da tela já saiu antes.
+  if(e.flutuante && !janelaFlutuante && janelaFlutuanteSuportada()) abrirJanelaFlutuante('tela');
   c.pedindoTela = true;
   const soltar = ()=>{ c.pedindoTela = false; c.telaPedidaAte = Date.now() + 800; };
   pedirTela.then(soltar, soltar);
@@ -10706,6 +10732,8 @@ async function iniciarTelaChamada(c, pedirTela, pedido, q){
     }
     if(!s){
       if(e && e.name !== 'NotAllowedError' && e.name !== 'AbortError') showToast('Não deu para transmitir a tela.', 'erro');
+      // Desistiu de transmitir: a flutuante que abriu junto volta para a aba.
+      if(janelaFlutuante && janelaFlutuante.origem === 'tela') janelaFlutuante.win.close();
       return;
     }
   }
@@ -10954,20 +10982,24 @@ function docsChamada(){
   return janelaFlutuante ? [document, janelaFlutuante.win.document] : [document];
 }
 
-async function abrirJanelaFlutuante(auto){
+// origem: nada (o botão), 'auto' (troca de aba) ou 'tela' (junto com a
+// transmissão). Só o botão avisa quando o navegador não abre.
+async function abrirJanelaFlutuante(origem){
   const c = chamada;
   if(!c || janelaFlutuante || !janelaFlutuanteSuportada()) return;
   let win;
   try{
     win = await window.documentPictureInPicture.requestWindow({width: 380, height: 270});
   }catch(e){
-    if(auto !== true) showToast('O navegador não abriu a janela flutuante.', 'erro');
+    if(!origem) showToast('O navegador não abriu a janela flutuante.', 'erro');
     return;
   }
   if(chamada !== c || janelaFlutuante){ win.close(); return; }
+  // Aberta junto com a transmissão, mas a pessoa já desistiu do seletor.
+  if(origem === 'tela' && !c.pedindoTela && !c.tela){ win.close(); return; }
   prepararJanelaFlutuante(win);
   const raiz = document.getElementById('chamada');
-  janelaFlutuante = {win, auto: auto === true, modoAntes: c.modo, voltarExpandida: false};
+  janelaFlutuante = {win, origem: origem || 'botao', auto: origem === 'auto', modoAntes: c.modo, voltarExpandida: false};
   c.modo = 'mini';
   c.painelDisp = false;
   c.painelTela = false;
@@ -11041,7 +11073,7 @@ function chamadaVoltarParaAba(){
 // que abriu sozinha fecha.
 function ligarFlutuanteAutomatico(){
   if(!janelaFlutuanteSuportada() || !('mediaSession' in navigator)) return;
-  try{ navigator.mediaSession.setActionHandler('enterpictureinpicture', ()=>abrirJanelaFlutuante(true)); }catch(e){}
+  try{ navigator.mediaSession.setActionHandler('enterpictureinpicture', ()=>abrirJanelaFlutuante('auto')); }catch(e){}
 }
 
 function desligarFlutuanteAutomatico(){
