@@ -8984,6 +8984,7 @@ function horaChat(iso){
 // Mensagens agrupadas por dia e, dentro do dia, por autor: o nome e a foto
 // aparecem uma vez por sequência, e não a cada mensagem. As suas também levam
 // nome e foto, do lado direito, para a conversa ler igual para todo mundo.
+// O horário fica no canto de cada balão.
 function renderListaChat(p, c){
   if(!c.lista.length){
     return `<div class="chat-vazio"><strong>Nenhuma mensagem ainda.</strong>Todo mundo do projeto lê e escreve aqui, inclusive quem só visualiza.</div>`;
@@ -9017,15 +9018,18 @@ function renderListaChat(p, c){
     // no balão vai o nome do perfil, o mesmo que os outros veem.
     const nome = minha ? (getUserName() || 'Você') : nomeAutorChat(p, m.authorId);
     const podeApagar = !m.apagada && (isOwner || minha);
+    // O horário é de cada mensagem e vai dentro do balão; em cima do grupo
+    // fica só o nome, ao lado da foto.
+    const horaNoBalao = `<time class="chat-hora" datetime="${esc(m.created)}">${horaChat(m.created)}</time>`;
     html += `
       <div class="chat-msg ${minha ? 'minha' : ''} ${novoGrupo ? 'inicio' : ''}">
         ${novoGrupo ? `<div class="chat-msg-avatar">${avatarChip(perfilAutorChat(p, m.authorId), nome[0])}</div>` : ''}
         <div class="chat-msg-corpo">
-          ${novoGrupo ? `<div class="chat-msg-quem"><span class="chat-msg-nome">${esc(nome)}</span><time datetime="${esc(m.created)}">${horaChat(m.created)}</time></div>` : ''}
+          ${novoGrupo ? `<div class="chat-msg-nome">${esc(nome)}</div>` : ''}
           <div class="chat-msg-linha">
             ${m.apagada
-              ? `<div class="chat-balao apagada">mensagem apagada</div>`
-              : `<div class="chat-balao" title="${horaChat(m.created)}">${textoChatHtml(m.body)}</div>`}
+              ? `<div class="chat-balao apagada">mensagem apagada${horaNoBalao}</div>`
+              : `<div class="chat-balao"><span class="chat-texto">${textoChatHtml(m.body)}</span>${horaNoBalao}</div>`}
             ${podeApagar ? `<button class="chat-apagar" onclick="apagarMensagemChat('${m.id}')" title="Apagar mensagem" aria-label="Apagar mensagem">
               <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
             </button>` : ''}
