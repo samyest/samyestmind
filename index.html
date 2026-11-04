@@ -819,6 +819,38 @@
   </form>
 </div>
 
+<div class="modal-bg" id="icone-projeto" role="dialog" aria-modal="true" aria-labelledby="icone-projeto-titulo">
+  <form class="modal modal-rapido icone-projeto" onsubmit="event.preventDefault();salvarIconeProjeto()" novalidate>
+    <div class="modal-rapido-corpo">
+      <h2 class="modal-rapido-titulo" id="icone-projeto-titulo">Ícone do projeto</h2>
+      <div class="ip-topo">
+        <div class="ip-previa" id="icone-projeto-previa"></div>
+        <div class="ip-topo-texto">
+          <div class="ip-previa-lateral" id="icone-projeto-previa-lateral" aria-hidden="true"></div>
+          <div class="ip-imagem-acoes">
+            <button type="button" class="btn-secondary btn-com-icone" onclick="document.getElementById('icone-projeto-arquivo').click()"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span id="icone-projeto-enviar">Enviar imagem</span></button>
+            <button type="button" class="ip-tirar" id="icone-projeto-tirar" onclick="tirarImagemIcone()" hidden>Tirar imagem</button>
+            <input type="file" id="icone-projeto-arquivo" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" hidden onchange="escolherImagemIcone(this)">
+          </div>
+        </div>
+      </div>
+      <p class="ip-dica">A imagem fica quadrada, recortada no centro. JPG, PNG ou WebP, até 4&nbsp;MB.</p>
+      <p class="cr-rotulo" id="icone-projeto-icones-rotulo">Ícone</p>
+      <div class="ip-icones" id="icone-projeto-icones" role="radiogroup" aria-labelledby="icone-projeto-icones-rotulo" onkeydown="teclaGradeIcone(event)"></div>
+      <p class="cr-rotulo" id="icone-projeto-cores-rotulo">Cor</p>
+      <div class="ip-cores" id="icone-projeto-cores" role="radiogroup" aria-labelledby="icone-projeto-cores-rotulo" onkeydown="teclaGradeIcone(event)"></div>
+      <p class="modal-rapido-erro" id="icone-projeto-erro" role="alert" hidden></p>
+    </div>
+    <div class="modal-rapido-acoes">
+      <button type="button" class="btn-secondary" onclick="fecharIconeProjeto()">Cancelar</button>
+      <button type="submit" class="btn-primary" id="icone-projeto-ok">Salvar</button>
+    </div>
+    <button type="button" class="modal-close modal-rapido-fechar" onclick="fecharIconeProjeto()" aria-label="Fechar">
+      <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </form>
+</div>
+
 <div class="modal-bg" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
   <div class="modal modal-narrow">
     <div class="modal-head">

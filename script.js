@@ -2743,6 +2743,308 @@ function updatePendingInvitesBadge(){
   renderSidebarProjects();
 }
 
+/* --- ícone do projeto (SEC-083) --- */
+
+// A mesma lista do check em supabase/icone_projeto.sql: ícone novo entra nos
+// dois. O SVG sai daqui, nunca do banco.
+const ICONES_PROJETO = {
+  foguete:  {nome: 'Foguete', svg: '<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 00-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 012-3.95A12.88 12.88 0 0122 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 01-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>'},
+  estrela:  {nome: 'Estrela', svg: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>'},
+  raio:     {nome: 'Raio', svg: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'},
+  coracao:  {nome: 'Coração', svg: '<path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>'},
+  alvo:     {nome: 'Alvo', svg: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>'},
+  livro:    {nome: 'Livro', svg: '<path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>'},
+  codigo:   {nome: 'Código', svg: '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>'},
+  musica:   {nome: 'Música', svg: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'},
+  camera:   {nome: 'Câmera', svg: '<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>'},
+  globo:    {nome: 'Globo', svg: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>'},
+  casa:     {nome: 'Casa', svg: '<path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>'},
+  maleta:   {nome: 'Maleta', svg: '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/>'},
+  sacola:   {nome: 'Sacola', svg: '<path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/>'},
+  grafico:  {nome: 'Gráfico', svg: '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>'},
+  chat:     {nome: 'Conversa', svg: '<path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/>'},
+  coroa:    {nome: 'Coroa', svg: '<path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z"/><path d="M5 20h14"/>'},
+  folha:    {nome: 'Folha', svg: '<path d="M11 20A7 7 0 019.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>'},
+  fogo:     {nome: 'Fogo', svg: '<path d="M8.5 14.5A2.5 2.5 0 0011 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 11-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 002.5 2.5z"/>'},
+  diamante: {nome: 'Diamante', svg: '<path d="M6 3h12l4 6-10 13L2 9z"/><path d="M11 3L8 9l4 13 4-13-3-6"/><path d="M2 9h20"/>'},
+  lampada:  {nome: 'Lâmpada', svg: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0018 8 6 6 0 006 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 018.91 14"/>'},
+  pessoas:  {nome: 'Pessoas', svg: '<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>'},
+  escudo:   {nome: 'Escudo', svg: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'},
+  jogo:     {nome: 'Jogo', svg: '<rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="12" x2="10" y2="12"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="15" y1="13" x2="15.01" y2="13"/><line x1="18" y1="11" x2="18.01" y2="11"/>'}
+};
+// O tom médio de cada família das cores de coluna.
+const CORES_ICONE = FAMILIAS_COR.map(f=>({nome: f.nome, hex: f.cores[1]}));
+// O mesmo formato do check em icone_projeto.sql. Só um caminho assim vira URL.
+const ICONE_IMAGEM_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/projeto-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[0-9]{1,16}\.(png|jpg|webp)$/;
+
+function svgIconeProjeto(chave){
+  const i = ICONES_PROJETO[chave];
+  return i ? `<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${i.svg}</svg>` : '';
+}
+
+// Sem cor escolhida, cada projeto ganha uma das cores pelo id: dois projetos
+// lado a lado quase nunca saem iguais, e a cor não muda de um dia para o outro.
+function corPadraoIcone(id){
+  let h = 0;
+  for(const ch of String(id || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return CORES_ICONE[h % CORES_ICONE.length].hex;
+}
+
+function corDoIcone(p){
+  return p && p.icone_cor ? hex6(p.icone_cor) : corPadraoIcone(p && p.id);
+}
+
+function inicialDoProjeto(nome){
+  const primeira = Array.from(String(nome || '').trim())[0] || '?';
+  return primeira.toLocaleUpperCase('pt-BR');
+}
+
+function urlImagemIcone(caminho){
+  if(!caminho || !ICONE_IMAGEM_RE.test(caminho)) return null;
+  const {data} = sb.storage.from('avatars').getPublicUrl(caminho);
+  const url = data && data.publicUrl;
+  return url && /^https:\/\//.test(url) ? url : null;
+}
+
+// Quadrado com a imagem (com borda), o ícone pronto ou a inicial. tam: p na
+// barra lateral, m nas listas, g no topo do projeto. dados troca o que está
+// salvo pelo rascunho do diálogo (com imagem em blob:).
+function projetoIconeHtml(p, tam, dados){
+  const d = dados || {icone: p.icone, cor: p.icone_cor, url: urlImagemIcone(p.icone_imagem)};
+  const cor = d.cor ? hex6(d.cor) : corPadraoIcone(p.id);
+  const url = d.url && /^(https:|blob:)/.test(d.url) ? d.url : null;
+  const miolo = ICONES_PROJETO[d.icone] ? svgIconeProjeto(d.icone) : `<span class="proj-icone-letra">${esc(inicialDoProjeto(p.name))}</span>`;
+  const classes = ['proj-icone', `proj-icone-${tam}`];
+  if(corEhClara(cor)) classes.push('claro');
+  if(url) classes.push('com-imagem');
+  if(url && d.cor) classes.push('com-cor');
+  // Se a imagem não carregar, o quadrado volta a mostrar o ícone ou a inicial.
+  const img = url ? `<img src="${esc(url)}" alt="" loading="lazy" decoding="async" onerror="this.parentNode.classList.remove('com-imagem','com-cor');this.remove()">` : '';
+  return `<span class="${classes.join(' ')}" style="--icone-cor:${cor}" aria-hidden="true">${miolo}${img}</span>`;
+}
+
+/* diálogo */
+
+let iconeRascunho = null;
+
+function abrirIconeProjeto(pid){
+  const p = state.projects.find(x=>x.id === pid);
+  if(!p || !canEditProject(pid)) return;
+  if(iconeRascunho && iconeRascunho.blobUrl) URL.revokeObjectURL(iconeRascunho.blobUrl);
+  iconeRascunho = {
+    pid,
+    icone: ICONES_PROJETO[p.icone] ? p.icone : null,
+    cor: corDoIcone(p),
+    imagem: p.icone_imagem && ICONE_IMAGEM_RE.test(p.icone_imagem) ? p.icone_imagem : null,
+    arquivo: null, blobUrl: null, salvando: false
+  };
+  erroIconeProjeto('');
+  desenharIconeProjeto();
+  document.getElementById('icone-projeto').classList.add('open');
+}
+
+function fecharIconeProjeto(){
+  document.getElementById('icone-projeto').classList.remove('open');
+  if(iconeRascunho && iconeRascunho.blobUrl) URL.revokeObjectURL(iconeRascunho.blobUrl);
+  iconeRascunho = null;
+}
+
+function erroIconeProjeto(msg){
+  const el = document.getElementById('icone-projeto-erro');
+  el.textContent = msg;
+  el.hidden = !msg;
+}
+
+function dadosDoRascunho(r){
+  return {icone: r.icone, cor: r.cor, url: r.blobUrl || urlImagemIcone(r.imagem)};
+}
+
+// A grade de ícones e a de cores só são montadas uma vez por abertura; depois,
+// só a marcação muda, para o foco do teclado não se perder.
+function desenharIconeProjeto(){
+  const r = iconeRascunho;
+  if(!r) return;
+  const p = state.projects.find(x=>x.id === r.pid);
+  if(!p) return;
+  const dados = dadosDoRascunho(r);
+  const temImagem = !!dados.url;
+  document.getElementById('icone-projeto-previa').innerHTML = projetoIconeHtml(p, 'xg', dados);
+  document.getElementById('icone-projeto-previa-lateral').innerHTML =
+    `${projetoIconeHtml(p, 'p', dados)}<span class="sidebar-project-name">${esc(p.name)}</span>`;
+  document.getElementById('icone-projeto-tirar').hidden = !temImagem;
+  document.getElementById('icone-projeto-enviar').textContent = temImagem ? 'Trocar imagem' : 'Enviar imagem';
+
+  const icones = document.getElementById('icone-projeto-icones');
+  if(!icones.childElementCount){
+    const letra = `<button type="button" role="radio" class="ip-icone" data-icone="" title="Inicial do nome" aria-label="Inicial do nome" onclick="escolherIconeProjeto('')"><span class="ip-icone-letra" id="icone-projeto-letra"></span></button>`;
+    icones.innerHTML = letra + Object.keys(ICONES_PROJETO).map(k=>
+      `<button type="button" role="radio" class="ip-icone" data-icone="${k}" title="${ICONES_PROJETO[k].nome}" aria-label="${ICONES_PROJETO[k].nome}" onclick="escolherIconeProjeto('${k}')">${svgIconeProjeto(k)}</button>`
+    ).join('');
+  }
+  document.getElementById('icone-projeto-letra').textContent = inicialDoProjeto(p.name);
+  // O ícone marcado já aparece na cor escolhida.
+  icones.style.setProperty('--icone-cor', r.cor);
+  icones.classList.toggle('claro', corEhClara(r.cor));
+  const atual = temImagem ? null : (r.icone || '');
+  marcarRadios(icones, '.ip-icone', b=>b.dataset.icone === atual);
+
+  const cores = document.getElementById('icone-projeto-cores');
+  if(!cores.childElementCount){
+    cores.innerHTML = CORES_ICONE.map(c=>
+      `<button type="button" role="radio" class="color-swatch-btn${corEhClara(c.hex) ? ' claro' : ''}" style="--sw:${c.hex}" data-cor="${c.hex}" title="${c.nome}" aria-label="${c.nome}" onclick="escolherCorIcone('${c.hex}')"></button>`
+    ).join('') + `<label class="color-custom-pick" id="icone-projeto-cor-propria" title="Outra cor"><input type="color" aria-label="Escolher outra cor" oninput="escolherCorIcone(this.value)"></label>`;
+  }
+  const achou = marcarRadios(cores, '.color-swatch-btn', b=>b.dataset.cor === r.cor);
+  const propria = document.getElementById('icone-projeto-cor-propria');
+  propria.classList.toggle('selected', !achou);
+  propria.style.setProperty('--sw', r.cor);
+  propria.querySelector('input').value = r.cor;
+}
+
+// Rádio com tabindex móvel: só o marcado (ou o primeiro) entra no Tab.
+function marcarRadios(grupo, seletor, ehMarcado){
+  const botoes = [...grupo.querySelectorAll(seletor)];
+  let achou = false;
+  botoes.forEach(b=>{
+    const sel = ehMarcado(b);
+    if(sel) achou = true;
+    b.classList.toggle('selected', sel);
+    b.setAttribute('aria-checked', String(sel));
+    b.tabIndex = sel ? 0 : -1;
+  });
+  if(!achou && botoes.length) botoes[0].tabIndex = 0;
+  return achou;
+}
+
+// Escolher um ícone pronto (ou a inicial) tira a imagem: com ela, o ícone não
+// apareceria.
+function escolherIconeProjeto(chave){
+  const r = iconeRascunho;
+  if(!r) return;
+  r.icone = ICONES_PROJETO[chave] ? chave : null;
+  tirarImagemIcone(true);
+}
+
+function escolherCorIcone(cor){
+  if(!iconeRascunho || !/^#[0-9a-fA-F]{6}$/.test(cor)) return;
+  iconeRascunho.cor = cor.toUpperCase();
+  desenharIconeProjeto();
+}
+
+function tirarImagemIcone(semFoco){
+  const r = iconeRascunho;
+  if(!r) return;
+  if(r.blobUrl) URL.revokeObjectURL(r.blobUrl);
+  r.blobUrl = null;
+  r.arquivo = null;
+  r.imagem = null;
+  desenharIconeProjeto();
+  if(!semFoco) document.getElementById('icone-projeto-enviar').focus();
+}
+
+// Setas andam pelas grades como num grupo de rádio: mover já escolhe.
+function teclaGradeIcone(e){
+  const grade = e.currentTarget;
+  const botoes = [...grade.querySelectorAll('button[role="radio"]')];
+  const i = botoes.indexOf(document.activeElement);
+  if(i === -1) return;
+  const cols = getComputedStyle(grade).gridTemplateColumns.split(' ').length || 1;
+  const passo = {ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols}[e.key];
+  if(passo === undefined) return;
+  const j = i + passo;
+  if(j < 0 || j >= botoes.length) return;
+  e.preventDefault();
+  botoes[j].click();
+  const novo = grade.querySelectorAll('button[role="radio"]')[j];
+  if(novo) novo.focus();
+}
+
+// A imagem vira um quadrado de até 256 px, recortado no centro, antes de subir:
+// o ícone tem no máximo 72 px na tela, e assim o arquivo fica pequeno.
+async function recortarImagemQuadrada(arquivo){
+  const bmp = await createImageBitmap(arquivo);
+  const m = Math.min(bmp.width, bmp.height);
+  const lado = Math.max(1, Math.min(256, m));
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = lado;
+  const ctx = cv.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bmp, (bmp.width - m) / 2, (bmp.height - m) / 2, m, m, 0, 0, lado, lado);
+  if(bmp.close) bmp.close();
+  let blob = await new Promise(ok=>cv.toBlob(ok, 'image/webp', 0.9));
+  // Safari antigo não gera WebP e devolve PNG ou nada.
+  if(!blob || blob.type !== 'image/webp') blob = await new Promise(ok=>cv.toBlob(ok, 'image/png'));
+  return blob;
+}
+
+async function escolherImagemIcone(input){
+  const arquivo = input.files[0];
+  input.value = '';
+  const r = iconeRascunho;
+  if(!arquivo || !r) return;
+  if(!EXT_IMAGEM[arquivo.type]){ erroIconeProjeto('Formato não suportado. Escolha um JPG, PNG ou WebP.'); return; }
+  if(arquivo.size > 4 * 1024 * 1024){ erroIconeProjeto('Imagem acima de 4 MB. Escolha uma menor.'); return; }
+  let blob;
+  try{ blob = await recortarImagemQuadrada(arquivo); }catch(e){ console.warn(e); blob = null; }
+  if(iconeRascunho !== r) return;
+  if(!blob){ erroIconeProjeto('Não deu para ler essa imagem. Tente outra.'); return; }
+  erroIconeProjeto('');
+  if(r.blobUrl) URL.revokeObjectURL(r.blobUrl);
+  r.arquivo = blob;
+  r.blobUrl = URL.createObjectURL(blob);
+  desenharIconeProjeto();
+}
+
+async function salvarIconeProjeto(){
+  const r = iconeRascunho;
+  if(!r || r.salvando) return;
+  const p = state.projects.find(x=>x.id === r.pid);
+  if(!p) return fecharIconeProjeto();
+  const ok = document.getElementById('icone-projeto-ok');
+  r.salvando = true;
+  ok.disabled = true;
+  ok.textContent = 'Salvando…';
+  erroIconeProjeto('');
+  const terminar = (msg)=>{
+    r.salvando = false;
+    ok.disabled = false;
+    ok.textContent = 'Salvar';
+    if(msg) erroIconeProjeto(msg);
+  };
+
+  let caminho = r.imagem;
+  let enviado = null;
+  if(r.arquivo){
+    const ext = r.arquivo.type === 'image/webp' ? 'webp' : 'png';
+    enviado = `${session.user.id}/projeto-${p.id}-${Date.now()}.${ext}`;
+    const {error} = await sb.storage.from('avatars').upload(enviado, r.arquivo, {contentType: r.arquivo.type, cacheControl: '31536000', upsert: false});
+    if(error){ console.error(error); return terminar('Não deu para enviar a imagem. Tente de novo em instantes.'); }
+    caminho = enviado;
+  }
+
+  const antes = p.icone_imagem;
+  const mudanca = {icone: caminho ? null : r.icone, icone_cor: r.cor, icone_imagem: caminho || null};
+  const {error} = await sb.from('projects').update(mudanca).eq('id', p.id);
+  if(error){
+    console.error(error);
+    if(enviado) sb.storage.from('avatars').remove([enviado]).catch(()=>{});
+    const semColuna = error.code === '42703' || error.code === 'PGRST204' || /icone/.test(error.message || '');
+    return terminar(semColuna
+      ? 'O banco ainda não tem o ícone do projeto: falta rodar o supabase/icone_projeto.sql no Supabase.'
+      : 'Não deu para salvar o ícone. Tente de novo em instantes.');
+  }
+  // A imagem antiga sai do bucket, se for da própria pasta (a de outra pessoa
+  // o bucket não deixa apagar).
+  if(antes && antes !== caminho && antes.startsWith(session.user.id + '/') && ICONE_IMAGEM_RE.test(antes)){
+    sb.storage.from('avatars').remove([antes]).catch(()=>{});
+  }
+  Object.assign(p, mudanca);
+  terminar('');
+  fecharIconeProjeto();
+  render();
+  showToast('Ícone do projeto atualizado');
+}
+
 function renderSidebarProjects(){
   const wrap = document.getElementById('sidebar-projects');
   if(!wrap) return;
@@ -2776,7 +3078,7 @@ function renderSidebarProjects(){
       const isActive = state.view === 'project' && state.currentProjectId === p.id;
       return `
         <button class="sidebar-project-item ${isActive?'active':''}" onclick="openProjectView('${p.id}')" title="${esc(p.name)}">
-          <span class="sidebar-project-dot"></span>
+          ${projetoIconeHtml(p, 'p')}
           <span class="sidebar-project-name">${esc(p.name)}</span>
           ${seloNaoLidas(p.id)}
           <span class="sidebar-project-role">${role}</span>
@@ -3480,6 +3782,9 @@ function renderProjectPage(){
         <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
       </button>
       <div class="proj-head-main">
+        ${canEdit
+          ? `<button type="button" class="proj-icone-btn" onclick="abrirIconeProjeto('${p.id}')" title="Mudar o ícone do projeto" aria-label="Mudar o ícone do projeto">${projetoIconeHtml(p, 'g')}<span class="proj-icone-lapis" aria-hidden="true"><svg focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span></button>`
+          : projetoIconeHtml(p, 'g')}
         <h1 class="proj-title">${esc(p.name)}</h1>
         <div class="proj-meta">
           <div class="proj-pessoas">
@@ -3564,7 +3869,7 @@ function renderProjectsList(){
         return `
           <div class="glass project-list-card" role="button" tabindex="0" onclick="openProjectView('${p.id}')">
             <div class="project-card-head" style="margin-bottom:6px;">
-              <div class="project-card-name">${esc(p.name)}${seloNaoLidas(p.id)}</div>
+              <div class="project-card-name">${projetoIconeHtml(p, 'm')}<span class="project-card-nome">${esc(p.name)}</span>${seloNaoLidas(p.id)}</div>
               <div class="project-card-role">${role}</div>
             </div>
             <div class="project-list-card-meta">${active} ativa${active!==1?'s':''} · ${tasks.length} no total</div>
@@ -3838,7 +4143,7 @@ function renderProjectsModal(){
       return `
         <div class="project-card">
           <div class="project-card-head">
-            <div class="project-card-name">${esc(p.name)}${seloNaoLidas(p.id)}</div>
+            <div class="project-card-name">${projetoIconeHtml(p, 'm')}<span class="project-card-nome">${esc(p.name)}</span>${seloNaoLidas(p.id)}</div>
             <div style="display:flex;align-items:center;gap:8px;">
               <div class="project-card-role">${isOwner ? 'Dono' : myRoleInProject(p.id) === 'editor' ? 'Editor' : 'Visualizador'}</div>
               <button class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="closeProjectsModal();openProjectView('${p.id}');">Abrir quadro</button>
@@ -5815,6 +6120,7 @@ const FECHAR_MODAL = {
   'chamada-previa': ()=>fecharPreviaChamada(),
   'projeto-rapido': ()=>fecharProjetoRapido(),
   'canal-rapido': ()=>fecharCanalRapido(),
+  'icone-projeto': ()=>fecharIconeProjeto(),
   'confirm-modal': ()=>resolveDialog(null)
 };
 const SALVAR_MODAL = {
@@ -10413,7 +10719,7 @@ function sincronizarCanaisChamada(){
   const quer = new Set();
   if(state.view === 'project' && state.currentProjectId){
     const p = projetoDaChamada(state.currentProjectId);
-    if(p && projectPeople(p).length >= 2) quer.add(p.id);
+    if(p) quer.add(p.id);
   }
   if(previaChamada) quer.add(previaChamada.pid);
   if(chamada) quer.add(chamada.pid);
@@ -10987,6 +11293,8 @@ function reconciliarChamada(){
     c.participantes.set(p.uid, p);
     let par = c.pares.get(p.uid);
     if(par && par.sessao !== p.sessao){ fecharParChamada(par); par = null; }
+    // Entrou sozinho num projeto que agora tem mais gente: pede o TURN.
+    if(c.turnAdiado){ c.turnAdiado = false; renovarTurnChamada(c); }
     if(!antes || antes.sessao !== p.sessao){
       tocarSomChamada('entrar');
       anunciarNaChamada(`${nomeNaChamada(c.pid, p.uid)} entrou na chamada`);
@@ -11277,11 +11585,8 @@ async function abrirPreviaChamada(pid, salaPedida){
     showToast('Este projeto não tem sala de voz. Quem edita o projeto cria uma na aba Canais.');
     return;
   }
-  // A credencial TURN e a própria chamada pedem alguém do outro lado.
-  if(projectPeople(p).length < 2){
-    showToast('As salas de voz precisam de pelo menos duas pessoas no projeto. Chame alguém pelo Convidar.');
-    return;
-  }
+  // Dá para entrar sozinho, mesmo num projeto só seu: a sala fica esperando
+  // quem chegar. O TURN espera alguém entrar (buscarTurnChamada).
   if(chamada){
     if(chamada.pid === pid){
       // Outra sala do mesmo projeto: troca direto, como no Discord.
@@ -11455,7 +11760,12 @@ function fecharPreviaChamada(){
 
 /* --- entrar e sair --- */
 
-async function buscarTurnChamada(pid){
+// Sozinho no projeto não há com quem conectar, e a rota recusa o TURN para
+// projeto de uma pessoa só (SEC-077). A chamada nasce só com STUN e marcada
+// com turnAdiado; o TURN vem quando alguém entra (renovarTurnChamada).
+async function buscarTurnChamada(pid, forcar){
+  const p = projetoDaChamada(pid);
+  if(!forcar && p && projectPeople(p).length < 2) return {servidores: CHAMADA_STUN, semTurn: true, adiado: true};
   try{
     const res = await fetch('/api/chamada/turn', {method: 'POST', headers: apiHeaders(), body: JSON.stringify({project_id: pid})});
     if(res.ok){
@@ -11472,17 +11782,21 @@ function agendarRenovacaoTurn(){
   clearTimeout(c.turnTimer);
   c.turnTimer = setTimeout(async ()=>{
     if(chamada !== c) return;
-    const r = await buscarTurnChamada(c.pid);
+    await renovarTurnChamada(c);
     if(chamada !== c) return;
-    if(!r.semTurn){
-      c.iceServers = r.servidores;
-      c.semTurn = false;
-      for(const par of c.pares.values()){
-        try{ par.pc.setConfiguration(Object.assign(par.pc.getConfiguration(), {iceServers: r.servidores})); }catch(e){}
-      }
-    }
     agendarRenovacaoTurn();
   }, CHAMADA_RENOVA_TURN_MS);
+}
+
+async function renovarTurnChamada(c){
+  const r = await buscarTurnChamada(c.pid, true);
+  if(chamada !== c || r.semTurn) return;
+  c.iceServers = r.servidores;
+  c.semTurn = false;
+  c.turnAdiado = false;
+  for(const par of c.pares.values()){
+    try{ par.pc.setConfiguration(Object.assign(par.pc.getConfiguration(), {iceServers: r.servidores})); }catch(e){}
+  }
 }
 
 // Entrar abre a chamada na página inteira; a janela flutuante fica para o
@@ -11511,7 +11825,7 @@ async function entrarNaChamada(){
     mic: !!(pr.mic && pr.voz), ensurdecido: false, micAntes: true, camera: !!(pr.camera && pr.cam), tela: false,
     dispositivos: Object.assign({}, pr.dispositivos),
     pares: new Map(), participantes: new Map(), iceAdiantado: {}, esperas: {}, vigias: {},
-    iceServers: ice.servidores, semTurn: ice.semTurn, turnTimer: null,
+    iceServers: ice.servidores, semTurn: ice.semTurn, turnAdiado: !!ice.adiado, turnTimer: null,
     destaque: null, modo: 'expandida', painelDisp: false, volumeAberto: null,
     registrarInicio: naSala(reg, pr.sala).length === 0
   };
@@ -13218,7 +13532,7 @@ function pararRelogioChamada(){
 // "Iniciar chamada" entra na primeira sala de voz do projeto (Q14 da RFC
 // 0004). Some com alguém já numa sala: a faixa leva até ela.
 function botaoIniciarChamadaHtml(p){
-  if(!chamadaSuportada() || projectPeople(p).length < 2) return '';
+  if(!chamadaSuportada()) return '';
   if(canaisCarregados && !salasDoProjeto(p.id).length) return '';
   const reg = canaisChamada[p.id];
   const ativa = (reg && reg.emChamada.length) || (chamada && chamada.pid === p.id);
