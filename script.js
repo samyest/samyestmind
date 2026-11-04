@@ -205,7 +205,14 @@ function applyTheme(name){
   r.setProperty('--line', t.line || 'rgba(122, 142, 162, 0.14)');
   r.setProperty('--line-strong', t.lineStrong || 'rgba(122, 142, 162, 0.22)');
   document.body.classList.toggle('theme-vidro', !!t.vidro);
+  // A chamada segue o tema, mas o verde de quem fala e o vermelho de fechado
+  // precisam de outro tom no fundo escuro do Grafite.
+  document.body.classList.toggle('theme-escuro', !!t.dark);
   document.documentElement.style.colorScheme = t.dark ? 'dark' : 'light';
+  // A janela flutuante copia o tema quando abre; trocar de tema com ela
+  // aberta leva a troca para lá também.
+  // (try: o applyTheme pode rodar antes do let da janela existir.)
+  try{ if(janelaFlutuante) copiarTemaParaJanela(janelaFlutuante.win.document); }catch(e){}
   // A barra do navegador no celular ficava sempre no azul-acinzentado do
   // tema padrão, mesmo com o Grafite escuro na tela.
   const metaCor = document.querySelector('meta[name="theme-color"]');
@@ -10168,7 +10175,8 @@ const ICONES_CHAMADA = {
   telaCheia: '<path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/>',
   volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/>',
   volumeOff: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/>',
-  flutuar: '<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="11" width="7" height="6" rx="1"/>'
+  flutuar: '<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="11" width="7" height="6" rx="1"/>',
+  seta: '<polyline points="6 9 12 15 18 9"/>'
 };
 
 function iconeChamada(nome, tam){
@@ -10319,6 +10327,8 @@ function presencaChamada(pid){
   if(state.currentProjectId === pid) atualizarListaCanais();
   if(previaChamada && previaChamada.pid === pid) desenharQuemEstaNaPrevia();
   if(chamada && chamada.pid === pid) reconciliarChamada();
+  // A lista de salas aberta na chamada mostra quem está em cada uma.
+  if(chamada && chamada.pid === pid && chamada.painelSalas) desenharChamada();
 }
 
 // A sala que a pessoa diz estar. Quem não diz (a versão anterior do app, ou
@@ -11939,14 +11949,77 @@ function chamadaAbrirVolume(chave, e){
   }
 }
 
-// Clique fora fecha o painel de volume (depois da ação do próprio clique).
+// Clique fora fecha o painel de volume e a lista de salas (depois da ação do
+// próprio clique).
 document.addEventListener('click', (e)=>{
   const c = chamada;
-  if(!c || !c.volumeAberto) return;
-  if(e.target.closest && e.target.closest('.ch-volume, [data-volume-botao]')) return;
-  c.volumeAberto = null;
-  desenharChamada();
+  if(!c || !(c.volumeAberto || c.painelSalas)) return;
+  const dentro = (sel)=>e.target.closest && e.target.closest(sel);
+  let mudou = false;
+  if(c.volumeAberto && !dentro('.ch-volume, [data-volume-botao]')){ c.volumeAberto = null; mudou = true; }
+  if(c.painelSalas && !dentro('.ch-salas, #ch-btn-salas')){ c.painelSalas = false; mudou = true; }
+  if(mudou) desenharChamada();
 });
+
+/* --- salas dentro da chamada (RFC 0004, Q16) --- */
+
+// A lista de salas do projeto abre pelo botão "Salas" no alto da chamada:
+// quem está em cada uma e um toque para trocar, sem fechar microfone nem
+// câmera (trocarDeSalaChamada).
+function chamadaAlternarSalas(){
+  const c = chamada;
+  if(!c) return;
+  c.painelSalas = !c.painelSalas;
+  c.painelDisp = false;
+  c.volumeAberto = null;
+  if(c.painelSalas) c.animarPainel = true;
+  desenharChamada();
+  if(c.painelSalas){
+    const d = docChamada();
+    const alvo = d.querySelector('.ch-sala[aria-current="true"]') || d.querySelector('.ch-sala');
+    if(alvo) alvo.focus();
+  }
+}
+
+function chamadaIrParaSala(sala){
+  const c = chamada;
+  if(!c) return;
+  c.painelSalas = false;
+  if(sala === c.sala){
+    desenharChamada();
+    const b = docChamada().getElementById('ch-btn-salas');
+    if(b) b.focus();
+    return;
+  }
+  trocarDeSalaChamada(sala);
+}
+
+function painelSalasHtml(c){
+  const porSala = pessoasNasSalas(c.pid);
+  const itens = salasDoProjeto(c.pid).map(s=>{
+    const atual = s.id === c.sala;
+    const gente = porSala[s.id] || [];
+    const rostos = gente.slice(0, 3).map(x=>`<span class="ch-sala-rosto">${avatarChip(perfilNaChamada(c.pid, x.uid), nomeNaChamada(c.pid, x.uid)[0])}</span>`).join('');
+    const mais = gente.length > 3 ? `<span class="ch-sala-mais">+${gente.length - 3}</span>` : '';
+    const quem = gente.length ? `${gente.length} ${gente.length === 1 ? 'pessoa' : 'pessoas'}` : 'Vazia';
+    return `
+      <li>
+        <button type="button" class="ch-sala ${atual ? 'atual' : ''}" data-sala="${esc(s.id)}" onclick="chamadaIrParaSala(this.dataset.sala)"${atual ? ' aria-current="true"' : ''} aria-label="${esc(`${s.nome}: ${atual ? 'você está aqui' : quem}`)}">
+          <span class="ch-sala-icone" aria-hidden="true">${iconeChamada('volume', 16)}</span>
+          <span class="ch-sala-texto">
+            <span class="ch-sala-nome">${esc(s.nome)}</span>
+            <span class="ch-sala-quem">${atual ? 'Você está aqui' : quem}</span>
+          </span>
+          ${gente.length ? `<span class="ch-sala-gente" aria-hidden="true">${rostos}${mais}</span>` : ''}
+        </button>
+      </li>`;
+  }).join('');
+  return `
+    <div class="ch-salas" role="group" aria-labelledby="ch-salas-titulo">
+      <p class="ch-salas-titulo" id="ch-salas-titulo">Salas de voz</p>
+      <ul class="ch-salas-lista">${itens}</ul>
+    </div>`;
+}
 
 function chamadaDestacar(chave, e){
   if(e) e.stopPropagation();
@@ -11982,6 +12055,7 @@ function minimizarNaPagina(c){
   comTransicaoChamada(()=>{
     c.modo = 'mini';
     c.painelDisp = false;
+    c.painelSalas = false;
     c.painelTela = false;
     c.volumeAberto = null;
     desenharChamada();
@@ -12011,7 +12085,12 @@ document.addEventListener('keydown', (e)=>{
   // é para minimizar a chamada.
   if(chamada.pedindoTela || Date.now() < (chamada.telaPedidaAte || 0)) return;
   if(chamada.painelTela){ fecharEscolhaTela(); return; }
-  if(chamada.painelDisp || chamada.volumeAberto){
+  if(chamada.painelSalas){
+    chamada.painelSalas = false;
+    desenharChamada();
+    const b = docChamada().getElementById('ch-btn-salas');
+    if(b) b.focus();
+  }else if(chamada.painelDisp || chamada.volumeAberto){
     const voltar = chamada.volumeAberto ? document.getElementById(`ch-vol-btn-${idVolume(chamada.volumeAberto)}`) : null;
     chamada.painelDisp = false;
     chamada.volumeAberto = null;
@@ -12087,6 +12166,7 @@ function adotarJanelaFlutuante(win, origem){
   janelaFlutuante = {win, origem: origem || 'botao', auto: origem === 'auto', modoAntes: origem === 'minimizar' ? 'mini' : c.modo, voltarExpandida: false};
   c.modo = 'mini';
   c.painelDisp = false;
+  c.painelSalas = false;
   c.painelTela = false;
   c.volumeAberto = null;
   if(raiz) win.document.body.appendChild(raiz);
@@ -12113,12 +12193,19 @@ function prepararJanelaFlutuante(win){
     }
     d.head.appendChild(copia);
   }
+  copiarTemaParaJanela(d);
+  d.documentElement.lang = document.documentElement.lang || 'pt-BR';
+  d.title = `Chamada · ${nomeDaChamada(chamada.pid, chamada.sala)}`;
+}
+
+// As cores do tema ficam no style do <html> (applyTheme) e o Vidro e o
+// Grafite são classes do <body>: tudo isso vai junto para a flutuante.
+function copiarTemaParaJanela(d){
   d.documentElement.className = document.documentElement.className;
+  d.documentElement.style.cssText = document.documentElement.style.cssText;
   const tema = document.documentElement.getAttribute('data-theme');
   if(tema !== null) d.documentElement.setAttribute('data-theme', tema);
-  d.documentElement.lang = document.documentElement.lang || 'pt-BR';
   d.body.className = `${document.body.className} corpo-flutuante`;
-  d.title = `Chamada · ${nomeDaChamada(chamada.pid, chamada.sala)}`;
 }
 
 // Os onclick do HTML da chamada rodam no escopo global da janela onde o
@@ -12409,12 +12496,16 @@ function ladrilhoChamadaHtml(l, opts){
   }
   // O ladrilho inteiro é um botão (transparente, por baixo do nome e das
   // ações) que põe ou tira do destaque.
+  // o.voz: a sala só de voz em fotos grandes (layoutSoVoz), sem vídeo e sem
+  // destaque; a pessoa é a foto com o nome embaixo, e microfone fechado,
+  // ensurdecido e silenciado viram um selo no canto da foto, para o nome
+  // ficar centrado.
   return `
-    <div class="ch-ladrilho ${tela ? 'tela' : ''} ${comVideo ? 'com-video' : ''} ${destacado ? 'destacado' : ''}" data-chave="${l.chave}" ${tela ? '' : `data-fala="${l.uid}"`}>
-      <div class="ch-ladrilho-avatar">${tela ? iconeChamada('tela', 40) : avatarChip(perfilNaChamada(c.pid, l.uid), nome[0])}</div>
+    <div class="ch-ladrilho ${o.voz ? 'voz' : ''} ${tela ? 'tela' : ''} ${comVideo ? 'com-video' : ''} ${destacado ? 'destacado' : ''} ${eu ? 'eu' : ''}" data-chave="${l.chave}" ${tela ? '' : `data-fala="${l.uid}"`}>
+      <div class="ch-ladrilho-avatar">${tela ? iconeChamada('tela', 40) : avatarChip(perfilNaChamada(c.pid, l.uid), nome[0])}${o.voz && icones ? `<span class="ch-voz-selos">${icones}</span>` : ''}</div>
       <div class="ch-ladrilho-video" data-slot="${l.chave}"></div>
-      ${o.mini ? '' : `<button type="button" class="ch-alvo" id="ch-destacar-${l.chave.replace(':', '-')}" onclick="chamadaDestacar('${l.chave}')" aria-pressed="${destacado}" aria-label="${destacado ? 'Tirar do destaque' : 'Pôr em destaque'}: ${esc(rotulo)}"></button>`}
-      ${o.semRotulo ? '' : `<div class="ch-rotulo">${icones}<span class="ch-rotulo-nome">${esc(rotulo)}</span></div>`}
+      ${o.mini || o.voz ? '' : `<button type="button" class="ch-alvo" id="ch-destacar-${l.chave.replace(':', '-')}" onclick="chamadaDestacar('${l.chave}')" aria-pressed="${destacado}" aria-label="${destacado ? 'Tirar do destaque' : 'Pôr em destaque'}: ${esc(rotulo)}"></button>`}
+      ${o.semRotulo ? '' : `<div class="ch-rotulo">${o.voz ? '' : icones}<span class="ch-rotulo-nome">${esc(rotulo)}</span></div>`}
       ${estado ? `<div class="ch-estado">${esc(estado)}</div>` : ''}
       ${o.mini ? '' : `<div class="ch-ladrilho-acoes">
         ${volume}
@@ -12432,7 +12523,7 @@ function ladrilhoChamadaHtml(l, opts){
 // girando e um anel se espalha uma vez. Um redesenho no meio continua a
 // animação de onde ela estava (--ch-atraso negativo), em vez de recomeçar.
 const CHAMADA_TROCA_MS = 520;
-const COR_DO_ESTADO = {'': 'var(--ch-botao)', desligado: 'var(--ch-desligado)', ativo: 'var(--ch-texto)'};
+const COR_DO_ESTADO = {'': 'var(--ch-botao)', desligado: 'var(--ch-desligado)', ativo: 'var(--ch-ativo)'};
 const estadosDosBotoes = {};
 
 function botaoChamada(id, acao, icone, rotulo, classe, pressionado){
@@ -12455,10 +12546,15 @@ function controlesChamadaHtml(mini){
     botaoChamada(mini ? 'ch-btn-mic-mini' : 'ch-btn-mic', 'chamadaAlternarMic()', micAberto ? 'mic' : 'micOff', micAberto ? 'Fechar o microfone' : 'Abrir o microfone', micAberto ? '' : 'desligado', !micAberto),
     botaoChamada(mini ? 'ch-btn-fone-mini' : 'ch-btn-fone', 'chamadaAlternarEnsurdecer()', c.ensurdecido ? 'foneOff' : 'fone', c.ensurdecido ? 'Voltar a ouvir' : 'Ensurdecer', c.ensurdecido ? 'desligado' : '', c.ensurdecido)
   ];
+  // Na chamada aberta, três grupos separados por um fio: o que eu falo e
+  // ouço, o que eu mostro, e sair.
+  const divisor = '<span class="ch-divisor" aria-hidden="true"></span>';
   if(!mini){
+    partes.push(divisor);
     partes.push(botaoChamada('ch-btn-cam', 'chamadaAlternarCamera()', c.camera ? 'cam' : 'camOff', c.camera ? 'Desligar a câmera' : 'Ligar a câmera', c.camera ? '' : 'desligado', !c.camera));
     if(telaSuportada()) partes.push(botaoChamada('ch-btn-tela', 'chamadaAlternarTela()', 'tela', c.tela ? 'Parar de transmitir a tela' : 'Transmitir a tela', c.tela ? 'ativo' : '', c.tela));
     partes.push(botaoChamada('ch-btn-disp', 'chamadaAlternarDispositivos()', 'ajustes', 'Microfone, câmera e alto-falante', c.painelDisp ? 'ativo' : '', c.painelDisp));
+    partes.push(divisor);
   }else if(janelaFlutuante){
     // Na janela flutuante, a câmera no lugar de flutuar e abrir. A volta para
     // a aba já está no ⇱ que o Chrome põe na barra da janela, e o clique no
@@ -12494,9 +12590,25 @@ function colunasDaGrade(n){
   return 5;
 }
 
+// Sala só de voz (ninguém com câmera nem tela): 'fotos' mostra cada pessoa
+// como a foto grande com o nome embaixo, como numa sala de voz; 'quadros'
+// mantém a grade de quadros 16:9 da chamada com vídeo.
+let layoutSoVoz = 'fotos';
+
+// A chamada aberta cobre o app inteiro: o app atrás dela fica inerte, para o
+// Tab e o leitor de tela não andarem pelo que não se vê. Os modais ficam fora
+// do #app e continuam usáveis por cima da chamada.
+function travarAppAtrasDaChamada(){
+  const app = document.getElementById('app');
+  if(!app) return;
+  const cobre = !!chamada && chamada.modo === 'expandida' && !janelaFlutuante;
+  if(app.inert !== cobre) app.inert = cobre;
+}
+
 function desenharChamada(){
   const c = chamada;
   desenharAvisoFlutuante();
+  travarAppAtrasDaChamada();
   const doc = docChamada();
   let raiz = doc.getElementById('chamada');
   if(!c){ if(raiz) raiz.remove(); return; }
@@ -12512,6 +12624,9 @@ function desenharChamada(){
   const p = projetoDaChamada(c.pid);
   // Com várias salas, o nome da sala vem na frente do projeto.
   const nomeProjeto = p ? nomeDaChamada(c.pid, c.sala) : 'Projeto';
+  // No cartão pequeno não cabe "Sala 1 · Projeto": com várias salas vai só a
+  // sala (o nome inteiro fica no title), com uma só vai o projeto.
+  const nomeCurto = p && salasDoProjeto(c.pid).length > 1 ? nomeDaSala(c.pid, c.sala) : (p ? p.name : 'Projeto');
   raiz.dataset.modo = c.modo;
   raiz.setAttribute('aria-label', `Chamada em ${nomeProjeto}`);
   const foco = doc.activeElement && raiz.contains(doc.activeElement) ? doc.activeElement.id : null;
@@ -12540,14 +12655,27 @@ function desenharChamada(){
     html = `
       <div class="ch-mini-palco">${palco}<button type="button" class="ch-alvo" tabindex="-1" aria-hidden="true" onclick="chamadaExpandir()"></button></div>
       <div class="ch-mini-barra">
-        <div class="ch-mini-info"><span class="ch-ponto" aria-hidden="true"></span><span class="ch-mini-nome">${esc(nomeProjeto)}</span><span class="ch-tempo"></span></div>
+        <div class="ch-mini-info"><span class="ch-ponto" aria-hidden="true"></span><span class="ch-mini-nome" title="${esc(nomeProjeto)}">${esc(nomeCurto)}</span><span class="ch-tempo"></span></div>
         <div class="ch-mini-controles">${controlesChamadaHtml(true)}</div>
       </div>
       <div class="sr-only" aria-live="polite" id="ch-anuncio"></div>`;
   }else{
-    const destaque = c.destaque && ladrilhos.find(l=>l.chave === c.destaque);
+    // Ninguém com câmera nem tela: a sala é só de voz, e as pessoas aparecem
+    // como fotos grandes (ou nos quadros de sempre, conforme layoutSoVoz).
+    const soVoz = !ladrilhos.some(l=>l.tipo === 'tela' || l.p.camera);
+    const emFotos = soVoz && layoutSoVoz === 'fotos';
+    const destaque = !emFotos && c.destaque && ladrilhos.find(l=>l.chave === c.destaque);
     let palco;
-    if(destaque){
+    if(emFotos){
+      const n = ladrilhos.length;
+      const tam = n <= 2 ? 'g' : n <= 4 ? 'm' : n <= 6 ? 'p' : n <= 8 ? 'pp' : 'ppp';
+      // Fileiras equilibradas: 6 viram 3 + 3, e não 5 + 1.
+      const cols = n <= 4 ? n : n <= 6 ? 3 : n <= 8 ? 4 : 5;
+      palco = `
+        <div class="ch-palco so-voz">
+          <div class="ch-roda tam-${tam}" style="--cols:${cols};">${ladrilhos.map(l=>ladrilhoChamadaHtml(l, {voz: true})).join('')}</div>
+        </div>`;
+    }else if(destaque){
       const outros = ladrilhos.filter(l=>l.chave !== destaque.chave);
       palco = `
         <div class="ch-palco com-destaque">
@@ -12563,21 +12691,31 @@ function desenharChamada(){
           <div class="ch-grade" style="--cols:${cols};--linhas:${linhas};">${ladrilhos.map(l=>ladrilhoChamadaHtml(l)).join('')}</div>
         </div>`;
     }
+    // No alto, a sala em que estou; embaixo dela, o projeto, o tempo e quantos
+    // estão aqui. Com mais de uma sala, o botão Salas abre a lista para trocar.
+    const sala = canalDoProjeto(c.pid, c.sala);
+    const nomeSala = sala ? sala.nome : (p ? p.name : 'Chamada');
+    const salas = salasDoProjeto(c.pid);
+    const minimizar = janelaFlutuanteSuportada() ? 'Minimizar para a janela flutuante (Esc)' : 'Minimizar a chamada (Esc)';
     html = `
       <header class="ch-topo">
         <div class="ch-titulo">
-          <span class="ch-ponto" aria-hidden="true"></span>
-          <h2>${esc(nomeProjeto)}</h2>
-          <span class="ch-topo-meta"><span class="ch-tempo"></span> · ${pessoas} ${pessoas === 1 ? 'pessoa' : 'pessoas'}</span>
+          <span class="ch-titulo-icone" aria-hidden="true">${iconeChamada('volume', 18)}</span>
+          <div class="ch-titulo-texto">
+            <h2>${esc(nomeSala)}</h2>
+            <span class="ch-topo-meta">${sala && p ? `<span class="ch-topo-projeto">${esc(p.name)}</span><span aria-hidden="true"> · </span>` : ''}<span class="ch-tempo"></span><span aria-hidden="true"> · </span>${pessoas} ${pessoas === 1 ? 'pessoa' : 'pessoas'}</span>
+          </div>
         </div>
         <div class="ch-topo-acoes">
-          <button type="button" id="ch-btn-minimizar" class="ch-botao ch-botao-leve" onclick="chamadaMinimizar()" aria-label="${janelaFlutuanteSuportada() ? 'Minimizar para a janela flutuante (Esc)' : 'Minimizar a chamada (Esc)'}" title="${janelaFlutuanteSuportada() ? 'Minimizar para a janela flutuante (Esc)' : 'Minimizar (Esc)'}">${iconeChamada('minimizar', 18)}</button>
+          ${salas.length > 1 ? `<button type="button" id="ch-btn-salas" class="ch-salas-btn" onclick="chamadaAlternarSalas()" aria-expanded="${!!c.painelSalas}" aria-label="Salas de voz: trocar de sala">${iconeChamada('volume', 16)}<span>Salas</span><span class="ch-salas-seta">${iconeChamada('seta', 14)}</span></button>` : ''}
+          <button type="button" id="ch-btn-minimizar" class="ch-botao ch-botao-leve" onclick="chamadaMinimizar()" aria-label="${minimizar}" title="${minimizar}">${iconeChamada('minimizar', 18)}</button>
         </div>
+        ${c.painelSalas && salas.length > 1 ? painelSalasHtml(c) : ''}
       </header>
       ${palco}
       <div class="ch-rodape">
         ${c.painelDisp ? `<div class="ch-painel-disp" role="group" aria-label="Dispositivos">${seletoresDispositivo(c.dispositivos, 'chamadaTrocarDispositivo') || '<p>Nenhum dispositivo encontrado.</p>'}</div>` : ''}
-        <div class="ch-controles">${controlesChamadaHtml(false)}</div>
+        <div class="ch-controles" role="toolbar" aria-label="Controles da chamada">${controlesChamadaHtml(false)}</div>
       </div>
       ${c.painelTela && c.escolhaTela ? escolhaTelaHtml() : ''}
       <div class="sr-only" aria-live="polite" id="ch-anuncio"></div>`;
@@ -12612,7 +12750,7 @@ function desenharChamada(){
   });
   chamadaDesenho = {modo: c.modo, chaves};
   if(c.animarPainel){
-    raiz.querySelectorAll('.ch-painel-disp, .ch-volume, .ch-dialogo-fundo').forEach(el=>el.classList.add('abrindo'));
+    raiz.querySelectorAll('.ch-painel-disp, .ch-volume, .ch-dialogo-fundo, .ch-salas').forEach(el=>el.classList.add('abrindo'));
     c.animarPainel = false;
   }
   const novoAnuncio = doc.getElementById('ch-anuncio');

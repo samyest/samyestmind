@@ -2084,11 +2084,44 @@
     .canal-rapido .cr-apagar{order:3;flex:1 1 100%;}
   }
 
-  /* Chamada do projeto (RFC 0002, fase 2). O palco é escuro em todos os
-     temas, como num app de chamada: vídeo e tela leem melhor sobre fundo
-     escuro, e o anel verde de quem fala aparece em qualquer tema. Fica preso
-     ao body, abaixo dos modais (100) e acima da barra lateral. */
-  .chamada, .ch-previa, .ch-na-flutuante{
+  /* Chamada do projeto (RFC 0002, fase 2). Segue o tema do app: o fundo é o
+     do tema com as duas manchas de cor da página, quadros, barra de controles
+     e painéis são o vidro do tema, e o texto é o do tema. Vídeo e tela ficam
+     sempre sobre preto, porque é vídeo. No Grafite (body.theme-escuro) o
+     verde de quem fala e o vermelho de fechado mudam de tom. Fica preso ao
+     body, abaixo dos modais (100) e acima da barra lateral. */
+  .chamada, .ch-na-flutuante{
+    --ch-fundo:var(--bg-base);
+    --ch-ladrilho:var(--glass-strong);
+    --ch-painel:color-mix(in srgb, #fff 86%, var(--bg-base));
+    --ch-borda:var(--glass-border-soft);
+    --ch-texto:var(--text-strong);
+    --ch-suave:color-mix(in srgb, var(--text) 72%, var(--text-muted));
+    --ch-fala:#2e9a50;
+    --ch-perigo:#c8433a;
+    --ch-botao:color-mix(in srgb, var(--text-strong) 7%, transparent);
+    --ch-botao-hover:color-mix(in srgb, var(--text-strong) 13%, transparent);
+    --ch-desligado:color-mix(in srgb, #c8433a 14%, transparent);
+    --ch-desligado-texto:#b3352d;
+    --ch-ativo:var(--accent);
+    --ch-ativo-texto:var(--accent-text);
+    --ch-foco:var(--accent);
+    --ch-video:#0c1015;
+    --ch-sombra:0 18px 46px color-mix(in srgb, var(--text-strong) 16%, transparent);
+  }
+  body.theme-escuro .chamada, body.theme-escuro .ch-na-flutuante{
+    --ch-painel:color-mix(in srgb, #fff 7%, var(--bg-base));
+    --ch-suave:color-mix(in srgb, var(--text) 62%, var(--text-muted));
+    --ch-fala:#43b562;
+    --ch-perigo:#d9534a;
+    --ch-desligado:color-mix(in srgb, #d9534a 24%, transparent);
+    --ch-desligado-texto:#ffaaa2;
+    --ch-foco:#fff;
+    --ch-sombra:0 18px 46px rgba(0,0,0,0.5);
+  }
+  /* A prévia de antes de entrar mostra o vídeo da câmera: fica no preto do
+     vídeo, dentro do modal do app. */
+  .ch-previa{
     --ch-fundo:#10151b;
     --ch-ladrilho:#1b232d;
     --ch-texto:#e9eef3;
@@ -2099,77 +2132,150 @@
     --ch-botao-hover:#33404e;
     --ch-desligado:#4a2a2b;
     --ch-desligado-texto:#ffb3ac;
+    --ch-ativo:#e9eef3;
+    --ch-ativo-texto:#10151b;
+    --ch-foco:#fff;
   }
   .chamada{position:fixed;z-index:90;color:var(--ch-texto);background:var(--ch-fundo);}
-  .chamada[data-modo="expandida"]{inset:0;display:flex;flex-direction:column;}
+  .chamada[data-modo="expandida"]{
+    inset:0;
+    display:flex;
+    flex-direction:column;
+    background:
+      radial-gradient(46vmax 46vmax at -8% -12%, color-mix(in srgb, var(--palette-5) 78%, transparent), transparent 70%),
+      radial-gradient(52vmax 52vmax at 108% 112%, color-mix(in srgb, var(--palette-6) 58%, transparent), transparent 70%),
+      var(--ch-fundo);
+  }
   .chamada[data-modo="mini"]{
     right:20px;
     bottom:20px;
     width:min(340px, calc(100vw - 24px));
     border-radius:16px;
     overflow:hidden;
-    box-shadow:0 18px 48px rgba(10,16,24,0.38), 0 0 0 1px rgba(255,255,255,0.06);
+    background:var(--ch-painel);
+    box-shadow:var(--ch-sombra);
   }
-  .chamada button:focus-visible{outline:2px solid #fff;outline-offset:2px;}
+  .chamada button:focus-visible{outline:2px solid var(--ch-foco);outline-offset:2px;}
 
-  .ch-ponto{width:8px;height:8px;border-radius:50%;background:var(--ch-fala, #43b562);flex-shrink:0;box-shadow:0 0 0 3px rgba(67,181,98,0.22);}
-  .ch-topo{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px 10px;}
-  .ch-titulo{display:flex;align-items:center;gap:10px;min-width:0;}
-  .ch-titulo h2{margin:0;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .ch-topo-meta{font-size:13px;color:var(--ch-suave);white-space:nowrap;font-variant-numeric:tabular-nums;}
-  .ch-topo-acoes{display:flex;align-items:center;gap:10px;}
+  .ch-ponto{width:8px;height:8px;border-radius:50%;background:var(--ch-fala, #43b562);flex-shrink:0;box-shadow:0 0 0 3px color-mix(in srgb, var(--ch-fala, #43b562) 22%, transparent);}
 
-  .ch-palco{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:6px 20px;}
+  /* Alto: a sala, e embaixo dela projeto, tempo e quantos estão aqui. */
+  .ch-topo{position:relative;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 24px 6px;}
+  .ch-titulo{display:flex;align-items:center;gap:11px;min-width:0;}
+  .ch-titulo-icone{display:grid;flex-shrink:0;color:var(--ch-suave);}
+  .ch-titulo-texto{display:flex;flex-direction:column;gap:1px;min-width:0;}
+  .ch-titulo h2{margin:0;font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:500;letter-spacing:-0.02em;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ch-topo-meta{font-size:12.5px;color:var(--ch-suave);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;}
+  .ch-topo-acoes{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+  .ch-salas-btn{
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    height:38px;
+    padding:0 11px 0 13px;
+    border-radius:19px;
+    background:var(--ch-ladrilho);
+    border:1px solid var(--ch-borda);
+    color:var(--ch-texto);
+    font-size:13px;
+    font-weight:600;
+    transition:background-color .15s ease;
+  }
+  .ch-salas-btn:hover, .ch-salas-btn[aria-expanded="true"]{background:var(--ch-painel);}
+  .ch-salas-seta{display:grid;color:var(--ch-suave);transition:transform .2s var(--mov-curva);}
+  .ch-salas-btn[aria-expanded="true"] .ch-salas-seta{transform:rotate(180deg);}
+
+  /* Salas de voz do projeto, para trocar sem sair da chamada. */
+  .ch-salas{
+    position:absolute;
+    top:calc(100% - 2px);
+    right:24px;
+    z-index:6;
+    width:min(320px, calc(100vw - 28px));
+    max-height:min(440px, calc(100dvh - 190px));
+    overflow-y:auto;
+    padding:8px;
+    border-radius:16px;
+    background:var(--ch-painel);
+    box-shadow:var(--ch-sombra);
+  }
+  .ch-salas-titulo{margin:4px 8px 6px;font-size:12px;font-weight:600;color:var(--ch-suave);}
+  .ch-salas-lista{list-style:none;margin:0;padding:0;display:grid;gap:2px;}
+  .ch-sala{width:100%;display:flex;align-items:center;gap:10px;min-height:48px;padding:7px 10px;border-radius:11px;text-align:left;color:var(--ch-texto);transition:background-color .15s ease;}
+  .ch-sala:hover{background:var(--ch-botao);}
+  .ch-sala.atual{background:color-mix(in srgb, var(--ch-ativo) 13%, transparent);cursor:default;}
+  .ch-sala-icone{display:grid;flex-shrink:0;color:var(--ch-suave);}
+  .ch-sala.atual .ch-sala-icone{color:var(--ch-fala);}
+  .ch-sala-texto{display:flex;flex-direction:column;flex:1;min-width:0;}
+  .ch-sala-nome{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ch-sala-quem{font-size:12px;color:var(--ch-suave);}
+  .ch-sala-gente{display:flex;align-items:center;flex-shrink:0;}
+  .ch-sala-rosto{display:grid;border-radius:50%;box-shadow:0 0 0 2px var(--ch-painel);}
+  .ch-sala-rosto + .ch-sala-rosto{margin-left:-3px;}
+  .ch-sala-rosto .member-avatar{width:24px;height:24px;font-size:10.5px;}
+  .ch-sala-mais{margin-left:5px;font-size:11.5px;font-weight:600;color:var(--ch-suave);font-variant-numeric:tabular-nums;}
+
+  .ch-palco{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:8px 24px;}
   /* A grade nunca passa da altura disponível: a largura máxima sai da altura
      (descontados topo e controles) vezes 16/9, nas colunas e linhas que o JS
      calculou. */
   /* Em flex, e não em grid, para a última linha incompleta ficar centrada. */
   .ch-grade{
-    --ch-vao:10px;
+    --ch-vao:12px;
     display:flex;
     flex-wrap:wrap;
     justify-content:center;
     gap:var(--ch-vao);
-    width:min(100%, calc((100dvh - 190px) * 16 / 9 * var(--cols) / var(--linhas)));
+    width:min(100%, calc((100dvh - 200px) * 16 / 9 * var(--cols) / var(--linhas)));
   }
   .ch-grade .ch-ladrilho{aspect-ratio:16 / 9;flex:0 0 calc((100% - (var(--cols) - 1) * var(--ch-vao)) / var(--cols));}
-  .ch-palco.com-destaque{flex-direction:column;align-items:stretch;gap:10px;}
+  .ch-palco.com-destaque{flex-direction:column;align-items:stretch;gap:12px;}
   .ch-destaque{flex:1;min-height:0;display:flex;}
   .ch-destaque .ch-ladrilho{flex:1;}
   .ch-fileira{display:flex;justify-content:center;gap:10px;height:clamp(84px, 16vh, 132px);flex-shrink:0;overflow-x:auto;}
   .ch-fileira .ch-ladrilho{height:100%;aspect-ratio:16 / 9;flex-shrink:0;}
   .ch-fileira .ch-ladrilho .member-avatar{width:40px;height:40px;font-size:15px;}
 
+  /* Quadro de uma pessoa: o vidro do tema; com vídeo ou tela, o preto do
+     vídeo. Quem fala ganha um anel verde no quadro e na foto. */
   .ch-ladrilho{
     position:relative;
     min-width:0;
-    border-radius:14px;
+    border-radius:18px;
     background:var(--ch-ladrilho);
+    box-shadow:inset 0 0 0 1px var(--ch-borda);
     overflow:hidden;
     cursor:pointer;
   }
+  .ch-ladrilho.com-video, .ch-ladrilho.tela{background:var(--ch-video);box-shadow:none;}
   .ch-ladrilho::after{
     content:'';
     position:absolute;
     inset:0;
     border-radius:inherit;
-    box-shadow:inset 0 0 0 3px var(--ch-fala);
+    box-shadow:inset 0 0 0 2px var(--ch-fala), inset 0 0 0 5px color-mix(in srgb, var(--ch-fala) 22%, transparent);
     opacity:0;
     transition:opacity .12s ease;
     pointer-events:none;
   }
   .ch-ladrilho.falando::after{opacity:1;}
+  /* Sem vídeo, o anel fica só na foto: dois anéis juntos pesavam. */
+  .ch-ladrilho:not(.com-video):not(.tela)::after{content:none;}
   .ch-ladrilho-video{position:absolute;inset:0;}
   .ch-alvo{position:absolute;inset:0;width:100%;height:100%;border-radius:inherit;background:transparent;cursor:pointer;}
-  .chamada .ch-alvo:focus-visible{outline:2px solid #fff;outline-offset:-4px;}
+  .chamada .ch-alvo:focus-visible{outline:2px solid var(--ch-foco);outline-offset:-4px;}
   .ch-rotulo, .ch-estado{pointer-events:none;}
   .ch-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;}
   .ch-video.tela{object-fit:contain;}
   .ch-video.espelho{transform:scaleX(-1);}
   .ch-ladrilho-avatar{position:absolute;inset:0;display:grid;place-items:center;color:var(--ch-suave);}
-  /* A foto acompanha o tamanho do ladrilho: no celular, 72px não cabiam. */
-  .ch-ladrilho-avatar .member-avatar{width:clamp(36px, 26%, 72px);height:auto;aspect-ratio:1;font-size:22px;transition:box-shadow .12s ease;}
-  .ch-ladrilho.falando .ch-ladrilho-avatar .member-avatar{box-shadow:0 0 0 3px var(--ch-fundo), 0 0 0 6px var(--ch-fala);}
+  .ch-ladrilho.tela .ch-ladrilho-avatar{color:rgba(233,238,243,0.6);}
+  /* A foto acompanha o tamanho do quadro: no celular, 72px não cabiam. */
+  .ch-ladrilho-avatar .member-avatar{width:clamp(40px, 28%, 104px);height:auto;aspect-ratio:1;font-size:clamp(15px, 2.4vw, 34px);outline:3px solid transparent;outline-offset:4px;transition:outline-color .12s ease;}
+  .ch-ladrilho.falando .ch-ladrilho-avatar .member-avatar{outline-color:var(--ch-fala);}
+  /* Sem vídeo, o nome fica centrado embaixo da foto, no texto do tema; com
+     vídeo, numa etiqueta escura no canto, por cima da imagem. */
+  .ch-ladrilho:not(.com-video):not(.voz):not(.tela) .ch-ladrilho-avatar{padding-bottom:30px;}
   .ch-rotulo{
     position:absolute;
     left:8px;
@@ -2181,21 +2287,105 @@
     padding:4px 9px;
     border-radius:8px;
     background:rgba(8,12,16,0.62);
+    color:#fff;
     font-size:12.5px;
     font-weight:500;
   }
+  .ch-ladrilho:not(.com-video):not(.voz):not(.tela) .ch-rotulo{left:50%;bottom:14px;transform:translateX(-50%);padding:2px 6px;background:none;color:var(--ch-texto);font-size:13.5px;font-weight:600;}
   .ch-rotulo-nome{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .ch-rotulo-icone{display:grid;color:var(--ch-desligado-texto);flex-shrink:0;}
-  .ch-estado{position:absolute;top:8px;left:8px;right:8px;width:fit-content;max-width:calc(100% - 16px);padding:4px 9px;border-radius:8px;background:rgba(8,12,16,0.62);font-size:12px;color:var(--ch-suave);}
+  .ch-ladrilho.com-video .ch-rotulo-icone, .ch-ladrilho.tela .ch-rotulo-icone{color:#ffb3ac;}
+  /* Conectando: um ponto que pulsa antes do texto. */
+  .ch-estado{position:absolute;top:10px;left:10px;right:10px;display:flex;align-items:center;gap:7px;width:fit-content;max-width:calc(100% - 20px);padding:4px 10px;border-radius:999px;background:var(--ch-botao);font-size:12px;color:var(--ch-suave);}
+  .ch-ladrilho.com-video .ch-estado{background:rgba(8,12,16,0.62);color:#d5dde5;}
+  .ch-estado::before{content:'';width:6px;height:6px;flex-shrink:0;border-radius:50%;background:currentColor;animation:chPulso 1.4s ease-in-out infinite;}
+  @keyframes chPulso{50%{opacity:.25;}}
   .ch-ladrilho-acoes{position:absolute;top:8px;right:8px;display:flex;gap:4px;opacity:0;transition:opacity .15s ease;}
   .ch-ladrilho:hover .ch-ladrilho-acoes,
   .ch-ladrilho:focus-within .ch-ladrilho-acoes,
   .ch-ladrilho.destacado .ch-ladrilho-acoes{opacity:1;}
   @media (hover:none){ .ch-ladrilho-acoes{opacity:1;} }
-  .ch-acao{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;background:rgba(8,12,16,0.62);color:var(--ch-texto);}
-  .ch-acao:hover{background:rgba(8,12,16,0.85);}
-  .ch-acao[aria-pressed="true"]{background:var(--ch-texto);color:var(--ch-fundo);}
+  .ch-acao{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:var(--ch-painel);color:var(--ch-texto);box-shadow:0 2px 8px color-mix(in srgb, var(--text-strong) 12%, transparent);}
+  .ch-acao:hover{background:var(--ch-fundo);}
+  .ch-ladrilho.com-video .ch-acao, .ch-ladrilho.tela .ch-acao{background:rgba(8,12,16,0.62);color:#fff;box-shadow:none;}
+  .ch-ladrilho.com-video .ch-acao:hover, .ch-ladrilho.tela .ch-acao:hover{background:rgba(8,12,16,0.85);}
+  .ch-acao[aria-pressed="true"]{background:var(--ch-ativo);color:var(--ch-ativo-texto);}
   .ch-acao.silenciado{color:var(--ch-desligado-texto);}
+
+  /* Sala só de voz (layoutSoVoz 'fotos'): cada pessoa é a foto grande, com o
+     nome embaixo, centradas no palco. Quem fala ganha o anel e cresce um
+     pouco; o volume de cada um aparece no canto da foto. */
+  .ch-palco.so-voz{overflow-y:auto;padding:8px 24px 18px;}
+  /* --cols vem do JS: a largura máxima cabe exatamente essas colunas, e as
+     fileiras saem equilibradas. */
+  .ch-roda{
+    --ch-foto:168px;
+    --ch-sobra:64px;
+    --ch-vao-x:40px;
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    align-content:center;
+    gap:30px var(--ch-vao-x);
+    width:100%;
+    max-width:min(100%, calc(var(--cols, 4) * (var(--ch-foto) + var(--ch-sobra)) + (var(--cols, 4) - 1) * var(--ch-vao-x)));
+    margin:auto;
+  }
+  .ch-roda.tam-m{--ch-foto:144px;--ch-vao-x:38px;}
+  .ch-roda.tam-p{--ch-foto:128px;--ch-vao-x:36px;row-gap:28px;}
+  .ch-roda.tam-pp{--ch-foto:108px;--ch-vao-x:30px;row-gap:24px;}
+  .ch-roda.tam-ppp{--ch-foto:88px;--ch-vao-x:22px;row-gap:20px;}
+  .ch-ladrilho.voz{
+    width:calc(var(--ch-foto) + var(--ch-sobra));
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:14px;
+    background:none;
+    box-shadow:none;
+    border-radius:0;
+    overflow:visible;
+    cursor:default;
+  }
+  .ch-ladrilho.voz::after{content:none;}
+  .ch-ladrilho.voz .ch-ladrilho-video{display:none;}
+  .ch-ladrilho.voz .ch-ladrilho-avatar{position:relative;inset:auto;display:block;}
+  .ch-ladrilho.voz .ch-ladrilho-avatar .member-avatar{
+    width:var(--ch-foto);
+    height:var(--ch-foto);
+    font-size:calc(var(--ch-foto) * 0.34);
+    outline-width:3px;
+    outline-offset:5px;
+    box-shadow:0 12px 30px color-mix(in srgb, var(--text-strong) 14%, transparent);
+    transition:outline-color .12s ease;
+  }
+  .ch-ladrilho.voz .ch-rotulo{position:static;justify-content:center;max-width:100%;padding:0;background:none;color:var(--ch-texto);font-size:14px;font-weight:600;}
+  .ch-voz-selos{
+    position:absolute;
+    right:calc(var(--ch-foto) * 0.02);
+    bottom:calc(var(--ch-foto) * 0.02);
+    display:flex;
+    gap:3px;
+    padding:6px;
+    border-radius:999px;
+    background:var(--ch-painel);
+    color:var(--ch-desligado-texto);
+    box-shadow:0 2px 8px color-mix(in srgb, var(--text-strong) 18%, transparent);
+    pointer-events:none;
+  }
+  .ch-voz-selos .ch-rotulo-icone svg{width:15px;height:15px;}
+  .ch-ladrilho.voz .ch-estado{position:static;margin-top:-9px;padding:0;background:none;max-width:100%;}
+  /* O volume de cada um é a própria foto: o botão a cobre, invisível, e no
+     hover (ou no foco) escurece a foto e mostra o alto-falante. No celular,
+     tocar na foto abre o volume, sem um botão em cada rosto. */
+  .ch-ladrilho.voz .ch-ladrilho-acoes{top:0;left:calc(50% - var(--ch-foto) / 2);right:auto;width:var(--ch-foto);height:var(--ch-foto);opacity:1;}
+  .ch-ladrilho.voz .ch-acao{width:100%;height:100%;border-radius:50%;background:transparent;color:transparent;box-shadow:none;transition:background-color .15s ease, color .15s ease;}
+  .ch-ladrilho.voz .ch-acao svg{width:26px;height:26px;}
+  .ch-ladrilho.voz .ch-acao:hover, .ch-ladrilho.voz .ch-acao:focus-visible, .ch-ladrilho.voz .ch-acao[aria-expanded="true"]{background:rgba(10,14,20,0.42);color:#fff;}
+  .ch-ladrilho.voz .ch-acao:focus-visible{outline-offset:5px;}
+  .ch-ladrilho.voz .ch-acao:active{transform:scale(.96);}
+  .ch-ladrilho.voz .ch-volume{top:calc(var(--ch-foto) + 10px);left:50%;right:auto;margin-left:-132px;width:264px;}
+
   /* Volume de uma pessoa (ou do som da tela dela), só para quem ajusta. Vai
      até 200%: a marca no meio da barra é o volume original, e o trecho acima
      dela fica âmbar para avisar que é reforço. */
@@ -2209,10 +2399,9 @@
     gap:10px;
     padding:12px 14px 10px;
     border-radius:14px;
-    background:rgba(16,21,27,0.94);
-    box-shadow:0 14px 34px rgba(0,0,0,0.42), 0 0 0 1px rgba(255,255,255,0.07);
-    backdrop-filter:blur(8px);
-    -webkit-backdrop-filter:blur(8px);
+    background:var(--ch-painel);
+    color:var(--ch-texto);
+    box-shadow:var(--ch-sombra);
     cursor:default;
   }
   .ch-volume-topo{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
@@ -2228,6 +2417,7 @@
   .ch-volume-barra{
     --fim:calc(8px + (100% - 16px) * var(--f));
     --meio:calc(8px + (100% - 16px) * var(--m));
+    --vazio:color-mix(in srgb, var(--ch-texto) 16%, transparent);
     position:relative;
     z-index:1;
     -webkit-appearance:none;
@@ -2242,12 +2432,12 @@
   .ch-volume-barra::-webkit-slider-runnable-track{
     height:6px;
     border-radius:3px;
-    background:linear-gradient(90deg, var(--ch-fala) 0 min(var(--fim), var(--meio)), #e0a43c 0 var(--fim), rgba(255,255,255,0.14) 0);
+    background:linear-gradient(90deg, var(--ch-fala) 0 min(var(--fim), var(--meio)), #e0a43c 0 var(--fim), var(--vazio) 0);
   }
   .ch-volume-barra::-moz-range-track{
     height:6px;
     border-radius:3px;
-    background:linear-gradient(90deg, var(--ch-fala) 0 min(var(--fim), var(--meio)), #e0a43c 0 var(--fim), rgba(255,255,255,0.14) 0);
+    background:linear-gradient(90deg, var(--ch-fala) 0 min(var(--fim), var(--meio)), #e0a43c 0 var(--fim), var(--vazio) 0);
   }
   .ch-volume-barra::-webkit-slider-thumb{
     -webkit-appearance:none;
@@ -2256,14 +2446,14 @@
     margin-top:-5px;
     border-radius:50%;
     background:#fff;
-    box-shadow:0 1px 4px rgba(0,0,0,0.45);
+    box-shadow:0 1px 4px rgba(0,0,0,0.4);
     transition:transform .12s ease;
   }
-  .ch-volume-barra::-moz-range-thumb{width:16px;height:16px;border:0;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,0.45);}
+  .ch-volume-barra::-moz-range-thumb{width:16px;height:16px;border:0;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,0.4);}
   .ch-volume-barra:active::-webkit-slider-thumb{transform:scale(1.15);}
   .ch-volume-barra:focus-visible{outline:none;}
-  .ch-volume-barra:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px rgba(255,255,255,0.35), 0 1px 4px rgba(0,0,0,0.45);}
-  .ch-volume-barra:focus-visible::-moz-range-thumb{box-shadow:0 0 0 3px rgba(255,255,255,0.35), 0 1px 4px rgba(0,0,0,0.45);}
+  .ch-volume-barra:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px color-mix(in srgb, var(--ch-foco) 45%, transparent), 0 1px 4px rgba(0,0,0,0.4);}
+  .ch-volume-barra:focus-visible::-moz-range-thumb{box-shadow:0 0 0 3px color-mix(in srgb, var(--ch-foco) 45%, transparent), 0 1px 4px rgba(0,0,0,0.4);}
   .ch-volume.mudo .ch-volume-barra{opacity:.4;}
   .ch-volume-marca{
     position:absolute;
@@ -2273,7 +2463,7 @@
     height:14px;
     margin:-7px 0 0 -1px;
     border-radius:1px;
-    background:rgba(255,255,255,0.4);
+    background:color-mix(in srgb, var(--ch-texto) 40%, transparent);
     pointer-events:none;
   }
   .ch-volume-pe{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:24px;font-size:11.5px;color:var(--ch-suave);}
@@ -2282,11 +2472,21 @@
   .ch-volume-redefinir[hidden]{display:none;}
   .ch-ladrilho:fullscreen{border-radius:0;}
 
-  .ch-rodape{position:relative;padding:12px 20px 20px;}
-  .ch-controles{display:flex;align-items:center;justify-content:center;gap:10px;}
+  /* Barra de controles: uma pílula de vidro centrada, com três grupos (falar
+     e ouvir, mostrar, sair) separados por um fio. */
+  .ch-rodape{position:relative;display:flex;justify-content:center;padding:10px 24px 22px;}
+  .ch-controles{display:flex;align-items:center;justify-content:center;gap:8px;}
+  .chamada[data-modo="expandida"] .ch-controles{
+    padding:8px;
+    border-radius:999px;
+    background:var(--ch-ladrilho);
+    border:1px solid var(--ch-borda);
+    box-shadow:var(--ch-sombra);
+  }
+  .ch-divisor{width:1px;height:26px;margin:0 4px;flex-shrink:0;background:color-mix(in srgb, var(--ch-texto) 14%, transparent);}
   .ch-botao{
-    width:48px;
-    height:48px;
+    width:46px;
+    height:46px;
     display:grid;
     place-items:center;
     flex-shrink:0;
@@ -2297,15 +2497,17 @@
   }
   .ch-botao:hover{background:var(--ch-botao-hover);}
   .ch-botao.desligado{background:var(--ch-desligado);color:var(--ch-desligado-texto);}
-  .ch-botao.ativo{background:var(--ch-texto);color:var(--ch-fundo);}
-  .ch-botao-leve{width:36px;height:36px;background:transparent;}
+  .ch-botao.ativo{background:var(--ch-ativo);color:var(--ch-ativo-texto);}
+  /* Minimizar, no alto: o mesmo vidro do botão Salas ao lado. */
+  .ch-botao-leve{width:38px;height:38px;background:var(--ch-ladrilho);border:1px solid var(--ch-borda);}
+  .ch-botao-leve:hover{background:var(--ch-painel);}
   .ch-sair{
-    height:48px;
+    height:46px;
     display:inline-flex;
     align-items:center;
     gap:8px;
-    padding:0 20px;
-    border-radius:24px;
+    padding:0 18px;
+    border-radius:23px;
     background:var(--ch-perigo);
     color:#fff;
     font-weight:600;
@@ -2315,21 +2517,21 @@
   .ch-sair:hover{filter:brightness(1.08);}
   .ch-painel-disp{
     position:absolute;
-    bottom:calc(100% - 4px);
+    bottom:calc(100% + 2px);
     left:50%;
     transform:translateX(-50%);
     width:min(380px, calc(100vw - 32px));
     display:grid;
     gap:10px;
     padding:14px;
-    border-radius:14px;
-    background:var(--ch-ladrilho);
-    box-shadow:0 12px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06);
+    border-radius:16px;
+    background:var(--ch-painel);
+    box-shadow:var(--ch-sombra);
   }
   .ch-painel-disp p{margin:0;font-size:13px;color:var(--ch-suave);}
   .ch-disp{display:grid;gap:4px;font-size:12px;color:var(--ch-suave);}
   /* Supressão de ruído: interruptor no fim da lista de dispositivos, na
-     prévia (tema do app) e no painel da chamada (escuro). */
+     prévia (tema do app) e no painel da chamada. */
   .ch-disp-ruido{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-top:2px;cursor:pointer;}
   .ch-disp-ruido-texto{display:flex;flex-direction:column;gap:2px;min-width:0;font-size:12.5px;font-weight:500;color:var(--ch-texto);}
   .ch-disp-ruido-texto small{font-size:11.5px;font-weight:400;line-height:1.4;color:var(--ch-suave);}
@@ -2337,15 +2539,17 @@
   .ch-previa-disps .ch-disp-ruido-texto small{color:var(--text-muted);}
   .ch-previa-disps .ch-interruptor:not(:checked){background:var(--line);}
   .ch-previa-disps .ch-disp-ruido{grid-column:1 / -1;}
-  .chamada .ch-disp .select{width:100%;max-width:none;background:var(--ch-fundo);color:var(--ch-texto);border-color:rgba(255,255,255,0.12);}
+  .chamada .ch-disp .select{width:100%;max-width:none;background:color-mix(in srgb, var(--ch-texto) 5%, var(--ch-painel));color:var(--ch-texto);border-color:color-mix(in srgb, var(--ch-texto) 14%, transparent);}
 
-  .ch-mini-palco{position:relative;display:block;width:100%;aspect-ratio:16 / 9;background:var(--ch-ladrilho);cursor:pointer;}
-  .ch-mini-palco .ch-ladrilho{position:absolute;inset:0;border-radius:0;}
+  .ch-mini-palco{position:relative;display:block;width:100%;aspect-ratio:16 / 9;background:var(--ch-botao);cursor:pointer;}
+  .ch-mini-palco .ch-ladrilho{position:absolute;inset:0;border-radius:0;box-shadow:none;}
+  .ch-mini-palco .ch-ladrilho:not(.com-video){background:none;}
   .ch-mini-palco .ch-ladrilho .member-avatar{width:48px;height:48px;font-size:18px;}
-  .ch-mini-pessoas{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;padding:12px;}
-  .ch-mini-pessoa{display:grid;border-radius:50%;transition:box-shadow .12s ease;}
-  .ch-mini-pessoa .member-avatar{width:44px;height:44px;font-size:16px;}
-  .ch-mini-pessoa.falando{box-shadow:0 0 0 3px var(--ch-fundo), 0 0 0 5px var(--ch-fala);}
+  .ch-mini-palco .ch-ladrilho:not(.com-video) .ch-ladrilho-avatar{padding-bottom:0;}
+  .ch-mini-pessoas{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;padding:12px;}
+  .ch-mini-pessoa{display:grid;border-radius:50%;}
+  .ch-mini-pessoa .member-avatar{width:44px;height:44px;font-size:16px;outline:2px solid transparent;outline-offset:3px;transition:outline-color .12s ease;}
+  .ch-mini-pessoa.falando .member-avatar{outline-color:var(--ch-fala);}
   .ch-mini-barra{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;}
   .ch-mini-info{display:flex;align-items:center;gap:8px;min-width:0;font-size:12.5px;}
   .ch-mini-nome{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -2356,7 +2560,7 @@
   .ch-mini-controles .ch-sair{height:36px;padding:0 11px;}
   .ch-mini-controles .ch-sair svg{width:17px;height:17px;}
 
-  /* Prévia: mesmo palco escuro, dentro do modal do app. */
+  /* Prévia: o vídeo no preto do vídeo, dentro do modal do app. */
   .chamada-previa-modal{max-width:520px;}
   .ch-previa{display:grid;gap:14px;}
   .ch-previa-video{position:relative;aspect-ratio:16 / 9;border-radius:14px;overflow:hidden;background:var(--ch-fundo);color:var(--ch-texto);}
@@ -2400,16 +2604,46 @@
 
   @media (max-width:900px){
     .chamada[data-modo="mini"]{right:12px;bottom:calc(84px + env(safe-area-inset-bottom));width:min(300px, calc(100vw - 24px));}
-    .ch-topo{padding:12px 14px 8px;}
+    .ch-topo{gap:10px;padding:calc(12px + env(safe-area-inset-top)) 12px 6px 16px;}
+    .ch-titulo h2{font-size:17px;}
+    .ch-salas{right:12px;}
     .ch-grade .ch-ladrilho-avatar{padding-bottom:26px;}
     .ch-palco{padding:4px 12px;}
+    .ch-palco.so-voz{padding:4px 12px 12px;}
     .ch-grade{--ch-vao:8px;}
-    .ch-rodape{padding:10px 12px calc(14px + env(safe-area-inset-bottom));}
-    .ch-controles{gap:8px;}
+    .ch-roda{--ch-foto:124px;--ch-vao-x:22px;row-gap:26px;}
+    .ch-roda.tam-m{--ch-foto:108px;--ch-vao-x:20px;row-gap:24px;}
+    .ch-roda.tam-p{--ch-foto:92px;--ch-vao-x:16px;row-gap:20px;}
+    .ch-roda.tam-pp{--ch-foto:78px;--ch-vao-x:12px;row-gap:18px;}
+    .ch-roda.tam-ppp{--ch-foto:64px;--ch-vao-x:10px;row-gap:16px;}
+    .ch-roda{--ch-sobra:40px;}
+    .ch-ladrilho.voz{gap:10px;}
+    .ch-ladrilho.voz .ch-rotulo{font-size:13px;}
+    .ch-rodape{padding:8px 10px calc(12px + env(safe-area-inset-bottom));}
+    .ch-controles{gap:6px;}
+    .chamada[data-modo="expandida"] .ch-controles{padding:6px;}
+    .ch-divisor{margin:0 1px;}
     .ch-botao{width:44px;height:44px;}
     .ch-sair{height:44px;padding:0 14px;}
     .ch-sair span{display:none;}
     .ch-faixa{flex-wrap:wrap;}
+  }
+  /* Celular em pé: quadros mais altos, para foto, nome e "Conectando…" não
+     se sobreporem num quadro de 100px. */
+  @media (max-width:900px) and (orientation:portrait){
+    .ch-grade .ch-ladrilho{aspect-ratio:4 / 3;}
+    .ch-grade .ch-ladrilho:not(.com-video):not(.tela) .ch-ladrilho-avatar{padding:22px 0 26px;}
+    .ch-grade .ch-ladrilho-avatar .member-avatar{width:clamp(34px, 26%, 72px);}
+    .ch-grade .ch-estado{top:6px;left:6px;padding:2px 8px;font-size:11px;}
+    .ch-grade .ch-ladrilho:not(.com-video):not(.tela) .ch-rotulo{bottom:7px;font-size:12.5px;}
+    .ch-grade .ch-ladrilho-acoes{top:4px;right:4px;}
+  }
+  @media (max-width:420px){
+    .ch-salas-btn > span:not(.ch-salas-seta){display:none;}
+    .ch-salas-btn{padding:0 9px 0 11px;}
+    .ch-botao{width:42px;height:42px;}
+    .ch-sair{height:42px;padding:0 13px;}
+    .ch-divisor{display:none;}
   }
   /* Janela pequena com vídeo: os outros em grade (até 4) e a própria câmera
      num quadro no canto, como num app de chamada no celular. */
@@ -2460,8 +2694,8 @@
   /* Troca de estado (ver botaoChamada): a cor vem da do estado anterior, o
      ícone novo entra girando e um anel se espalha uma vez, vermelho ao
      desligar e claro ao ligar. */
-  .ch-botao{position:relative;--ch-anel:rgba(233,238,243,0.4);}
-  .ch-botao.desligado{--ch-anel:rgba(217,83,74,0.55);}
+  .ch-botao{position:relative;--ch-anel:color-mix(in srgb, var(--ch-texto) 32%, transparent);}
+  .ch-botao.desligado{--ch-anel:color-mix(in srgb, var(--ch-perigo) 55%, transparent);}
   .ch-botao.trocou{animation:chBotaoCor .42s ease-out both;animation-delay:var(--ch-atraso, 0ms);}
   .ch-botao.trocou svg{animation:chIconeEntra .45s cubic-bezier(.34,1.56,.64,1) both;animation-delay:var(--ch-atraso, 0ms);}
   .ch-botao.trocou::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;animation:chBotaoAnel .52s ease-out both;animation-delay:var(--ch-atraso, 0ms);}
@@ -2474,7 +2708,7 @@
 
   /* Microfone aberto: anel verde que acompanha a própria voz (--ch-voz, de 0
      a 1, posto pelo medidor de fala). */
-  #ch-btn-mic, #ch-btn-mic-mini{box-shadow:0 0 0 calc(var(--ch-voz, 0) * 5px) rgba(67,181,98,0.5);}
+  #ch-btn-mic, #ch-btn-mic-mini{box-shadow:0 0 0 calc(var(--ch-voz, 0) * 5px) color-mix(in srgb, var(--ch-fala) 50%, transparent);}
 
   /* Sair: o telefone inclina, como quem vai pôr no gancho. */
   .ch-sair svg{transition:transform .3s cubic-bezier(.34,1.56,.64,1);}
@@ -2487,7 +2721,7 @@
   /* Anel de foco só para quem usa o teclado (ver ouvirModalidadeChamada). */
   .chamada.via-ponteiro button:focus-visible{outline:none;}
   .ch-painel-disp.abrindo{animation:chPainelSobe .22s var(--mov-curva) both;}
-  .ch-volume.abrindo{animation:chVolumeDesce .2s var(--mov-curva) both;}
+  .ch-volume.abrindo, .ch-salas.abrindo{animation:chVolumeDesce .2s var(--mov-curva) both;}
   @keyframes chPainelSobe{from{opacity:0;transform:translate(-50%, 8px);}}
   @keyframes chAvisoSobe{from{opacity:0;transform:translateY(8px);}}
   @keyframes chVolumeDesce{from{opacity:0;transform:translateY(-6px);}}
@@ -2513,19 +2747,19 @@
   .ch-na-flutuante-btn{flex-shrink:0;height:30px;padding:0 13px;border-radius:15px;background:var(--ch-botao);color:var(--ch-texto);font-size:12.5px;font-weight:600;transition:background-color .15s ease, transform .12s ease;}
   .ch-na-flutuante-btn:hover{background:var(--ch-botao-hover);}
   .ch-na-flutuante-btn:active{transform:scale(.95);}
-  .ch-na-flutuante-btn:focus-visible{outline:2px solid #fff;outline-offset:2px;}
+  .ch-na-flutuante-btn:focus-visible{outline:2px solid var(--ch-foco);outline-offset:2px;}
   @media (max-width:600px){ .ch-na-flutuante{right:12px;bottom:calc(84px + env(safe-area-inset-bottom));} }
 
   /* Janela flutuante (Document Picture-in-Picture): o mesmo cartão da página,
      vídeo em cima e a barra com nome, tempo e controles embaixo, ocupando a
      janela inteira. O palco cresce com ela quando a pessoa a redimensiona. */
-  body.corpo-flutuante{margin:0;min-height:100vh;overflow:hidden;background:#10151b;}
+  body.corpo-flutuante{margin:0;min-height:100vh;overflow:hidden;background:var(--bg-base);}
   .chamada.na-janela[data-modo="mini"]{inset:0;width:100%;height:100%;border-radius:0;box-shadow:none;display:flex;flex-direction:column;}
   .chamada.na-janela .ch-mini-palco{flex:1;min-height:0;aspect-ratio:auto;}
   .chamada.na-janela .ch-mini-barra{flex-shrink:0;}
 
   /* Escolha da tela, antes do seletor do navegador: o que transmitir, em que
-     qualidade e se o som vai junto. Cobre o palco, no tom escuro da chamada. */
+     qualidade e se o som vai junto. Cobre o palco, nas cores da chamada. */
   .ch-dialogo-fundo{
     position:absolute;
     inset:0;
@@ -2533,7 +2767,7 @@
     display:grid;
     place-items:center;
     padding:16px;
-    background:rgba(6,9,12,0.58);
+    background:color-mix(in srgb, var(--bg-base) 62%, transparent);
     backdrop-filter:blur(6px);
     -webkit-backdrop-filter:blur(6px);
   }
@@ -2545,8 +2779,8 @@
     gap:20px;
     padding:26px;
     border-radius:20px;
-    background:var(--ch-ladrilho);
-    box-shadow:0 28px 70px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.07);
+    background:var(--ch-painel);
+    box-shadow:var(--ch-sombra);
   }
   .ch-dialogo-titulo{margin:0;font-family:'Space Grotesk',sans-serif;font-weight:500;font-size:21px;letter-spacing:-0.02em;line-height:1.15;}
   .ch-dialogo-texto{margin:-14px 0 0;font-size:13px;line-height:1.5;color:var(--ch-suave);}
@@ -2558,21 +2792,21 @@
     gap:3px;
     padding:16px 14px 14px;
     border-radius:14px;
-    background:var(--ch-fundo);
-    box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);
+    background:var(--ch-botao);
+    box-shadow:none;
     cursor:pointer;
     transition:box-shadow .15s ease, background-color .15s ease;
   }
-  .ch-fonte:hover{background:#141b23;}
-  .ch-fonte.marcada{background:#18212b;box-shadow:inset 0 0 0 2px var(--ch-texto);}
-  .ch-fonte:has(input:focus-visible){outline:2px solid #fff;outline-offset:3px;}
+  .ch-fonte:hover{background:var(--ch-botao-hover);}
+  .ch-fonte.marcada{background:var(--ch-botao-hover);box-shadow:inset 0 0 0 2px var(--ch-ativo);}
+  .ch-fonte:has(input:focus-visible){outline:2px solid var(--ch-foco);outline-offset:3px;}
   .ch-fonte-icone{display:grid;margin-bottom:10px;color:var(--ch-suave);transition:color .15s ease;}
   .ch-fonte.marcada .ch-fonte-icone{color:var(--ch-texto);}
   .ch-fonte-nome{font-size:14px;font-weight:600;}
   .ch-fonte-desc{font-size:12px;line-height:1.35;color:var(--ch-suave);}
   .ch-qualidade{display:grid;gap:8px;}
   .ch-dialogo-rotulo{padding:0;margin-bottom:2px;font-size:12.5px;font-weight:600;color:var(--ch-suave);}
-  .ch-segmentos{display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:4px;padding:4px;border-radius:12px;background:var(--ch-fundo);}
+  .ch-segmentos{display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:4px;padding:4px;border-radius:12px;background:var(--ch-botao);}
   .ch-segmento{
     display:grid;
     place-items:center;
@@ -2586,10 +2820,10 @@
     transition:background-color .15s ease, color .15s ease;
   }
   .ch-segmento:hover{color:var(--ch-texto);}
-  .ch-segmento.marcado{background:var(--ch-botao-hover);color:var(--ch-texto);}
-  .ch-segmento:has(input:focus-visible){outline:2px solid #fff;outline-offset:-2px;}
+  .ch-segmento.marcado{background:var(--ch-painel);color:var(--ch-texto);box-shadow:0 1px 3px color-mix(in srgb, var(--text-strong) 14%, transparent);}
+  .ch-segmento:has(input:focus-visible){outline:2px solid var(--ch-foco);outline-offset:-2px;}
   .ch-dialogo-dica{margin:0;font-size:12px;line-height:1.45;font-weight:400;color:var(--ch-suave);}
-  .ch-som{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;border-radius:12px;background:var(--ch-fundo);cursor:pointer;}
+  .ch-som{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;border-radius:12px;background:var(--ch-botao);cursor:pointer;}
   .ch-som-texto{display:flex;flex-direction:column;gap:2px;font-size:13.5px;font-weight:500;}
   .ch-interruptor{
     appearance:none;
@@ -2617,12 +2851,12 @@
   }
   .ch-interruptor:checked{background:var(--ch-fala);}
   .ch-interruptor:checked::after{transform:translateX(16px);}
-  .ch-interruptor:focus-visible{outline:2px solid #fff;outline-offset:2px;}
+  .ch-interruptor:focus-visible{outline:2px solid var(--ch-foco);outline-offset:2px;}
   .ch-dialogo-acoes{display:flex;justify-content:flex-end;gap:10px;}
   .ch-dialogo-cancelar, .ch-dialogo-ok{height:42px;border-radius:21px;font-size:13.5px;transition:background-color .15s ease, filter .15s ease, transform .12s ease;}
   .ch-dialogo-cancelar{padding:0 18px;background:var(--ch-botao);color:var(--ch-texto);font-weight:500;}
   .ch-dialogo-cancelar:hover{background:var(--ch-botao-hover);}
-  .ch-dialogo-ok{display:inline-flex;align-items:center;gap:8px;padding:0 20px;background:var(--ch-texto);color:var(--ch-fundo);font-weight:600;}
+  .ch-dialogo-ok{display:inline-flex;align-items:center;gap:8px;padding:0 20px;background:var(--ch-ativo);color:var(--ch-ativo-texto);font-weight:600;}
   .ch-dialogo-ok:hover{filter:brightness(0.92);}
   .ch-dialogo-cancelar:active, .ch-dialogo-ok:active{transform:scale(.95);}
   .ch-dialogo-fundo.abrindo{animation:chFundoEntra .2s ease both;}
@@ -3191,7 +3425,7 @@
     background:linear-gradient(135deg, var(--palette-8), var(--palette-6));
     display:grid;place-items:center;
     color:white;
-    font-family:'Space Grotesk';
+    font-family:'Space Grotesk', sans-serif;
     font-weight:500;
     font-size:11px;
   }
