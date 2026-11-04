@@ -2385,14 +2385,25 @@
       var(--ch-fundo);
   }
   .chamada[data-modo="mini"]{
-    right:20px;
-    bottom:20px;
+    right:var(--mini-direita, 20px);
+    bottom:var(--mini-baixo, 20px);
     width:min(340px, calc(100vw - 24px));
     border-radius:16px;
     overflow:hidden;
     background:var(--ch-painel);
     box-shadow:var(--ch-sombra);
   }
+  /* A chamada minimizada se arrasta pela tela (pelo vídeo ou pela barra, não
+     pelos botões) e fica onde foi solta (lugarDoMini, no script.js). */
+  .chamada[data-modo="mini"]:not(.na-janela){touch-action:none;}
+  .chamada[data-modo="mini"]:not(.na-janela) :is(.ch-mini-palco, .ch-mini-info){cursor:grab;}
+  .chamada[data-modo="mini"].arrastando{
+    cursor:grabbing;
+    transition:box-shadow .2s ease;
+    box-shadow:0 24px 60px color-mix(in srgb, var(--text-strong) 28%, transparent);
+  }
+  .chamada[data-modo="mini"].arrastando *{cursor:grabbing !important;}
+  .chamada[data-modo="mini"].assentando{transition:right .32s var(--mov-curva), bottom .32s var(--mov-curva), transform .32s var(--mov-curva);}
   /* No computador, a barra lateral continua à mostra: a chamada aberta
      ocupa só a área do app, num painel com a mesma margem e o mesmo
      arredondado da barra. Com a barra escondida, vai até a borda (menos a
@@ -2924,7 +2935,7 @@
   .ch-aviso-icone{width:40px;height:40px;display:grid;place-items:center;border-radius:50%;background:rgba(67,181,98,0.14);color:#2f8a4a;}
 
   @media (max-width:900px){
-    .chamada[data-modo="mini"]{right:12px;bottom:calc(84px + env(safe-area-inset-bottom));width:min(300px, calc(100vw - 24px));}
+    .chamada[data-modo="mini"]{right:var(--mini-direita, 12px);bottom:var(--mini-baixo, calc(84px + env(safe-area-inset-bottom)));width:min(300px, calc(100vw - 24px));}
     .ch-topo{gap:10px;padding:calc(12px + env(safe-area-inset-top)) 12px 6px 16px;}
     .ch-titulo h2{font-size:17px;}
     .ch-salas{right:12px;}

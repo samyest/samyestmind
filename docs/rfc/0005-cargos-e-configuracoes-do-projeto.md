@@ -68,6 +68,8 @@ Tomadas na implementação, a partir das anotações, seguindo o padrão do app.
 | Q15 | **Fonte do nome**: cada pessoa escolhe uma de nove fontes e uma cor para o próprio nome, nas Configurações > Conta. Aparece no chat, na chamada, nas salas e na lista de pessoas. As fontes vêm do Google Fonts (já liberado na CSP) e só carregam quando alguém usa uma. |
 | Q16 | Clicar na barra lateral no projeto em que a chamada aberta está minimiza a chamada e mostra a tela do projeto, a mesma aba e o mesmo canal de antes. Antes o clique não fazia nada. |
 | Q17 | Chamada minimizada: o botão da câmera entra no lugar do da janela flutuante, que passa para o topo da chamada aberta. |
+| Q19 | **Convidar pessoas** vira a terceira regra de cargo (pedido do usuário em 2026-11-04: um editor não via o Convidar). Padrão: editor e participante convidam, visualizador não; o dono liga e desliga em Cargos. Cada um convida só para cargo igual ou abaixo do seu (`pode_convidar_como`). Ver e apagar convites pendentes continua só com o dono (SEC-044): quem convida sem ser dono recebe o código no aviso. Regras salvas antes da Q19 ganham "convidar" no editor e no participante na primeira vez que o `configuracoes_projeto.sql` novo roda. |
+| Q20 | A chamada minimizada se arrasta pela tela, pelo vídeo ou pela barra (os botões continuam botões), e fica onde foi solta, guardada no aparelho. Soltar não abre a chamada; um clique sem arrastar abre. Pedido do usuário em 2026-11-04. |
 | Q18 | Troca de aba e de projeto mais viva: o realce da aba desliza até a nova, o conteúdo entra com profundidade (desliza, cresce de leve e desfoca para nítido) e os blocos chegam em cascata; na troca de projeto, o ícone e o título entram primeiro. Tudo some com `prefers-reduced-motion`. |
 
 ### Fora do escopo
