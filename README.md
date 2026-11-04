@@ -65,6 +65,12 @@ Para o chat e as chamadas dos projetos (RFC 0002), rode `supabase/chat_projeto.s
 e depois `supabase/chamadas.sql`. A chamada já funciona assim: o canal dela é privado,
 e as policies do `chamadas.sql` só deixam entrar quem é do projeto.
 
+Para os canais (RFC 0004: categorias, canais de texto e salas de voz em cada projeto),
+rode `supabase/canais_projeto.sql` depois dos dois. Ele transforma o chat de cada
+projeto em `#geral` e a chamada em sala Geral, sem perder histórico. Pode rodar antes
+ou depois de publicar o código: sem ele, a aba Canais mostra só o `#geral` e a sala
+Geral, como era antes. A última linha do arquivo confere tudo e deve vir toda `true`.
+
 Falta o reforço do SEC-075, que depende do passo 6 da RFC: conferir se uma conta de
 fora do projeto, assinando um canal **público** chamado `chamada:<id do projeto>`,
 recebe os sinais do privado. Se receber, a saída é desligar **Allow public access**
