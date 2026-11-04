@@ -12058,13 +12058,10 @@ function chamadaTelaCheia(chave, e){
 function chamadaMinimizar(){
   const c = chamada;
   if(!c || c.modo === 'mini') return;
-  // Minimizar leva a chamada para a janela flutuante fixa, por cima das outras
-  // abas e programas. Sem ela (navegador sem suporte ou pedido recusado), fica
-  // minimizada no canto da página.
-  if(janelaFlutuanteSuportada() && !janelaFlutuante){
-    abrirJanelaFlutuante('minimizar').then(abriu=>{ if(!abriu && chamada === c && c.modo !== 'mini') minimizarNaPagina(c); });
-    return;
-  }
+  // Dentro do samyest, minimizar é o cartão no canto da página. A janela
+  // flutuante, por cima das outras abas e programas, é para quando a pessoa
+  // sai: abre sozinha na troca de aba (ligarFlutuanteAutomatico) ou pelo
+  // botão do cartão, e fecha quando ela volta para a aba.
   minimizarNaPagina(c);
 }
 
@@ -12317,7 +12314,9 @@ function chamadaVoltarParaAba(){
 
 // Troca de aba com a chamada aberta: o navegador oferece abrir a flutuante
 // sozinho (Chrome 134+, e a pessoa pode desligar). Ao voltar para a aba, a
-// que abriu sozinha fecha.
+// flutuante fecha, a que abriu sozinha e a que a pessoa abriu pelo botão:
+// dentro do samyest a chamada fica na página (o cartão no canto, ou aberta
+// se estava aberta), e fora dele fica na flutuante.
 function ligarFlutuanteAutomatico(){
   if(!janelaFlutuanteSuportada() || !('mediaSession' in navigator)) return;
   try{ navigator.mediaSession.setActionHandler('enterpictureinpicture', ()=>abrirJanelaFlutuante('auto')); }catch(e){}
@@ -12330,7 +12329,7 @@ function desligarFlutuanteAutomatico(){
 
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState !== 'visible' || !janelaFlutuante) return;
-  if(janelaFlutuante.auto){ try{ janelaFlutuante.win.close(); }catch(e){} }
+  try{ janelaFlutuante.win.close(); }catch(e){}
   conferirJanelaFlutuante();
 });
 window.addEventListener('focus', ()=>conferirJanelaFlutuante());
@@ -12744,7 +12743,7 @@ function desenharChamada(){
     const sala = canalDoProjeto(c.pid, c.sala);
     const nomeSala = sala ? sala.nome : (p ? p.name : 'Chamada');
     const salas = salasDoProjeto(c.pid);
-    const minimizar = janelaFlutuanteSuportada() ? 'Minimizar para a janela flutuante (Esc)' : 'Minimizar a chamada (Esc)';
+    const minimizar = 'Minimizar a chamada (Esc)';
     html = `
       <header class="ch-topo">
         <div class="ch-titulo">
