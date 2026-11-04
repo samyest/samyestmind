@@ -12040,6 +12040,8 @@ function chamadaDestacar(chave, e){
   if(e) e.stopPropagation();
   const c = chamada;
   if(!c || !chaveDaChamadaExiste(chave)) return;
+  // Sozinho na chamada, não há o que destacar (ver desenharChamada).
+  if(ladrilhosChamada().length < 2){ c.destaque = null; return; }
   c.destaque = c.destaque === chave ? null : chave;
   c.volumeAberto = null;
   desenharChamada();
@@ -12519,7 +12521,7 @@ function ladrilhoChamadaHtml(l, opts){
     <div class="ch-ladrilho ${o.voz ? 'voz' : ''} ${tela ? 'tela' : ''} ${comVideo ? 'com-video' : ''} ${destacado ? 'destacado' : ''} ${eu ? 'eu' : ''}" data-chave="${l.chave}" ${tela ? '' : `data-fala="${l.uid}"`}>
       <div class="ch-ladrilho-avatar">${tela ? iconeChamada('tela', 40) : avatarChip(perfilNaChamada(c.pid, l.uid), nome[0])}${o.voz && icones ? `<span class="ch-voz-selos">${icones}</span>` : ''}</div>
       <div class="ch-ladrilho-video" data-slot="${l.chave}"></div>
-      ${o.mini || o.voz ? '' : `<button type="button" class="ch-alvo" id="ch-destacar-${l.chave.replace(':', '-')}" onclick="chamadaDestacar('${l.chave}')" aria-pressed="${destacado}" aria-label="${destacado ? 'Tirar do destaque' : 'Pôr em destaque'}: ${esc(rotulo)}"></button>`}
+      ${o.mini || o.voz || o.semDestaque ? '' : `<button type="button" class="ch-alvo" id="ch-destacar-${l.chave.replace(':', '-')}" onclick="chamadaDestacar('${l.chave}')" aria-pressed="${destacado}" aria-label="${destacado ? 'Tirar do destaque' : 'Pôr em destaque'}: ${esc(rotulo)}"></button>`}
       ${o.semRotulo ? '' : `<div class="ch-rotulo">${o.voz ? '' : icones}<span class="ch-rotulo-nome">${esc(rotulo)}</span></div>`}
       ${estado ? `<div class="ch-estado">${esc(estado)}</div>` : ''}
       ${o.mini ? '' : `<div class="ch-ladrilho-acoes">
@@ -12610,15 +12612,43 @@ function colunasDaGrade(n){
 // mantém a grade de quadros 16:9 da chamada com vídeo.
 let layoutSoVoz = 'fotos';
 
-// A chamada aberta cobre o app inteiro: o app atrás dela fica inerte, para o
-// Tab e o leitor de tela não andarem pelo que não se vê. Os modais ficam fora
-// do #app e continuam usáveis por cima da chamada.
+// O que fica atrás da chamada aberta fica inerte, para o Tab e o leitor de
+// tela não andarem pelo que não se vê. No computador a barra lateral continua
+// à mostra e usável, e só o conteúdo (#main) fica inerte; no celular a
+// chamada cobre tudo, e o #app inteiro fica. Os modais ficam fora do #app e
+// continuam usáveis por cima da chamada.
+const telaDeCelular = window.matchMedia ? window.matchMedia('(max-width:900px)') : null;
+
 function travarAppAtrasDaChamada(){
   const app = document.getElementById('app');
-  if(!app) return;
-  const cobre = !!chamada && chamada.modo === 'expandida' && !janelaFlutuante;
-  if(app.inert !== cobre) app.inert = cobre;
+  const main = document.getElementById('main');
+  if(!app || !main) return;
+  const aberta = !!chamada && chamada.modo === 'expandida' && !janelaFlutuante;
+  const celular = !!(telaDeCelular && telaDeCelular.matches);
+  const appInerte = aberta && celular;
+  const mainInerte = aberta && !celular;
+  if(app.inert !== appInerte) app.inert = appInerte;
+  if(main.inert !== mainInerte) main.inert = mainInerte;
 }
+if(telaDeCelular && telaDeCelular.addEventListener) telaDeCelular.addEventListener('change', ()=>travarAppAtrasDaChamada());
+
+// Com a chamada aberta e a barra lateral à mostra, ir para outra tela pela
+// barra (outra visão, projeto ou meta) minimiza a chamada no canto, para a
+// pessoa ver o que abriu, como no Discord. O que não muda de tela (Nova meta,
+// Configurações, a frase do dia) abre por cima e deixa a chamada como está.
+function lugarNoApp(){
+  return [state.view, state.currentProjectId || '', state.metas && state.metas.atual || ''].join('|');
+}
+
+document.addEventListener('click', (e)=>{
+  const c = chamada;
+  if(!c || c.modo !== 'expandida' || janelaFlutuante) return;
+  if(!e.target.closest || !e.target.closest('#app aside')) return;
+  const antes = lugarNoApp();
+  setTimeout(()=>{
+    if(chamada === c && c.modo === 'expandida' && lugarNoApp() !== antes) minimizarNaPagina(c);
+  }, 0);
+}, true);
 
 function desenharChamada(){
   const c = chamada;
@@ -12679,7 +12709,10 @@ function desenharChamada(){
     // como fotos grandes (ou nos quadros de sempre, conforme layoutSoVoz).
     const soVoz = !ladrilhos.some(l=>l.tipo === 'tela' || l.p.camera);
     const emFotos = soVoz && layoutSoVoz === 'fotos';
-    const destaque = !emFotos && c.destaque && ladrilhos.find(l=>l.chave === c.destaque);
+    // Com um quadro só não há o que destacar: o clique esticava a câmera para
+    // a largura do palco e parecia zoom.
+    const podeDestacar = ladrilhos.length > 1;
+    const destaque = !emFotos && podeDestacar && c.destaque && ladrilhos.find(l=>l.chave === c.destaque);
     let palco;
     if(emFotos){
       const n = ladrilhos.length;
@@ -12703,7 +12736,7 @@ function desenharChamada(){
       const linhas = Math.ceil(n / cols);
       palco = `
         <div class="ch-palco">
-          <div class="ch-grade" style="--cols:${cols};--linhas:${linhas};">${ladrilhos.map(l=>ladrilhoChamadaHtml(l)).join('')}</div>
+          <div class="ch-grade" style="--cols:${cols};--linhas:${linhas};">${ladrilhos.map(l=>ladrilhoChamadaHtml(l, {semDestaque: !podeDestacar})).join('')}</div>
         </div>`;
     }
     // No alto, a sala em que estou; embaixo dela, o projeto, o tempo e quantos
