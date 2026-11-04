@@ -1,4 +1,4 @@
-import {verifyState, saveCredential, redirectUri, appOrigin, env, readCookie, stateCookie, STATE_COOKIE} from '../_lib.mjs';
+import {verifyState, saveCredential, buscar, redirectUri, appOrigin, env, readCookie, stateCookie, STATE_COOKIE} from '../_lib.mjs';
 
 // O nonce vale para uma tentativa só: toda saída do callback apaga o cookie.
 function back(res, origin, status){
@@ -25,7 +25,7 @@ export default async function handler(req, res){
   if(!userId) return back(res, origin, 'expirado');
 
   try{
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    const tokenRes = await buscar('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: new URLSearchParams({

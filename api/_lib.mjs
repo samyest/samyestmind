@@ -13,6 +13,15 @@ export function env(name){
   return v;
 }
 
+// QUA-008: toda chamada de rede daqui tem prazo. Sem ele, um Supabase, Google
+// ou Cloudflare que trava segura a função até a Vercel matá-la, e o app
+// recebe um erro genérico em vez do 503 de "tente de novo".
+const PRAZO_MS = 8000;
+
+export function buscar(url, opcoes, prazoMs){
+  return fetch(url, Object.assign({}, opcoes, {signal: AbortSignal.timeout(prazoMs || PRAZO_MS)}));
+}
+
 // x-forwarded-host vem do cliente. Se o Location do callback for montado a
 // partir dele sem checagem, dá para levar o usuário autenticado para outro
 // domínio. Ordem: APP_ORIGIN > origem do GOOGLE_REDIRECT_URI > header, e o
@@ -111,7 +120,7 @@ export async function userFromRequest(req){
   const auth = req.headers.authorization || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   if(!token) return null;
-  const res = await fetch(`${env('SUPABASE_URL')}/auth/v1/user`, {
+  const res = await buscar(`${env('SUPABASE_URL')}/auth/v1/user`, {
     headers: {
       Authorization: `Bearer ${token}`,
       apikey: env('SUPABASE_ANON_KEY')
@@ -136,7 +145,7 @@ function adminHeaders(){
 // desconectada e parar o sync por causa de uma instabilidade do Supabase.
 export async function getCredential(userId){
   const url = `${env('SUPABASE_URL')}/rest/v1/google_credentials?user_id=eq.${encodeURIComponent(userId)}&select=*`;
-  const res = await fetch(url, {headers: adminHeaders()});
+  const res = await buscar(url, {headers: adminHeaders()});
   if(!res.ok) throw new Error(`Falha ao ler credencial: ${res.status} ${await res.text()}`);
   const rows = await res.json();
   return rows[0] || null;
@@ -144,7 +153,7 @@ export async function getCredential(userId){
 
 export async function saveCredential(userId, patch){
   const url = `${env('SUPABASE_URL')}/rest/v1/google_credentials`;
-  const res = await fetch(url, {
+  const res = await buscar(url, {
     method: 'POST',
     headers: Object.assign(adminHeaders(), {Prefer: 'resolution=merge-duplicates,return=representation'}),
     body: JSON.stringify([Object.assign({user_id: userId, updated_at: new Date().toISOString()}, patch)])
@@ -156,7 +165,7 @@ export async function saveCredential(userId, patch){
 
 export async function deleteCredential(userId){
   const url = `${env('SUPABASE_URL')}/rest/v1/google_credentials?user_id=eq.${encodeURIComponent(userId)}`;
-  const res = await fetch(url, {method: 'DELETE', headers: adminHeaders()});
+  const res = await buscar(url, {method: 'DELETE', headers: adminHeaders()});
   // Sem esta checagem o disconnect respondia ok com a credencial ainda no
   // banco, e a conexão "voltava sozinha" no próximo carregamento.
   if(!res.ok) throw new Error(`Falha ao apagar credencial: ${res.status} ${await res.text()}`);
@@ -166,7 +175,7 @@ export async function deleteCredential(userId){
 // EXECUTE de anon e authenticated (registrar_emissao_turn): o resto do app
 // fala com o banco pelo token da própria pessoa, com o RLS valendo.
 export async function rpcAdmin(fn, args){
-  const res = await fetch(`${env('SUPABASE_URL')}/rest/v1/rpc/${encodeURIComponent(fn)}`, {
+  const res = await buscar(`${env('SUPABASE_URL')}/rest/v1/rpc/${encodeURIComponent(fn)}`, {
     method: 'POST',
     headers: adminHeaders(),
     body: JSON.stringify(args)
@@ -178,7 +187,7 @@ export async function rpcAdmin(fn, args){
 // Lê do PostgREST com o token de quem fez a requisição: o RLS decide o que
 // volta, igual ao que o app veria.
 export async function selectComoUsuario(token, caminho){
-  const res = await fetch(`${env('SUPABASE_URL')}/rest/v1/${caminho}`, {
+  const res = await buscar(`${env('SUPABASE_URL')}/rest/v1/${caminho}`, {
     headers: {apikey: env('SUPABASE_ANON_KEY'), Authorization: `Bearer ${token}`}
   });
   if(!res.ok) throw new Error(`Falha ao ler ${caminho.split('?')[0]}: ${res.status} ${await res.text()}`);
@@ -200,8 +209,10 @@ export class TransientError extends Error {}
 // Access tokens duram ~1h; o refresh token guardado gera novos indefinidamente,
 // que é o que mantém a conexão viva sem o usuário reconectar.
 // null = não há conexão (nunca houve, ou o Google revogou o refresh token).
-export async function freshAccessToken(userId){
-  const cred = await getCredential(userId);
+// credJaLida: quem já leu a credencial passa ela aqui, para não ir ao banco
+// duas vezes na mesma requisição (o /api/google/token roda a cada sync).
+export async function freshAccessToken(userId, credJaLida){
+  const cred = credJaLida || await getCredential(userId);
   if(!cred) return null;
 
   const stillValid = cred.access_token && cred.expires_at && new Date(cred.expires_at).getTime() - 60000 > Date.now();
@@ -209,7 +220,7 @@ export async function freshAccessToken(userId){
 
   let res;
   try{
-    res = await fetch('https://oauth2.googleapis.com/token', {
+    res = await buscar('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: new URLSearchParams({

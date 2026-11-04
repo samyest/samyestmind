@@ -1,4 +1,4 @@
-import {userFromRequest, bearerToken, selectComoUsuario, rpcAdmin, env, json, fail, allowMethods, readJson} from '../_lib.mjs';
+import {userFromRequest, bearerToken, selectComoUsuario, rpcAdmin, buscar, env, json, fail, allowMethods, readJson} from '../_lib.mjs';
 
 // Credencial TURN da Cloudflare para uma chamada de projeto (RFC 0002, SEC-077).
 // O TURN só repassa áudio e vídeo quando a conexão direta entre as pessoas não
@@ -62,7 +62,7 @@ export default async function handler(req, res){
       return json(res, 429, {error: 'limite de credenciais por hora atingido'});
     }
 
-    const cf = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(env('TURN_KEY_ID'))}/credentials/generate-ice-servers`, {
+    const cf = await buscar(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(env('TURN_KEY_ID'))}/credentials/generate-ice-servers`, {
       method: 'POST',
       headers: {Authorization: `Bearer ${env('TURN_KEY_API_TOKEN')}`, 'Content-Type': 'application/json'},
       body: JSON.stringify({ttl: VALIDADE_SEG})

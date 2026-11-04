@@ -25,7 +25,7 @@ export default async function handler(req, res){
     const cred = await getCredential(user.id);
     if(!cred) return json(res, 200, {connected: false});
 
-    const accessToken = await freshAccessToken(user.id);
+    const accessToken = await freshAccessToken(user.id, cred);
     if(!accessToken) return json(res, 200, {connected: false});
 
     json(res, 200, {
