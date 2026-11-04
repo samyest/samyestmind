@@ -1397,7 +1397,44 @@
     color:var(--text);
     transition:background-color .15s ease;
   }
-  .proj-people:hover{background:var(--glass-strong);}
+  .proj-people:hover, .proj-people[aria-expanded="true"]{background:var(--glass-strong);}
+
+  /* "N pessoas": lista simples de quem está no projeto, logo abaixo do
+     botão, no vidro dos menus do app. */
+  .proj-pessoas{position:relative;display:inline-flex;}
+  .proj-pessoas-pop{
+    position:absolute;
+    top:calc(100% + 8px);
+    left:-2px;
+    z-index:40;
+    width:min(320px, calc(100vw - 32px));
+    max-height:min(440px, 60vh);
+    overflow-y:auto;
+    padding:8px;
+    border-radius:16px;
+    background:var(--modal-glass);
+    backdrop-filter:blur(24px) saturate(160%);
+    -webkit-backdrop-filter:blur(24px) saturate(160%);
+    border:1px solid var(--glass-border);
+    box-shadow:0 16px 40px color-mix(in srgb, var(--text-strong) 16%, transparent);
+    animation:projPessoasAbre .18s var(--mov-curva) both;
+  }
+  .proj-pessoas-pop[hidden]{display:none;}
+  .proj-pessoas-pop:focus{outline:none;}
+  @keyframes projPessoasAbre{from{opacity:0;transform:translateY(-4px);}}
+  .proj-pessoas-titulo{margin:4px 8px 6px;font-size:12px;font-weight:600;color:color-mix(in srgb, var(--text) 70%, var(--text-muted));}
+  .proj-pessoas-lista{list-style:none;margin:0;padding:0;display:grid;gap:1px;}
+  .proj-pessoa{display:flex;align-items:center;gap:10px;min-height:44px;padding:6px 8px;border-radius:10px;}
+  .proj-pessoa .member-avatar{width:30px;height:30px;font-size:12px;}
+  .proj-pessoa-texto{display:flex;flex-direction:column;flex:1;min-width:0;}
+  .proj-pessoa-nome{font-size:13.5px;font-weight:500;color:var(--text-strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .proj-pessoa-voce{font-weight:400;color:color-mix(in srgb, var(--text) 70%, var(--text-muted));}
+  .proj-pessoa-sala{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#2e9a50;}
+  body.theme-escuro .proj-pessoa-sala{color:#43b562;}
+  .proj-pessoa-sala .cn-icone{width:13px;height:13px;}
+  .proj-pessoa-papel{flex-shrink:0;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:color-mix(in srgb, var(--text) 62%, var(--text-muted));}
+  .proj-pessoas-gerenciar{width:100%;margin-top:6px;padding:10px 8px;border-top:1px solid var(--line);border-radius:0 0 10px 10px;font-size:13px;font-weight:500;color:var(--accent);text-align:left;}
+  .proj-pessoas-gerenciar:hover{background:var(--glass-strong);}
   .proj-avatars{display:inline-flex;}
   .proj-avatars .member-avatar{
     width:24px;height:24px;
