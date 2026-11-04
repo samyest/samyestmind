@@ -1848,6 +1848,242 @@
     .proj-notas .project-notes-editor{min-height:260px;font-size:15px;}
   }
 
+  /* Canais do projeto (RFC 0004). A superfície do chat ganha uma coluna à
+     esquerda com as categorias, os canais de texto e as salas de voz, numa
+     camada um pouco mais funda que a conversa, como a barra lateral do app.
+     A conversa do canal aberto fica à direita, igual ao chat de antes. */
+  .proj-chat.proj-canais{
+    display:grid;
+    grid-template-columns:236px minmax(0, 1fr);
+    --cn-fala:#3a9f57;
+  }
+  .cn-lista{
+    display:flex;
+    flex-direction:column;
+    min-width:0;
+    min-height:0;
+    border-right:1px solid var(--line);
+    background:color-mix(in srgb, var(--text) 3%, transparent);
+  }
+  .cn-topo{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    min-height:52px;
+    padding:8px 10px 8px 16px;
+    border-bottom:1px solid var(--line);
+  }
+  .cn-topo-nome{
+    margin:0;
+    font-family:'Space Grotesk',sans-serif;
+    font-size:15px;
+    font-weight:600;
+    letter-spacing:-0.01em;
+    color:var(--text-strong);
+  }
+  .cn-acao{
+    width:26px;height:26px;
+    display:grid;place-items:center;
+    flex-shrink:0;
+    border-radius:7px;
+    color:var(--text-muted);
+    transition:opacity .15s ease, background-color .15s ease, color .15s ease;
+  }
+  .cn-acao svg{width:14px;height:14px;}
+  .cn-acao:hover, .cn-acao[aria-expanded="true"]{background:var(--glass-strong);color:var(--accent);}
+  .cn-itens{
+    flex:1;
+    min-height:0;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    padding:8px 8px 18px;
+    scrollbar-width:thin;
+    scrollbar-color:var(--line-strong) transparent;
+  }
+  .cn-grupo{list-style:none;display:flex;flex-direction:column;gap:1px;}
+  .cn-cat{margin-top:16px;}
+  .cn-itens > .cn-cat:first-child{margin-top:4px;}
+  .cn-cat-cab{display:flex;align-items:center;gap:2px;margin-bottom:3px;}
+  /* A categoria usa a voz dos títulos de seção da barra lateral (.nav-label). */
+  .cn-cat-nome{
+    flex:1;
+    min-width:0;
+    display:flex;
+    align-items:center;
+    gap:5px;
+    padding:5px 4px 5px 3px;
+    border-radius:6px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:0.12em;
+    text-align:left;
+    color:color-mix(in srgb, var(--text) 62%, var(--text-muted));
+    transition:color .15s ease;
+  }
+  .cn-cat-nome span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cn-cat-nome:hover{color:var(--text-strong);}
+  .cn-seta{flex-shrink:0;transition:transform .2s cubic-bezier(.2, .8, .2, 1);}
+  .cn-cat.fechada .cn-seta{transform:rotate(-90deg);}
+  .cn-cat-cab .cn-acao{width:22px;height:22px;opacity:0;}
+  .cn-cat-cab .cn-acao svg{width:12px;height:12px;}
+  .cn-cat-cab:hover .cn-acao, .cn-cat-cab .cn-acao:focus-visible{opacity:1;}
+  .cn-linha{position:relative;}
+  .cn-canal{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    width:100%;
+    min-height:34px;
+    padding:6px 10px;
+    border-radius:10px;
+    text-align:left;
+    font-size:13.5px;
+    line-height:1.3;
+    color:color-mix(in srgb, var(--text) 70%, var(--text-muted));
+    transition:background-color .15s ease, color .15s ease;
+  }
+  .cn-linha.editavel .cn-canal{padding-right:34px;}
+  .cn-icone{flex-shrink:0;color:var(--text-muted);transition:color .15s ease;}
+  .cn-canal:hover{background:var(--glass-strong);color:var(--text-strong);}
+  .cn-canal.ativo{background:var(--glass-hover);box-shadow:inset 0 0 0 1px var(--glass-border);color:var(--text-strong);font-weight:500;}
+  .cn-canal.ativo .cn-icone{color:var(--accent);}
+  .cn-canal.nao-lido{color:var(--text-strong);font-weight:600;}
+  .cn-canal.nao-lido .cn-icone{color:var(--text-strong);}
+  .cn-nome{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cn-canal .chat-selo{margin-left:0;}
+  .cn-editar{position:absolute;top:4px;right:4px;opacity:0;}
+  .cn-linha:hover > .cn-editar, .cn-editar:focus-visible{opacity:1;}
+  /* Sala de voz: o alto-falante fica verde com gente dentro, e quem está
+     nela aparece embaixo, com o anel verde de quem fala, como na chamada. */
+  .cn-canal.voz.com-gente .cn-icone{color:var(--cn-fala);}
+  .cn-sala-n{font-size:11.5px;font-weight:500;font-variant-numeric:tabular-nums;color:color-mix(in srgb, var(--text) 62%, var(--text-muted));}
+  .cn-sala-gente{list-style:none;display:flex;flex-direction:column;gap:1px;margin:2px 0 6px;padding-left:30px;}
+  .cn-pessoa{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    min-height:28px;
+    padding:3px 8px 3px 4px;
+    border-radius:8px;
+    font-size:12.5px;
+    color:color-mix(in srgb, var(--text) 70%, var(--text-muted));
+  }
+  .cn-pessoa .member-avatar{width:22px;height:22px;font-size:10px;transition:box-shadow .15s ease;}
+  .cn-pessoa.falando .member-avatar{box-shadow:0 0 0 2px var(--cn-fala);}
+  .cn-pessoa-nome{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cn-pessoa-mudo{display:inline-flex;flex-shrink:0;color:var(--danger);}
+  .cn-pessoa-tela{
+    flex-shrink:0;
+    padding:1px 7px;
+    border-radius:999px;
+    font-size:10.5px;
+    font-weight:600;
+    background:color-mix(in srgb, var(--accent) 15%, transparent);
+    color:var(--accent);
+  }
+  .cn-vazia{margin:8px 6px;font-size:12.5px;line-height:1.5;color:color-mix(in srgb, var(--text) 70%, var(--text-muted));}
+  .cn-conversa{display:flex;flex-direction:column;min-width:0;min-height:0;}
+  .cn-conversa-vazia{display:grid;place-items:center;padding:24px;}
+  .proj-canais .chat-topo{min-height:52px;padding:8px 12px 8px 20px;}
+  .cn-conversa-nome .cn-icone{color:var(--text-muted);}
+  .cn-conversa-nome{
+    display:flex;
+    align-items:center;
+    gap:7px;
+    flex:1;
+    min-width:0;
+    margin:0;
+    font-family:'Space Grotesk',sans-serif;
+    font-size:15px;
+    font-weight:600;
+    letter-spacing:-0.01em;
+    color:var(--text-strong);
+  }
+  .cn-conversa-texto{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cn-voltar{display:none;}
+  @media (hover:none){
+    .cn-cat-cab .cn-acao, .cn-editar{opacity:1;}
+  }
+
+  /* Diálogo do canal: o do "Novo projeto" com o tipo, a categoria e o lugar. */
+  .cr-tipos{display:grid;grid-template-columns:1fr 1fr;gap:8px;min-width:0;margin:0 0 18px;border:none;}
+  .cr-tipos[hidden]{display:none;}
+  .cr-tipo{
+    position:relative;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:11px 12px;
+    border-radius:12px;
+    border:1px solid var(--line-strong);
+    color:var(--text-muted);
+    cursor:pointer;
+    transition:border-color .15s ease, background-color .15s ease, color .15s ease;
+  }
+  .cr-tipo input{position:absolute;opacity:0;pointer-events:none;}
+  .cr-tipo svg{flex-shrink:0;}
+  .cr-tipo:hover{background:var(--glass-strong);}
+  .cr-tipo:has(input:checked){border-color:var(--accent);background:color-mix(in srgb, var(--accent) 8%, transparent);}
+  .cr-tipo:has(input:checked) svg{color:var(--accent);}
+  .cr-tipo:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px;}
+  .cr-tipo-texto{display:flex;flex-direction:column;gap:1px;min-width:0;}
+  .cr-tipo-nome{font-size:13.5px;font-weight:500;color:var(--text-strong);}
+  .cr-tipo-desc{font-size:11.5px;color:color-mix(in srgb, var(--text) 68%, var(--text-muted));}
+  .cr-rotulo{display:block;margin:0 2px 6px;font-size:12.5px;font-weight:500;color:color-mix(in srgb, var(--text) 70%, var(--text-muted));}
+  .cr-campo{position:relative;}
+  .cr-prefixo{position:absolute;left:15px;top:50%;transform:translateY(-50%);display:grid;place-items:center;color:var(--text-soft);pointer-events:none;}
+  .cr-prefixo:empty{display:none;}
+  #canal-rapido:not([data-tipo="categoria"]) .cr-campo .modal-rapido-campo{padding-left:42px;}
+  .cr-linha{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px;}
+  #canal-rapido[data-tipo="categoria"] .cr-linha{grid-template-columns:1fr;}
+  .cr-grupo{min-width:0;}
+  .cr-grupo[hidden]{display:none;}
+  .cr-grupo .select{width:100%;}
+  .cr-apagar{
+    margin-right:auto;
+    padding:8px 10px;
+    border-radius:10px;
+    font-size:13px;
+    font-weight:500;
+    color:var(--danger);
+    transition:background-color .15s ease;
+  }
+  .cr-apagar:hover{background:color-mix(in srgb, var(--danger) 10%, transparent);}
+  .cr-apagar[hidden]{display:none;}
+
+  /* No celular: a lista ocupa a superfície; abrir um canal troca para a
+     conversa, com "Canais" para voltar, como nas Notas. */
+  @media (max-width:900px){
+    .proj-chat.proj-canais{grid-template-columns:minmax(0, 1fr);}
+    .proj-canais .cn-lista{border-right:none;background:none;}
+    .proj-canais .cn-conversa{display:none;}
+    .proj-canais.lendo .cn-lista{display:none;}
+    .proj-canais.lendo .cn-conversa{display:flex;}
+    .proj-canais .chat-topo{gap:6px;padding:6px 8px 6px 6px;}
+    .cn-topo{padding:8px 6px 8px 16px;}
+    .cn-voltar{
+      display:inline-flex;
+      align-items:center;
+      gap:4px;
+      flex-shrink:0;
+      padding:7px 8px;
+      border-radius:8px;
+      font-size:13px;
+      color:color-mix(in srgb, var(--text) 75%, var(--text-muted));
+    }
+    .cn-voltar:hover{background:var(--glass-strong);}
+    .cn-canal{min-height:44px;font-size:15px;}
+    .cn-linha.editavel .cn-canal{padding-right:46px;}
+    .cn-acao, .cn-cat-cab .cn-acao{width:36px;height:36px;}
+    .cn-editar{top:4px;}
+    .cn-pessoa{min-height:34px;font-size:13.5px;}
+    .cr-linha{grid-template-columns:1fr;}
+    .canal-rapido .modal-rapido-acoes{flex-wrap:wrap;}
+    .canal-rapido .cr-apagar{order:3;flex:1 1 100%;}
+  }
+
   /* Chamada do projeto (RFC 0002, fase 2). O palco é escuro em todos os
      temas, como num app de chamada: vídeo e tela leem melhor sobre fundo
      escuro, e o anel verde de quem fala aparece em qualquer tema. Fica preso

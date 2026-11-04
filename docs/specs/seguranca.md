@@ -163,7 +163,8 @@ realtime. No chat, seria a conversa inteira do projeto. **Verificação:** revis
 
 ### SEC-071 — Autoria, projeto e data da mensagem são fixados pelo banco *(fase 1, atendido em `supabase/chat_projeto.sql`; falta aplicar no Supabase)*
 `author_id` vem de `auth.uid()` e `created_at` de `now()`, e as duas colunas ficam
-fora do `grant insert`. Nenhuma delas, nem `project_id`, tem `grant update`. UPDATE só
+fora do `grant insert`. Nenhuma delas, nem `project_id` nem `canal_id` (RFC 0004), tem
+`grant update`. UPDATE só
 serve para apagar: o `with check` exige `body = ''` e `apagada_em` preenchido. Não
 existe DELETE pela API. **Por quê:** é o SEC-047 valendo desde o primeiro dia. Sem
 isso, um membro assina mensagem em nome de outro, data mensagem no passado ou troca o
@@ -188,7 +189,8 @@ de todos. **Verificação:** revisão.
 ### SEC-074 — "Até onde li" e "silenciado" são só da própria pessoa *(fase 1, atendido em `supabase/chat_projeto.sql`; falta aplicar no Supabase)*
 `project_chat_reads` só aceita linha com `user_id = auth.uid()` em projeto do qual a
 pessoa é dona ou membro aceito, tanto para ler quanto para escrever. A contagem de
-não lidas é função `security invoker`. **Por quê:** a linha revela quando cada
+não lidas é função `security invoker`. Com os canais (RFC 0004), o "até onde li" por
+canal segue a mesma regra no SEC-082. **Por quê:** a linha revela quando cada
 pessoa abriu o chat, e uma contagem `security definer` contaria mensagens de projeto
 alheio. **Verificação:** revisão.
 
@@ -200,8 +202,11 @@ antes do cast para uuid. Além disso, vale uma de duas: o acesso público do Rea
 fica desligado no painel do Supabase, ou o teste da fase 2 prova que um canal público
 com o mesmo nome não recebe as mensagens do privado. **Por quê:** oferta, resposta e
 candidatos ICE carregam o IP de cada participante, e quem os recebe pode entrar na
-negociação da chamada. **Verificação:** revisão + navegador (uma conta de fora do
-projeto tenta assinar o tópico e é recusada).
+negociação da chamada. As salas de voz (RFC 0004) usam o mesmo tópico do projeto: a
+sala vai na Presence e a separação entre salas é do cliente, não controle de acesso.
+Uma sala privada exigiria um tópico por sala e começa por RFC. **Verificação:**
+revisão + navegador (uma conta de fora do projeto tenta assinar o tópico e é
+recusada).
 
 ### SEC-076 — Só dono e membros aceitos ficam na chamada *(fase 2, atendido em `script.js`: `permitidoNaChamada` e `conferirAcessoChamada`)*
 Além do SEC-075, cada participante recusa sinal de user id que não está entre o dono
@@ -248,3 +253,33 @@ Nenhum `MediaRecorder` nem captura de quadros sobre os fluxos da chamada.
 para guardar vídeo, e uma gravação que vier depois começa por uma RFC.
 **Verificação:** auto (`MediaRecorder`, `ImageCapture`, `captureStream` ou
 `requestVideoFrameCallback` em `script.js` são falha).
+
+## Canais de projeto
+
+Requisitos da [RFC 0004](../rfc/0004-canais-de-projeto.md).
+
+### SEC-080 — Canal segue o acesso ao projeto, e só dono e editores mudam a estrutura *(atendido em `supabase/canais_projeto.sql`; falta aplicar no Supabase)*
+`project_channels` só é legível pelo dono e pelos membros aceitos do projeto. Criar,
+renomear, mover e apagar canal ou categoria é só do dono e dos editores. `project_id`
+e `tipo` ficam fora do `grant update`. O nome tem de 1 a 60 caracteres, a categoria
+de um canal é do mesmo projeto e é do tipo categoria, e um projeto tem no máximo 100
+itens. **Por quê:** é a estrutura que todos do projeto veem. Sem a regra no banco, a
+chave pública deixaria um visualizador apagar canais (e o histórico deles), ou uma
+conta qualquer inundar a lista. **Verificação:** revisão (toda policy de
+`project_channels` passa por `is_project_owner`/`is_project_member`, e a escrita exige
+`'editor'`) + teste do SQL com dono, editor, visualizador e conta de fora.
+
+### SEC-081 — Mensagem presa a um canal do mesmo projeto e do tipo certo *(atendido em `supabase/canais_projeto.sql`; falta aplicar no Supabase)*
+`project_messages.canal_id` tem chave estrangeira composta `(canal_id, project_id)`
+para `project_channels (id, project_id)`: nenhuma mensagem aponta para canal de outro
+projeto. Um gatilho recusa texto fora de canal de texto e linha de chamada fora de
+sala de voz. `canal_id` não tem `grant update`. **Por quê:** o RLS de leitura é pelo
+projeto. Uma mensagem gravada com o canal de outro projeto apareceria na conversa
+errada, e trocar o canal depois mudaria quem a lê. **Verificação:** revisão + teste
+do SQL (canal de outro projeto e tipo errado recusados).
+
+### SEC-082 — "Até onde li" de cada canal é só da própria pessoa *(atendido em `supabase/canais_projeto.sql`; falta aplicar no Supabase)*
+`project_channel_reads` só aceita linha com `user_id = auth.uid()` em projeto do qual
+a pessoa é dona ou membro aceito, para ler e para escrever, e o canal é do mesmo
+projeto (chave composta). `contar_nao_lidas_canais()` é `security invoker`. **Por
+quê:** o mesmo do SEC-074, agora por canal. **Verificação:** revisão.

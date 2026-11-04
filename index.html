@@ -770,6 +770,55 @@
   </form>
 </div>
 
+<!-- Criar e editar canal, sala de voz ou categoria (aba Canais do projeto).
+     Os textos mudam com o tipo, em abrirCanalRapido() no script.js. O
+     fechar vem por último no HTML para o foco cair primeiro no campo. -->
+<div class="modal-bg" id="canal-rapido" role="dialog" aria-modal="true" aria-labelledby="canal-rapido-titulo" aria-describedby="canal-rapido-texto">
+  <form class="modal modal-rapido canal-rapido" onsubmit="event.preventDefault();salvarCanalRapido()" novalidate>
+    <div class="modal-rapido-corpo">
+      <h2 class="modal-rapido-titulo" id="canal-rapido-titulo">Novo canal de texto</h2>
+      <p class="modal-rapido-texto" id="canal-rapido-texto"></p>
+      <fieldset class="cr-tipos" id="canal-rapido-tipos">
+        <legend class="sr-only">Tipo</legend>
+        <label class="cr-tipo">
+          <input type="radio" name="canal-tipo" value="texto" onchange="tipoCanalRapido(this.value)">
+          <svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>
+          <span class="cr-tipo-texto"><span class="cr-tipo-nome">Texto</span><span class="cr-tipo-desc">Mensagens com histórico</span></span>
+        </label>
+        <label class="cr-tipo">
+          <input type="radio" name="canal-tipo" value="voz" onchange="tipoCanalRapido(this.value)">
+          <svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg>
+          <span class="cr-tipo-texto"><span class="cr-tipo-nome">Voz</span><span class="cr-tipo-desc">Voz, câmera e tela</span></span>
+        </label>
+      </fieldset>
+      <label class="cr-rotulo" for="canal-rapido-campo" id="canal-rapido-rotulo">Nome do canal</label>
+      <div class="cr-campo">
+        <span class="cr-prefixo" id="canal-rapido-prefixo" aria-hidden="true"></span>
+        <input type="text" class="input modal-rapido-campo" id="canal-rapido-campo" maxlength="60" autocomplete="off" spellcheck="false" oninput="digitarCanalRapido()">
+      </div>
+      <p class="modal-rapido-erro" id="canal-rapido-erro" role="alert" hidden></p>
+      <div class="cr-linha">
+        <div class="cr-grupo" id="canal-rapido-grupo-categoria">
+          <label class="cr-rotulo" for="canal-rapido-categoria">Categoria</label>
+          <select class="select" id="canal-rapido-categoria" onchange="categoriaCanalRapido()"></select>
+        </div>
+        <div class="cr-grupo">
+          <label class="cr-rotulo" for="canal-rapido-posicao">Lugar na lista</label>
+          <select class="select" id="canal-rapido-posicao"></select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-rapido-acoes">
+      <button type="button" class="cr-apagar" id="canal-rapido-apagar" onclick="apagarCanalRapido()" hidden>Apagar canal</button>
+      <button type="button" class="btn-secondary" onclick="fecharCanalRapido()">Cancelar</button>
+      <button type="submit" class="btn-primary" id="canal-rapido-ok" disabled>Criar canal</button>
+    </div>
+    <button type="button" class="modal-close modal-rapido-fechar" onclick="fecharCanalRapido()" aria-label="Fechar">
+      <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </form>
+</div>
+
 <div class="modal-bg" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
   <div class="modal modal-narrow">
     <div class="modal-head">

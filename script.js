@@ -919,8 +919,9 @@ let state = {
   // Notas de cada projeto, carregadas quando a aba Notas abre:
   // {lista, semTabela, aberta (id), lendo (no celular, a nota ocupa a tela)}
   notasProjeto: {},
-  // Chat de cada projeto, carregado quando a aba Chat abre:
-  // {lista, erro, temMais, rascunho, doFim (distância do fim da lista)}
+  // Conversa de cada canal de texto (o id do canal é a chave), carregada
+  // quando o canal abre na aba Canais:
+  // {projectId, lista, erro, temMais, rascunho, doFim (distância do fim da lista)}
   chatProjeto: {},
   metas: {lista: [], registros: {}, modo: {}, carregado: false, precisaSql: false, atual: null, viewAntes: null, calMes: null}
 };
@@ -2824,7 +2825,7 @@ async function createProject(){
 // com clique fora e com Esc.
 function itensNovoProjeto(){
   const item = (k, nome, desc)=>`<button role="menuitem" class="novo-menu-item" onclick="escolherNovoProjeto('${k}')"><span class="novo-menu-nome">${nome}</span><span class="novo-menu-desc">${desc}</span></button>`;
-  return item('criar', 'Criar projeto', 'Quadro, chat e chamadas')
+  return item('criar', 'Criar projeto', 'Quadro, canais e salas de voz')
     + item('codigo', 'Entrar com código', 'O código ou link do convite');
 }
 
@@ -2844,7 +2845,7 @@ function entrarComCodigoRapido(){ abrirProjetoRapido('codigo'); }
 const PROJETO_RAPIDO = {
   criar: {
     titulo: 'Novo projeto',
-    texto: 'Um quadro do time, com chat e chamadas. Depois de criar, chame quem quiser pelo botão Convidar.',
+    texto: 'Um quadro do time, com canais de texto e salas de voz. Depois de criar, chame quem quiser pelo botão Convidar.',
     rotulo: 'Nome do projeto', placeholder: 'Ex: Lançamento da loja', dica: '',
     ok: 'Criar projeto', enviando: 'Criando…', max: 80
   },
@@ -3384,7 +3385,7 @@ function renderProjectPage(){
     {key:'kanban', label:'Quadro'},
     {key:'calendar', label:'Calendário'},
     {key:'notes', label:'Notas', marca: !asNotes && (state.notasProjeto[p.id] && !state.notasProjeto[p.id].semTabela ? state.notasProjeto[p.id].lista.length > 0 : projectHasNotes(p))},
-    {key:'chat', label:'Chat', selo: !asChat}
+    {key:'chat', label:'Canais', selo: !asChat}
   ];
 
   const filtros = (asNotes || asInicio || asChat) ? '' : `
@@ -5721,6 +5722,7 @@ const FECHAR_MODAL = {
   'metas-historico-modal': ()=>fecharHistoricoMetas(),
   'chamada-previa': ()=>fecharPreviaChamada(),
   'projeto-rapido': ()=>fecharProjetoRapido(),
+  'canal-rapido': ()=>fecharCanalRapido(),
   'confirm-modal': ()=>resolveDialog(null)
 };
 const SALVAR_MODAL = {
@@ -8887,37 +8889,197 @@ function novoNoProjeto(k){
   else openModal(null, '', pid);
 }
 
-/* ---------- chat do projeto (RFC 0002, fase 1) ---------- */
-// Cada projeto tem um chat de texto. As mensagens vêm de project_messages e
-// chegam em tempo real pelo canal 'chat-projeto'; "até onde li" e "silenciado"
-// ficam em project_chat_reads, uma linha por pessoa e projeto. Quem pode ler
-// e escrever é o banco que decide (supabase/chat_projeto.sql, SEC-070).
+/* ---------- canais e chat do projeto (RFC 0002, fase 1, e RFC 0004) ---------- */
+// Cada projeto tem categorias, canais de texto e salas de voz, como um
+// servidor do Discord. A estrutura vem de project_channels; as mensagens vêm
+// de project_messages, cada uma presa a um canal, e chegam em tempo real pelo
+// canal 'chat-projeto'. "Até onde li" é por canal (project_channel_reads) e
+// "silenciado" é por projeto (project_chat_reads). Quem lê, escreve e mexe na
+// estrutura é o banco que decide (supabase/chat_projeto.sql e
+// supabase/canais_projeto.sql, SEC-070 e SEC-080).
+//
+// Sem o canais_projeto.sql, cada projeto mostra um #geral e uma sala Geral
+// virtuais, que são o chat e a chamada de antes: o id do #geral virtual é o
+// do próprio projeto, e as consultas filtram pelo projeto em vez do canal.
 
 const CHAT_LIMITE_TEXTO = 4000;
 const CHAT_POR_PAGINA = 100;
+const CANAL_LIMITE_NOME = 60;
+const CANAL_ID = /^(voz-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // Sem a tabela (SQL ainda não rodou) a aba explica, e nada mais tenta o banco.
 let chatSemTabela = false;
 let canalChat = null;
 const chatCarregando = new Set();
-// {pid: n} mensagens dos outros depois do "até onde li".
+// {pid: n} mensagens dos outros depois do "até onde li", somando os canais.
 let chatNaoLidas = {};
-// {pid: {lidoAte, silenciado}} a linha de project_chat_reads de cada projeto.
+// {canalId: n} o mesmo, canal por canal.
+let chatNaoLidasCanal = {};
+// {pid: {silenciado}} a linha de project_chat_reads de cada projeto.
 let chatLeitura = {};
+// {canalId: data} o "até onde li" de cada canal.
+let leituraCanal = {};
 let chatContagemTimer = null;
+
+let canaisSemTabela = false;
+let canaisCarregados = false;
+let canaisCarregando = null;
+let canaisErro = '';
+let canaisTimer = null;
+// {pid: [canal]} canais e categorias de cada projeto, na ordem do banco.
+let canaisPorProjeto = {};
+// {pid: true}: no celular, a conversa está aberta no lugar da lista.
+const lendoCanal = {};
+
+const ICONE_CANAL_TEXTO = '<svg class="cn-icone" aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>';
+const ICONE_SALA = '<svg class="cn-icone" aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg>';
+const ICONE_LAPIS = '<svg aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
+const ICONE_SETA_CATEGORIA = '<svg class="cn-seta" aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 
 function chatErroSemTabela(error){
   return !!error && ['42P01', 'PGRST205', '42883', 'PGRST202'].includes(error.code);
 }
 
 function mensagemChatLinha(r){
-  return {id: r.id, projectId: r.project_id, authorId: r.author_id, kind: r.kind, body: r.body || '', created: r.created_at, apagada: !!r.apagada_em, duracao: r.duracao_seg};
+  return {id: r.id, projectId: r.project_id, canalId: r.canal_id || null, authorId: r.author_id, kind: r.kind, body: r.body || '', created: r.created_at, apagada: !!r.apagada_em, duracao: r.duracao_seg};
+}
+
+function canalLinha(r){
+  return {id: r.id, projectId: r.project_id, tipo: r.tipo, nome: r.nome || '', categoriaId: r.categoria_id || null, posicao: Number(r.posicao) || 0, created: r.created_at || ''};
+}
+
+// O chat e a chamada de antes, para quando o canais_projeto.sql ainda não rodou.
+function canaisVirtuais(pid){
+  return [
+    {id: pid, projectId: pid, tipo: 'texto', nome: 'geral', categoriaId: null, posicao: 0, created: '', virtual: true},
+    {id: `voz-${pid}`, projectId: pid, tipo: 'voz', nome: 'Geral', categoriaId: null, posicao: 1, created: '', virtual: true}
+  ];
+}
+
+function ordemCanal(a, b){
+  return (a.posicao - b.posicao) || (a.created < b.created ? -1 : a.created > b.created ? 1 : 0) || (a.id < b.id ? -1 : 1);
+}
+
+function canaisDoProjeto(pid){
+  if(canaisSemTabela) return canaisVirtuais(pid);
+  return (canaisPorProjeto[pid] || []).filter(c=>CANAL_ID.test(c.id)).sort(ordemCanal);
+}
+
+function canalDoProjeto(pid, id){
+  return id ? canaisDoProjeto(pid).find(c=>c.id === id) || null : null;
+}
+
+// Como a lista mostra: os canais sem categoria no topo, como no Discord, e
+// depois cada categoria com os dela. Canal cuja categoria acabou de sumir
+// fica solto até a lista recarregar.
+function estruturaCanais(pid){
+  const todos = canaisDoProjeto(pid);
+  const categorias = todos.filter(c=>c.tipo === 'categoria');
+  const ids = new Set(categorias.map(c=>c.id));
+  const canais = todos.filter(c=>c.tipo !== 'categoria');
+  return {
+    soltos: canais.filter(c=>!c.categoriaId || !ids.has(c.categoriaId)),
+    categorias: categorias.map(cat=>({cat, canais: canais.filter(c=>c.categoriaId === cat.id)}))
+  };
+}
+
+function canaisNaOrdem(pid){
+  const e = estruturaCanais(pid);
+  return [...e.soltos, ...e.categorias.flatMap(g=>g.canais)];
+}
+
+function canaisDeTexto(pid){ return canaisNaOrdem(pid).filter(c=>c.tipo === 'texto'); }
+function salasDoProjeto(pid){ return canaisNaOrdem(pid).filter(c=>c.tipo === 'voz'); }
+
+function podeEditarCanais(p){
+  return !!p && !canaisSemTabela && canEditProject(p.id);
+}
+
+function telaEstreita(){
+  return window.matchMedia('(max-width:900px)').matches;
+}
+
+// O canal de texto aberto em cada projeto fica guardado no aparelho; sem
+// escolha (ou com o canal apagado), abre o primeiro.
+function canalAberto(pid){
+  let escolhido = '';
+  try{ escolhido = localStorage.getItem(`canal:${pid}`) || ''; }catch(e){}
+  const textos = canaisDeTexto(pid);
+  return textos.find(c=>c.id === escolhido) || textos[0] || null;
+}
+
+function guardarCanalAberto(pid, id){
+  try{ localStorage.setItem(`canal:${pid}`, id); }catch(e){}
+}
+
+async function carregarCanais(){
+  if(!session || canaisSemTabela){ canaisCarregados = true; return; }
+  if(canaisCarregando) return canaisCarregando;
+  canaisCarregando = (async ()=>{
+    const ids = state.projects.map(p=>p.id);
+    if(!ids.length){ canaisPorProjeto = {}; canaisCarregados = true; canaisErro = ''; return; }
+    const {data, error} = await sb.from('project_channels').select('*').in('project_id', ids);
+    if(error){
+      if(chatErroSemTabela(error)){
+        canaisSemTabela = true;
+        canaisCarregados = true;
+        console.warn('Canais do projeto: rode supabase/canais_projeto.sql para ativar.', error);
+      }else{
+        console.error(error);
+        canaisErro = `${error.code || 'erro'}: ${error.message || ''}`;
+      }
+      return;
+    }
+    const novo = {};
+    ids.forEach(id=>{ novo[id] = []; });
+    (data || []).forEach(r=>{ const c = canalLinha(r); if(novo[c.projectId]) novo[c.projectId].push(c); });
+    canaisPorProjeto = novo;
+    canaisCarregados = true;
+    canaisErro = '';
+  })();
+  try{ await canaisCarregando; }finally{ canaisCarregando = null; }
+}
+
+function tentarCanaisDeNovo(){
+  canaisErro = '';
+  skipEntranceOnce = true;
+  render();
+  carregarNaoLidasChat();
+}
+
+// Criar, renomear e apagar canal chega pelo realtime (de quem quer que seja,
+// inclusive desta aba). Junta as mudanças seguidas numa recarga só.
+function agendarCanais(){
+  clearTimeout(canaisTimer);
+  canaisTimer = setTimeout(async ()=>{
+    await carregarCanais();
+    aposMudarCanais();
+  }, 300);
+}
+
+function aposMudarCanais(){
+  for(const chave of Object.keys(state.chatProjeto)){
+    const c = state.chatProjeto[chave];
+    if(c.projectId && !canalDoProjeto(c.projectId, chave)) delete state.chatProjeto[chave];
+  }
+  agendarContagemChat();
+  atualizarFaixaChamada();
+  if(state.view !== 'project' || state.projectTasksView !== 'chat') return;
+  // Com o mesmo canal aberto troca só a lista, para não mexer no campo em que
+  // a pessoa está digitando; se o canal aberto sumiu, redesenha.
+  const conversa = document.querySelector('.cn-conversa');
+  const aberto = canalAberto(state.currentProjectId);
+  if(conversa && (conversa.dataset.canal || '') === (aberto ? aberto.id : '')) atualizarListaCanais();
+  else { skipEntranceOnce = true; safeRerender(); }
 }
 
 async function carregarNaoLidasChat(){
   if(chatSemTabela || !session) return;
-  const [{data, error}, {data: leituras}] = await Promise.all([
-    sb.rpc('contar_nao_lidas'),
-    sb.from('project_chat_reads').select('project_id, lido_ate, silenciado')
+  await carregarCanais();
+  const porCanal = !canaisSemTabela;
+  const [{data, error}, {data: leituras}, {data: leiturasCanal}] = await Promise.all([
+    sb.rpc(porCanal ? 'contar_nao_lidas_canais' : 'contar_nao_lidas'),
+    sb.from('project_chat_reads').select('project_id, lido_ate, silenciado'),
+    porCanal ? sb.from('project_channel_reads').select('canal_id, lido_ate') : Promise.resolve({data: []})
   ]);
   if(error){
     if(chatErroSemTabela(error)){
@@ -8927,16 +9089,32 @@ async function carregarNaoLidasChat(){
     return;
   }
   chatNaoLidas = {};
-  (data || []).forEach(r=>{ chatNaoLidas[r.project_id] = Number(r.n) || 0; });
+  chatNaoLidasCanal = {};
+  (data || []).forEach(r=>{
+    const n = Number(r.n) || 0;
+    chatNaoLidasCanal[porCanal ? r.canal_id : r.project_id] = n;
+    chatNaoLidas[r.project_id] = (chatNaoLidas[r.project_id] || 0) + n;
+  });
   chatLeitura = {};
-  (leituras || []).forEach(r=>{ chatLeitura[r.project_id] = {lidoAte: r.lido_ate, silenciado: !!r.silenciado}; });
-  // Quem saiu de um projeto não guarda a conversa dele na memória da aba.
-  const ativos = new Set(state.projects.map(p=>p.id));
-  Object.keys(state.chatProjeto).forEach(pid=>{ if(!ativos.has(pid)) delete state.chatProjeto[pid]; });
+  leituraCanal = {};
+  (leituras || []).forEach(r=>{
+    chatLeitura[r.project_id] = {silenciado: !!r.silenciado};
+    if(!porCanal) leituraCanal[r.project_id] = r.lido_ate;
+  });
+  (leiturasCanal || []).forEach(r=>{ leituraCanal[r.canal_id] = r.lido_ate; });
+  // Quem saiu de um projeto, ou viu o canal ser apagado, não guarda a conversa
+  // dele na memória da aba.
+  for(const chave of Object.keys(state.chatProjeto)){
+    const c = state.chatProjeto[chave];
+    if(!c.projectId || !canalDoProjeto(c.projectId, chave)) delete state.chatProjeto[chave];
+  }
   ligarRealtimeChat();
   marcarChatLido();
   renderSidebarProjects();
   atualizarContadorAbaChat();
+  atualizarListaCanais();
+  // O "Iniciar chamada" depende de o projeto ter sala de voz.
+  atualizarFaixaChamada();
 }
 
 function agendarContagemChat(){
@@ -8956,10 +9134,10 @@ function rotuloNaoLidas(n){
 function seloNaoLidas(pid){
   const n = naoLidasChat(pid);
   if(!n) return '';
-  return `<span class="chat-selo" aria-label="${n} mensage${n > 1 ? 'ns' : 'm'} não lida${n > 1 ? 's' : ''} no chat">${rotuloNaoLidas(n)}</span>`;
+  return `<span class="chat-selo" aria-label="${n} mensage${n > 1 ? 'ns' : 'm'} não lida${n > 1 ? 's' : ''} nos canais">${rotuloNaoLidas(n)}</span>`;
 }
 
-// A aba Chat é a única coisa do projeto que muda com o contador; trocar só
+// A aba Canais é a única coisa do projeto que muda com o contador; trocar só
 // ela evita redesenhar o quadro inteiro a cada mensagem.
 function atualizarContadorAbaChat(){
   const aba = document.querySelector('.proj-view-aba[data-aba="chat"]');
@@ -8969,28 +9147,46 @@ function atualizarContadorAbaChat(){
   if(state.projectTasksView !== 'chat') aba.insertAdjacentHTML('beforeend', seloNaoLidas(state.currentProjectId));
 }
 
-function chatAberto(pid){
-  return state.view === 'project' && state.currentProjectId === pid && state.projectTasksView === 'chat';
+// A conversa deste canal está montada na aba Canais do projeto aberto.
+function canalNaTela(canalId){
+  if(state.view !== 'project' || state.projectTasksView !== 'chat' || !state.currentProjectId) return false;
+  const aberto = canalAberto(state.currentProjectId);
+  return !!aberto && aberto.id === canalId;
 }
 
-async function carregarChatProjeto(pid, anteriores){
-  if(chatCarregando.has(pid)) return;
-  const atual = state.chatProjeto[pid];
-  chatCarregando.add(pid);
-  let q = sb.from('project_messages').select('*').eq('project_id', pid).order('created_at', {ascending: false}).limit(CHAT_POR_PAGINA);
+// E está à vista: no celular, a lista ocupa a tela até a pessoa abrir o canal.
+function chatAberto(canalId){
+  return canalNaTela(canalId) && (!telaEstreita() || !!lendoCanal[state.currentProjectId]);
+}
+
+function chaveConversa(m){
+  return canaisSemTabela ? m.projectId : m.canalId;
+}
+
+function conversaVazia(canal, atual){
+  return {projectId: canal.projectId, lista: [], erro: null, temMais: false, rascunho: atual ? atual.rascunho : '', doFim: 0};
+}
+
+async function carregarChatCanal(canal, anteriores){
+  if(!canal || chatCarregando.has(canal.id)) return;
+  const atual = state.chatProjeto[canal.id];
+  chatCarregando.add(canal.id);
+  let q = sb.from('project_messages').select('*');
+  q = canal.virtual ? q.eq('project_id', canal.projectId) : q.eq('canal_id', canal.id);
+  q = q.order('created_at', {ascending: false}).limit(CHAT_POR_PAGINA);
   if(anteriores && atual && atual.lista.length) q = q.lt('created_at', atual.lista[0].created);
   const {data, error} = await q;
-  chatCarregando.delete(pid);
+  chatCarregando.delete(canal.id);
   if(error){
     console.error(error);
-    if(chatErroSemTabela(error)){
+    if(chatErroSemTabela(error) && canal.virtual){
       chatSemTabela = true;
-      state.chatProjeto[pid] = {lista: [], erro: null, temMais: false, rascunho: atual ? atual.rascunho : '', doFim: 0};
+      state.chatProjeto[canal.id] = conversaVazia(canal, atual);
     }else if(anteriores){
       showToast('Não deu para carregar as mensagens anteriores. Tente de novo em instantes.', 'erro');
       return;
     }else{
-      state.chatProjeto[pid] = {lista: [], erro: `${error.code || 'erro'}: ${error.message || ''}`, temMais: false, rascunho: atual ? atual.rascunho : '', doFim: 0};
+      state.chatProjeto[canal.id] = {...conversaVazia(canal, atual), erro: `${error.code || 'erro'}: ${error.message || ''}`};
     }
   }else{
     const novas = (data || []).map(mensagemChatLinha).reverse();
@@ -8998,61 +9194,71 @@ async function carregarChatProjeto(pid, anteriores){
       atual.lista = [...novas, ...atual.lista];
       atual.temMais = novas.length === CHAT_POR_PAGINA;
     }else{
-      state.chatProjeto[pid] = {lista: novas, erro: null, temMais: novas.length === CHAT_POR_PAGINA, rascunho: atual ? atual.rascunho : '', doFim: 0};
+      state.chatProjeto[canal.id] = {...conversaVazia(canal, atual), lista: novas, temMais: novas.length === CHAT_POR_PAGINA};
     }
     ligarRealtimeChat();
   }
-  if(chatAberto(pid)){
-    if(anteriores) atualizarListaChat(pid, true);
+  if(canalNaTela(canal.id)){
+    if(anteriores) atualizarListaChat(canal.id, true);
     else { skipEntranceOnce = true; safeRerender(); }
     marcarChatLido();
   }
 }
 
+function carregarAnterioresChat(canalId){
+  const pid = state.currentProjectId;
+  carregarChatCanal(pid && canalDoProjeto(pid, canalId), true);
+}
+
 // Canal próprio, ligado só depois que a tabela respondeu, como o das notas.
 // Postgres Changes reconfere o RLS de leitura a cada mensagem: quem sai do
-// projeto para de receber na hora.
+// projeto para de receber na hora. Os canais vêm pelo mesmo canal.
 function ligarRealtimeChat(){
   if(canalChat || chatSemTabela) return;
-  canalChat = sb.channel('chat-projeto')
+  let c = sb.channel('chat-projeto')
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'project_messages'}, (payload)=>{
       if(payload.new) receberMensagemChat(mensagemChatLinha(payload.new));
     })
     .on('postgres_changes', {event:'UPDATE', schema:'public', table:'project_messages'}, (payload)=>{
       if(!payload.new) return;
       const m = mensagemChatLinha(payload.new);
-      const c = state.chatProjeto[m.projectId];
+      const chave = chaveConversa(m);
+      const c = chave && state.chatProjeto[chave];
       if(c){
         const i = c.lista.findIndex(x=>x.id === m.id);
-        if(i >= 0){ c.lista[i] = m; atualizarListaChat(m.projectId); }
+        if(i >= 0){ c.lista[i] = m; atualizarListaChat(chave); }
       }
       // Uma mensagem apagada sai da contagem de quem ainda não tinha lido.
       if(m.apagada && m.authorId !== session.user.id) agendarContagemChat();
-    })
-    .subscribe();
+    });
+  if(!canaisSemTabela) c = c.on('postgres_changes', {event:'*', schema:'public', table:'project_channels'}, ()=>agendarCanais());
+  canalChat = c.subscribe();
 }
 
 function receberMensagemChat(m){
   const pid = m.projectId;
-  const c = state.chatProjeto[pid];
+  const chave = chaveConversa(m);
+  const c = chave && state.chatProjeto[chave];
   if(c && !c.lista.some(x=>x.id === m.id)){
     c.lista.push(m);
-    atualizarListaChat(pid);
+    atualizarListaChat(chave);
   }
   if(m.kind === 'chamada_inicio') avisarChamadaIniciada(m);
   if(m.authorId === session.user.id || m.kind !== 'texto' || m.apagada) return;
-  if(chatAberto(pid) && !document.hidden){
+  if(chatAberto(chave) && !document.hidden){
     marcarChatLido();
     return;
   }
+  if(chave) chatNaoLidasCanal[chave] = (chatNaoLidasCanal[chave] || 0) + 1;
   chatNaoLidas[pid] = (chatNaoLidas[pid] || 0) + 1;
   renderSidebarProjects();
   atualizarContadorAbaChat();
+  atualizarListaCanais();
   if(state.view === 'projects') safeRerender();
   notificarMensagemChat(m);
 }
 
-// Só com a aba do app escondida e o chat do projeto não silenciado. A API de
+// Só com a aba do app escondida e o projeto não silenciado. A API de
 // notificação recebe texto puro, então nada aqui passa por esc().
 function notificarMensagemChat(m){
   if(!document.hidden) return;
@@ -9060,40 +9266,73 @@ function notificarMensagemChat(m){
   if(!window.Notification || Notification.permission !== 'granted') return;
   const p = state.projects.find(x=>x.id === m.projectId);
   if(!p) return;
+  const canal = canalDoProjeto(p.id, chaveConversa(m));
   const trecho = m.body.length > 100 ? m.body.slice(0, 100) + '…' : m.body;
+  // Com um canal só, o nome dele não diz nada; com vários, vai na frente.
+  const corpo = canal && canaisDeTexto(p.id).length > 1 ? `#${canal.nome}: ${trecho}` : trecho;
   try{
-    const n = new Notification(`${nomeAutorChat(p, m.authorId)} em ${p.name}`, {body: trecho, tag: `chat-${p.id}`});
+    const n = new Notification(`${nomeAutorChat(p, m.authorId)} em ${p.name}`, {body: corpo, tag: `chat-${canal ? canal.id : p.id}`});
     n.onclick = ()=>{
       window.focus();
       n.close();
-      abrirChatDoProjeto(p.id);
+      abrirChatDoProjeto(p.id, canal && canal.id);
     };
   }catch(e){}
 }
 
-function abrirChatDoProjeto(pid){
+function abrirChatDoProjeto(pid, canalId){
+  if(canalId){ guardarCanalAberto(pid, canalId); lendoCanal[pid] = true; }
   if(!(state.view === 'project' && state.currentProjectId === pid)) openProjectView(pid);
   setProjectTasksView('chat');
 }
 
-// Guarda o "até onde li" no banco quando o chat está na tela. Usa a data da
-// última mensagem (do servidor), não o relógio do aparelho.
+function abrirCanal(id){
+  const pid = state.currentProjectId;
+  const canal = pid && canalDoProjeto(pid, id);
+  if(!canal || canal.tipo !== 'texto') return;
+  guardarCanalAberto(pid, id);
+  lendoCanal[pid] = true;
+  skipEntranceOnce = true;
+  render();
+  // No computador o foco vai para o campo, para já escrever.
+  const campo = document.getElementById('chat-input');
+  if(campo && !telaEstreita()) campo.focus({preventScroll: true});
+}
+
+function voltarListaCanais(){
+  const pid = state.currentProjectId;
+  if(!pid) return;
+  lendoCanal[pid] = false;
+  skipEntranceOnce = true;
+  render();
+  const aberto = canalAberto(pid);
+  const linha = aberto && document.querySelector(`[data-foco="canal:${aberto.id}"]`);
+  if(linha) linha.focus();
+}
+
+// Guarda o "até onde li" no banco quando a conversa está na tela. Usa a data
+// da última mensagem (do servidor), não o relógio do aparelho.
 let chatLeituraEmVoo = null;
 async function marcarChatLido(){
   const pid = state.currentProjectId;
-  if(!pid || !chatAberto(pid) || document.hidden || chatSemTabela) return;
-  const c = state.chatProjeto[pid];
+  if(!pid || document.hidden || chatSemTabela) return;
+  const canal = canalAberto(pid);
+  if(!canal || !chatAberto(canal.id)) return;
+  const c = state.chatProjeto[canal.id];
   if(!c || !c.lista.length) return;
   const ultima = c.lista[c.lista.length - 1].created;
-  const leitura = chatLeitura[pid];
-  const tinha = naoLidasChat(pid);
-  if(leitura && leitura.lidoAte && new Date(leitura.lidoAte) >= new Date(ultima) && !tinha) return;
-  if(chatLeituraEmVoo === `${pid}:${ultima}`) return;
-  chatLeituraEmVoo = `${pid}:${ultima}`;
-  chatNaoLidas[pid] = 0;
-  chatLeitura[pid] = {lidoAte: ultima, silenciado: !!(leitura && leitura.silenciado)};
-  if(tinha) renderSidebarProjects();
-  const {error} = await sb.from('project_chat_reads').upsert({project_id: pid, user_id: session.user.id, lido_ate: ultima}, {onConflict: 'project_id,user_id'});
+  const lidoAte = leituraCanal[canal.id];
+  const tinha = chatNaoLidasCanal[canal.id] || 0;
+  if(lidoAte && new Date(lidoAte) >= new Date(ultima) && !tinha) return;
+  if(chatLeituraEmVoo === `${canal.id}:${ultima}`) return;
+  chatLeituraEmVoo = `${canal.id}:${ultima}`;
+  chatNaoLidasCanal[canal.id] = 0;
+  chatNaoLidas[pid] = Math.max(0, (chatNaoLidas[pid] || 0) - tinha);
+  leituraCanal[canal.id] = ultima;
+  if(tinha){ renderSidebarProjects(); atualizarListaCanais(); }
+  const {error} = canal.virtual
+    ? await sb.from('project_chat_reads').upsert({project_id: pid, user_id: session.user.id, lido_ate: ultima}, {onConflict: 'project_id,user_id'})
+    : await sb.from('project_channel_reads').upsert({canal_id: canal.id, project_id: pid, user_id: session.user.id, lido_ate: ultima}, {onConflict: 'canal_id,user_id'});
   chatLeituraEmVoo = null;
   if(error) console.error(error);
 }
@@ -9105,7 +9344,7 @@ document.addEventListener('visibilitychange', ()=>{
 async function alternarSilencioChat(){
   const pid = state.currentProjectId;
   if(!pid) return;
-  const leitura = chatLeitura[pid] || {lidoAte: null, silenciado: false};
+  const leitura = chatLeitura[pid] || {silenciado: false};
   const silenciado = !leitura.silenciado;
   chatLeitura[pid] = {...leitura, silenciado};
   skipEntranceOnce = true;
@@ -9116,10 +9355,10 @@ async function alternarSilencioChat(){
     chatLeitura[pid] = leitura;
     skipEntranceOnce = true;
     safeRerender();
-    showToast('Não deu para mudar as notificações do chat. Tente de novo em instantes.', 'erro');
+    showToast('Não deu para mudar as notificações do projeto. Tente de novo em instantes.', 'erro');
     return;
   }
-  showToast(silenciado ? 'Chat silenciado: o contador continua, a notificação para' : 'Notificações do chat ligadas');
+  showToast(silenciado ? 'Projeto silenciado: o contador continua, a notificação para' : 'Notificações do projeto ligadas');
 }
 
 function nomeAutorChat(p, authorId){
@@ -9165,12 +9404,12 @@ function horaChat(iso){
 // aparecem uma vez por sequência, e não a cada mensagem. As suas também levam
 // nome e foto, do lado direito, para a conversa ler igual para todo mundo.
 // O horário fica no canto de cada balão.
-function renderListaChat(p, c){
+function renderListaChat(p, c, canal){
   if(!c.lista.length){
-    return `<div class="chat-vazio"><strong>Nenhuma mensagem ainda.</strong>Todo mundo do projeto lê e escreve aqui, inclusive quem só visualiza.</div>`;
+    return `<div class="chat-vazio"><strong>Nenhuma mensagem em #${esc(canal.nome)} ainda.</strong>Todo mundo do projeto lê e escreve aqui, inclusive quem só visualiza. Quem é de fora não vê.</div>`;
   }
   const isOwner = p.myRole === 'owner';
-  let html = c.temMais ? `<div class="chat-anteriores"><button class="btn-secondary" onclick="carregarChatProjeto('${p.id}', true)">Mostrar mensagens anteriores</button></div>` : '';
+  let html = c.temMais && CANAL_ID.test(canal.id) ? `<div class="chat-anteriores"><button class="btn-secondary" onclick="carregarAnterioresChat('${canal.id}')">Mostrar mensagens anteriores</button></div>` : '';
   let diaAnterior = '';
   let autorAnterior = null;
   let ultimaHora = 0;
@@ -9181,6 +9420,8 @@ function renderListaChat(p, c){
       diaAnterior = dia;
       autorAnterior = null;
     }
+    // Só no chat de antes (sem os canais) as linhas de chamada caem aqui; com
+    // os canais, elas são da sala de voz.
     if(m.kind !== 'texto'){
       const texto = m.kind === 'chamada_inicio' ? 'Chamada iniciada'
         : `Chamada encerrada${m.duracao ? ` · ${Math.max(1, Math.round(m.duracao / 60))} min` : ''}`;
@@ -9220,33 +9461,219 @@ function renderListaChat(p, c){
   return html;
 }
 
-function renderProjectChat(p){
-  if(chatSemTabela){
-    return `<div class="glass proj-surface proj-vazio"><strong>O chat ainda não foi ativado.</strong>Falta rodar o supabase/chat_projeto.sql no Supabase.</div>`;
+/* --- lista de canais --- */
+
+function categoriasFechadas(pid){
+  try{ return new Set(JSON.parse(localStorage.getItem(`canaisFechados:${pid}`) || '[]')); }catch(e){ return new Set(); }
+}
+
+function alternarCategoria(id){
+  const pid = state.currentProjectId;
+  if(!pid || !canalDoProjeto(pid, id)) return;
+  const fechadas = categoriasFechadas(pid);
+  if(fechadas.has(id)) fechadas.delete(id); else fechadas.add(id);
+  try{ localStorage.setItem(`canaisFechados:${pid}`, JSON.stringify([...fechadas])); }catch(e){}
+  atualizarListaCanais();
+}
+
+// Quem está em cada sala, pela Presence do canal da chamada do projeto.
+function pessoasNasSalas(pid){
+  const reg = canaisChamada[pid];
+  const porSala = {};
+  for(const x of (reg ? reg.emChamada : [])) if(x.sala) (porSala[x.sala] = porSala[x.sala] || []).push(x);
+  return porSala;
+}
+
+function botaoEditarCanal(canal){
+  const rotulo = canal.tipo === 'categoria' ? `Editar a categoria ${canal.nome}` : canal.tipo === 'voz' ? `Editar a sala ${canal.nome}` : `Editar o canal #${canal.nome}`;
+  return `<button class="cn-acao cn-editar" data-foco="editar:${canal.id}" onclick="editarCanal('${canal.id}')" title="${canal.tipo === 'categoria' ? 'Editar categoria' : canal.tipo === 'voz' ? 'Editar sala' : 'Editar canal'}" aria-label="${esc(rotulo)}">${ICONE_LAPIS}</button>`;
+}
+
+function linhaCanalTexto(canal, aberto, pode){
+  const ativo = !!aberto && canal.id === aberto.id;
+  const n = chatNaoLidasCanal[canal.id] || 0;
+  return `
+    <li class="cn-linha ${pode && !canal.virtual ? 'editavel' : ''}">
+      <button class="cn-canal ${ativo ? 'ativo' : ''} ${n && !ativo ? 'nao-lido' : ''}" data-foco="canal:${canal.id}" onclick="abrirCanal('${canal.id}')"${ativo ? ' aria-current="true"' : ''}>
+        ${ICONE_CANAL_TEXTO}<span class="sr-only">Canal de texto </span><span class="cn-nome">${esc(canal.nome)}</span>${n && !ativo ? `<span class="chat-selo" aria-label="${n} não lida${n > 1 ? 's' : ''}">${rotuloNaoLidas(n)}</span>` : ''}
+      </button>
+      ${pode && !canal.virtual ? botaoEditarCanal(canal) : ''}
+    </li>`;
+}
+
+function linhaSala(p, sala, gente, pode){
+  const minha = !!chamada && chamada.pid === p.id && chamada.sala === sala.id;
+  const n = gente.length;
+  const pessoas = gente.map(x=>{
+    const nome = nomeNaChamada(p.id, x.uid);
+    const fechado = x.ensurdecido || !x.mic;
+    return `
+      <li class="cn-pessoa" data-fala="${x.uid}">
+        ${avatarChip(perfilNaChamada(p.id, x.uid), nome[0])}
+        <span class="cn-pessoa-nome">${esc(nome)}</span>
+        ${x.tela ? '<span class="cn-pessoa-tela">Tela</span>' : ''}
+        ${fechado ? `<span class="cn-pessoa-mudo" title="${x.ensurdecido ? 'Sem som' : 'Microfone fechado'}">${iconeChamada(x.ensurdecido ? 'foneOff' : 'micOff', 13)}<span class="sr-only">${x.ensurdecido ? 'sem som' : 'microfone fechado'}</span></span>` : ''}
+      </li>`;
+  }).join('');
+  return `
+    <li class="cn-linha ${pode && !sala.virtual ? 'editavel' : ''}">
+      <button class="cn-canal voz ${minha ? 'ativo' : ''} ${n ? 'com-gente' : ''}" data-foco="canal:${sala.id}" onclick="entrarNaSala('${p.id}','${sala.id}')" title="${minha ? 'Você está nesta sala' : 'Entrar na sala'}">
+        ${ICONE_SALA}<span class="sr-only">Sala de voz </span><span class="cn-nome">${esc(sala.nome)}</span>${n ? `<span class="cn-sala-n"><span class="sr-only">, </span>${n}<span class="sr-only"> na sala</span></span>` : ''}
+      </button>
+      ${pode && !sala.virtual ? botaoEditarCanal(sala) : ''}
+      ${n ? `<ul class="cn-sala-gente" role="list" aria-label="Na sala ${esc(sala.nome)}">${pessoas}</ul>` : ''}
+    </li>`;
+}
+
+function menuNovoCanal(p){
+  const item = (acao, nome, desc)=>`<button role="menuitem" class="novo-menu-item" onclick="${acao}"><span class="novo-menu-nome">${nome}</span><span class="novo-menu-desc">${desc}</span></button>`;
+  const semCategoria = !canaisDoProjeto(p.id).some(c=>c.tipo === 'categoria');
+  return `
+    <div class="novo-menu cn-novo">
+      <button class="cn-acao novo-menu-btn" data-foco="novo" aria-haspopup="menu" aria-expanded="false" onclick="alternarMenuNovo(this)" title="Criar canal, sala ou categoria" aria-label="Criar canal, sala ou categoria">${ICONE_MAIS}</button>
+      <div class="novo-menu-lista" role="menu" hidden>
+        ${item(`novoCanal('texto')`, 'Canal de texto', 'Conversa com histórico')}
+        ${item(`novoCanal('voz')`, 'Sala de voz', 'Voz, câmera e tela')}
+        ${item(`novoCanal('categoria')`, 'Categoria', 'Agrupa canais e salas')}
+        ${semCategoria ? item('usarModeloEquipe()', 'Usar o modelo de equipe', 'Comunicação, reuniões com 5 salas e intervalo') : ''}
+      </div>
+    </div>`;
+}
+
+function renderNavCanais(p, aberto){
+  const pode = podeEditarCanais(p);
+  const e = estruturaCanais(p.id);
+  const fechadas = categoriasFechadas(p.id);
+  const salas = pessoasNasSalas(p.id);
+  const linha = (canal)=> canal.tipo === 'voz' ? linhaSala(p, canal, salas[canal.id] || [], pode) : linhaCanalTexto(canal, aberto, pode);
+  const grupo = (lista)=> lista.length ? `<ul class="cn-grupo" role="list">${lista.map(linha).join('')}</ul>` : '';
+  const categorias = e.categorias.map(({cat, canais})=>{
+    const fechada = fechadas.has(cat.id);
+    // Recolhida, continua mostrando o canal aberto, os não lidos e as salas
+    // com gente.
+    const visiveis = !fechada ? canais : canais.filter(c=>(aberto && c.id === aberto.id)
+      || (c.tipo === 'voz' && (salas[c.id] || []).length) || (c.tipo === 'texto' && chatNaoLidasCanal[c.id]));
+    return `
+      <div class="cn-cat ${fechada ? 'fechada' : ''}">
+        <div class="cn-cat-cab ${pode ? 'editavel' : ''}">
+          <button class="cn-cat-nome" data-foco="cat:${cat.id}" aria-expanded="${!fechada}" onclick="alternarCategoria('${cat.id}')">
+            ${ICONE_SETA_CATEGORIA}<span>${esc(cat.nome)}</span>
+          </button>
+          ${pode ? `${botaoEditarCanal(cat)}<button class="cn-acao" data-foco="novo:${cat.id}" onclick="novoCanal('texto','${cat.id}')" title="Criar canal nesta categoria" aria-label="${esc(`Criar canal ou sala em ${cat.nome}`)}">${ICONE_MAIS}</button>` : ''}
+        </div>
+        ${grupo(visiveis)}
+      </div>`;
+  }).join('');
+  const vazia = !e.soltos.length && !e.categorias.length;
+  return `
+    <nav class="cn-lista" id="cn-lista" aria-label="${esc(`Canais de ${p.name}`)}">
+      <div class="cn-topo">
+        <h3 class="cn-topo-nome">Canais</h3>
+        ${pode ? menuNovoCanal(p) : ''}
+      </div>
+      <div class="cn-itens">
+        ${grupo(e.soltos)}
+        ${categorias}
+        ${vazia ? `<p class="cn-vazia">${pode ? 'Nenhum canal ainda. Crie o primeiro no +.' : 'Nenhum canal ainda. Quem edita o projeto cria os canais.'}</p>` : ''}
+      </div>
+    </nav>`;
+}
+
+// Troca só a lista (contadores, quem está nas salas, nomes), sem mexer na
+// conversa nem no campo de texto. O foco e a rolagem voltam para onde estavam.
+function atualizarListaCanais(){
+  if(state.view !== 'project' || state.projectTasksView !== 'chat') return;
+  const nav = document.getElementById('cn-lista');
+  const p = state.projects.find(x=>x.id === state.currentProjectId);
+  if(!nav || !p) return;
+  const ativo = document.activeElement;
+  const foco = ativo && nav.contains(ativo) ? ativo.dataset.foco : null;
+  const itens = nav.querySelector('.cn-itens');
+  const rolagem = itens ? itens.scrollTop : 0;
+  const menuAberto = !!nav.querySelector('.novo-menu-btn[aria-expanded="true"]');
+  if(menuAberto) return;
+  const aberto = canalAberto(p.id);
+  nav.outerHTML = renderNavCanais(p, aberto);
+  const nova = document.getElementById('cn-lista');
+  const novosItens = nova && nova.querySelector('.cn-itens');
+  if(novosItens) novosItens.scrollTop = rolagem;
+  if(foco){
+    const alvo = nova.querySelector(`[data-foco="${foco}"]`);
+    if(alvo) alvo.focus({preventScroll: true});
   }
-  const c = state.chatProjeto[p.id];
-  if(!c){
-    if(!chatCarregando.has(p.id)) carregarChatProjeto(p.id);
-    return `<div class="glass proj-surface proj-vazio" role="status">Carregando o chat…</div>`;
+  // O anel de quem está falando agora volta já, sem esperar a próxima fala.
+  for(const [chave, m] of falaMedidores) if(m.falando) marcarFalaChamada(chave, true);
+  // O nome do canal aberto pode ter mudado.
+  const titulo = document.querySelector('#cn-conversa-nome .cn-conversa-texto');
+  if(titulo && aberto && titulo.textContent !== aberto.nome){
+    titulo.textContent = aberto.nome;
+    const campo = document.getElementById('chat-input');
+    if(campo){ campo.placeholder = `Escreva em #${aberto.nome}…`; campo.setAttribute('aria-label', `Mensagem para #${aberto.nome}`); }
   }
-  if(c.erro) return `<div class="glass proj-surface proj-vazio"><strong>Não deu para carregar o chat.</strong>${esc(c.erro)}<button class="btn-secondary" style="margin-top:12px;" onclick="delete state.chatProjeto['${p.id}'];render()">Tentar de novo</button></div>`;
+}
+
+function renderConversaCanal(p, canal){
+  if(!canal){
+    return `
+      <div class="cn-conversa cn-conversa-vazia" data-canal="">
+        <div class="chat-vazio"><strong>Nenhum canal de texto.</strong>${podeEditarCanais(p) ? 'Crie um no + da lista de canais.' : 'Quem edita o projeto cria os canais.'}</div>
+      </div>`;
+  }
+  const c = state.chatProjeto[canal.id];
   const silenciado = !!(chatLeitura[p.id] && chatLeitura[p.id].silenciado);
   const sino = silenciado
     ? '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.73 21a2 2 0 01-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0118 8"/><path d="M6.26 6.26A5.86 5.86 0 006 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 00-9.33-5"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
     : '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>';
-  return `
-    <section class="glass proj-surface proj-chat" aria-label="Chat do projeto">
-      <div class="chat-topo">
-        <span class="chat-topo-info">Só quem está no projeto vê estas mensagens.</span>
-        <button class="chat-silenciar ${silenciado ? 'ativo' : ''}" onclick="alternarSilencioChat()" aria-pressed="${silenciado}" title="${silenciado ? 'Voltar a receber notificações deste chat' : 'Parar as notificações deste chat (o contador continua)'}">${sino}${silenciado ? 'Silenciado' : 'Silenciar'}</button>
-      </div>
-      <div class="chat-lista" id="chat-lista" role="log" aria-live="polite" aria-label="Mensagens" onscroll="rolagemChat(this)">${renderListaChat(p, c)}</div>
+  const topo = `
+    <div class="chat-topo">
+      <button class="cn-voltar" onclick="voltarListaCanais()">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"/></svg>Canais
+      </button>
+      <h3 class="cn-conversa-nome" id="cn-conversa-nome">${ICONE_CANAL_TEXTO}<span class="cn-conversa-texto">${esc(canal.nome)}</span></h3>
+      <button class="chat-silenciar ${silenciado ? 'ativo' : ''}" onclick="alternarSilencioChat()" aria-pressed="${silenciado}" title="${silenciado ? 'Voltar a receber notificações deste projeto' : 'Parar as notificações deste projeto (o contador continua)'}">${sino}${silenciado ? 'Silenciado' : 'Silenciar'}</button>
+    </div>`;
+  let resto;
+  if(!c){
+    if(!chatCarregando.has(canal.id)) carregarChatCanal(canal);
+    resto = `<div class="chat-lista" role="status"><div class="chat-vazio">Carregando as mensagens…</div></div>`;
+  }else if(c.erro){
+    resto = `<div class="chat-lista"><div class="chat-vazio"><strong>Não deu para carregar as mensagens.</strong>${esc(c.erro)}<button class="btn-secondary" style="margin-top:12px;" onclick="recarregarConversa('${CANAL_ID.test(canal.id) ? canal.id : ''}')">Tentar de novo</button></div></div>`;
+  }else{
+    resto = `
+      <div class="chat-lista" id="chat-lista" role="log" aria-live="polite" aria-label="${esc(`Mensagens de #${canal.nome}`)}" onscroll="rolagemChat(this)">${renderListaChat(p, c, canal)}</div>
       <form class="chat-escrever" onsubmit="event.preventDefault();enviarMensagemChat()">
-        <textarea id="chat-input" class="input chat-input" rows="1" maxlength="${CHAT_LIMITE_TEXTO}" placeholder="Escreva para o projeto…" aria-label="Mensagem para o projeto" oninput="rascunhoChat(this)" onkeydown="teclaChat(event)">${esc(c.rascunho)}</textarea>
+        <textarea id="chat-input" class="input chat-input" rows="1" maxlength="${CHAT_LIMITE_TEXTO}" placeholder="${esc(`Escreva em #${canal.nome}…`)}" aria-label="${esc(`Mensagem para #${canal.nome}`)}" oninput="rascunhoChat(this)" onkeydown="teclaChat(event)">${esc(c.rascunho)}</textarea>
         <button type="submit" class="btn-primary chat-enviar" id="chat-enviar" aria-label="Enviar mensagem" title="Enviar (Enter)" ${c.rascunho.trim() ? '' : 'disabled'}>
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
-      </form>
+      </form>`;
+  }
+  return `<div class="cn-conversa" data-canal="${canal.id}">${topo}${resto}</div>`;
+}
+
+function recarregarConversa(id){
+  if(id) delete state.chatProjeto[id];
+  render();
+}
+
+function renderProjectChat(p){
+  if(chatSemTabela){
+    return `<div class="glass proj-surface proj-vazio"><strong>O chat ainda não foi ativado.</strong>Falta rodar o supabase/chat_projeto.sql no Supabase.</div>`;
+  }
+  if(!canaisCarregados){
+    if(canaisErro) return `<div class="glass proj-surface proj-vazio"><strong>Não deu para carregar os canais.</strong>${esc(canaisErro)}<button class="btn-secondary" style="margin-top:12px;" onclick="tentarCanaisDeNovo()">Tentar de novo</button></div>`;
+    if(!canaisCarregando) carregarCanais().then(()=>{ if(state.view === 'project' && state.projectTasksView === 'chat'){ skipEntranceOnce = true; safeRerender(); } });
+    return `<div class="glass proj-surface proj-vazio" role="status">Carregando os canais…</div>`;
+  }
+  const canal = canalAberto(p.id);
+  // O canal que está na tela fica guardado: criar canais acima dele (o modelo
+  // de equipe põe o #avisos no topo) não troca a conversa de ninguém.
+  if(canal && !canal.virtual) guardarCanalAberto(p.id, canal.id);
+  const lendo = !!lendoCanal[p.id] && !!canal;
+  return `
+    <section class="glass proj-surface proj-chat proj-canais ${lendo ? 'lendo' : ''}" aria-label="Canais do projeto">
+      ${renderNavCanais(p, canal)}
+      ${renderConversaCanal(p, canal)}
     </section>`;
 }
 
@@ -9254,7 +9681,8 @@ function renderProjectChat(p){
 // e o campo cresce com o texto.
 function aposRenderChat(){
   const lista = document.getElementById('chat-lista');
-  const c = state.chatProjeto[state.currentProjectId];
+  const canal = state.currentProjectId && canalAberto(state.currentProjectId);
+  const c = canal && state.chatProjeto[canal.id];
   if(lista && c) lista.scrollTop = lista.scrollHeight - lista.clientHeight - c.doFim;
   const campo = document.getElementById('chat-input');
   if(campo) ajustarAlturaChat(campo);
@@ -9263,21 +9691,27 @@ function aposRenderChat(){
 
 // Mensagem nova não redesenha a tela: troca só a lista, para não mexer no
 // campo em que a pessoa está digitando. Quem estava no fim continua no fim.
-function atualizarListaChat(pid, manterTopo){
-  if(!chatAberto(pid)) return;
+function atualizarListaChat(canalId, manterTopo){
+  if(!canalNaTela(canalId)) return;
   const lista = document.getElementById('chat-lista');
-  const p = state.projects.find(x=>x.id === pid);
-  const c = state.chatProjeto[pid];
-  if(!lista || !p || !c) return;
+  const p = state.projects.find(x=>x.id === state.currentProjectId);
+  const c = state.chatProjeto[canalId];
+  const canal = p && canalDoProjeto(p.id, canalId);
+  if(!lista || !p || !c || !canal) return;
   const alturaAntes = lista.scrollHeight;
   const topoAntes = lista.scrollTop;
-  lista.innerHTML = renderListaChat(p, c);
+  lista.innerHTML = renderListaChat(p, c, canal);
   if(manterTopo) lista.scrollTop = topoAntes + (lista.scrollHeight - alturaAntes);
   else lista.scrollTop = lista.scrollHeight - lista.clientHeight - c.doFim;
 }
 
+function conversaAberta(){
+  const canal = state.currentProjectId && canalAberto(state.currentProjectId);
+  return canal ? {canal, c: state.chatProjeto[canal.id]} : {canal: null, c: null};
+}
+
 function rolagemChat(lista){
-  const c = state.chatProjeto[state.currentProjectId];
+  const {c} = conversaAberta();
   if(!c) return;
   const doFim = lista.scrollHeight - lista.clientHeight - lista.scrollTop;
   // Perto do fim conta como no fim: mensagem nova continua aparecendo.
@@ -9290,7 +9724,7 @@ function ajustarAlturaChat(campo){
 }
 
 function rascunhoChat(campo){
-  const c = state.chatProjeto[state.currentProjectId];
+  const {c} = conversaAberta();
   if(c) c.rascunho = campo.value;
   ajustarAlturaChat(campo);
   const b = document.getElementById('chat-enviar');
@@ -9309,9 +9743,9 @@ function teclaChat(e){
 let chatEnviando = false;
 async function enviarMensagemChat(){
   const pid = state.currentProjectId;
-  const c = state.chatProjeto[pid];
+  const {canal, c} = conversaAberta();
   const campo = document.getElementById('chat-input');
-  if(!pid || !c || !campo || chatEnviando) return;
+  if(!pid || !canal || !c || !campo || chatEnviando) return;
   const texto = campo.value.trim();
   if(!texto) return;
   if(texto.length > CHAT_LIMITE_TEXTO){ showToast(`A mensagem passa de ${CHAT_LIMITE_TEXTO.toLocaleString(LOCALE_APP)} caracteres.`, 'erro'); return; }
@@ -9320,12 +9754,14 @@ async function enviarMensagemChat(){
   if(botao) botao.disabled = true;
   // O clique em Enviar é o gesto que o navegador pede para liberar a permissão.
   pedirPermissaoNotificacao();
-  const {data, error} = await sb.from('project_messages').insert({project_id: pid, body: texto}).select().single();
+  const linha = canal.virtual ? {project_id: pid, body: texto} : {project_id: pid, canal_id: canal.id, body: texto};
+  const {data, error} = await sb.from('project_messages').insert(linha).select().single();
   chatEnviando = false;
   if(error){
     console.error(error);
     if(botao) botao.disabled = false;
     if(/chat_limite/.test(error.message || '')) showToast('Calma: muitas mensagens seguidas. Espere um minuto e envie de novo.', 'erro');
+    else if(/canal_tipo|23503/.test(`${error.message || ''} ${error.code || ''}`)){ showToast('Este canal não existe mais. A lista foi atualizada.', 'erro'); agendarCanais(); }
     else showToast('A mensagem não foi enviada. Confira a conexão e tente de novo.', 'erro');
     return;
   }
@@ -9338,8 +9774,7 @@ async function enviarMensagemChat(){
 }
 
 async function apagarMensagemChat(id){
-  const pid = state.currentProjectId;
-  const c = state.chatProjeto[pid];
+  const {canal, c} = conversaAberta();
   const m = c && c.lista.find(x=>x.id === id);
   if(!m) return;
   const minha = m.authorId === session.user.id;
@@ -9352,7 +9787,300 @@ async function apagarMensagemChat(id){
   }
   const i = c.lista.findIndex(x=>x.id === id);
   if(i >= 0) c.lista[i] = mensagemChatLinha(data);
-  atualizarListaChat(pid, true);
+  atualizarListaChat(canal.id, true);
+}
+
+/* --- criar, editar e apagar canais (dono e editores) --- */
+// O diálogo segue o do "Novo projeto": título, uma linha dizendo o que é, os
+// campos e o erro no próprio diálogo, sem perder o que foi digitado.
+
+const TEXTOS_CANAL = {
+  texto: {criar: 'Novo canal de texto', editar: 'Editar canal', texto: 'Todo mundo do projeto lê e escreve aqui.', rotulo: 'Nome do canal', placeholder: 'Ex: geral, drive, avisos', ok: 'Criar canal', apagar: 'Apagar canal'},
+  voz: {criar: 'Nova sala de voz', editar: 'Editar sala', texto: 'Uma chamada com voz, câmera e tela. Quem está nela aparece embaixo do nome.', rotulo: 'Nome da sala', placeholder: 'Ex: Sala 1, Em reunião', ok: 'Criar sala', apagar: 'Apagar sala'},
+  categoria: {criar: 'Nova categoria', editar: 'Editar categoria', texto: 'Agrupa canais e salas na lista, e dá para recolher.', rotulo: 'Nome da categoria', placeholder: 'Ex: Reuniões', ok: 'Criar categoria', apagar: 'Apagar categoria'}
+};
+let canalRapido = null;
+
+function fecharMenuNovoAberto(){
+  const b = document.querySelector('.novo-menu-btn[aria-expanded="true"]');
+  if(b) alternarMenuNovo(b, true);
+}
+
+function novoCanal(tipo, categoriaId){
+  fecharMenuNovoAberto();
+  abrirCanalRapido({modo: 'criar', tipo, categoriaId: categoriaId || null});
+}
+
+function editarCanal(id){
+  const canal = state.currentProjectId && canalDoProjeto(state.currentProjectId, id);
+  if(!canal) return;
+  abrirCanalRapido({modo: 'editar', tipo: canal.tipo, id: canal.id, categoriaId: canal.categoriaId});
+}
+
+function entrarNaSala(pid, salaId){
+  abrirPreviaChamada(pid, salaId);
+}
+
+// Os outros do mesmo grupo: as categorias entre si, ou os canais e salas da
+// mesma categoria (ou sem categoria).
+function irmaosNoGrupo(pid, ehCategoria, categoriaId, semId){
+  const e = estruturaCanais(pid);
+  const lista = ehCategoria ? e.categorias.map(g=>g.cat)
+    : categoriaId ? ((e.categorias.find(g=>g.cat.id === categoriaId) || {canais: []}).canais) : e.soltos;
+  return lista.filter(c=>c.id !== semId);
+}
+
+function abrirCanalRapido(o){
+  const pid = state.currentProjectId;
+  const p = pid && state.projects.find(x=>x.id === pid);
+  if(!podeEditarCanais(p)) return;
+  canalRapido = {...o, pid, enviando: false};
+  const canal = o.modo === 'editar' ? canalDoProjeto(pid, o.id) : null;
+  const caixa = document.getElementById('canal-rapido');
+  caixa.dataset.modo = o.modo;
+  document.querySelectorAll('#canal-rapido input[name="canal-tipo"]').forEach(r=>{ r.checked = r.value === o.tipo; });
+  // O tipo só se escolhe ao criar canal ou sala; categoria e edição não trocam.
+  document.getElementById('canal-rapido-tipos').hidden = !(o.modo === 'criar' && o.tipo !== 'categoria');
+  document.getElementById('canal-rapido-apagar').hidden = o.modo !== 'editar';
+  const campo = document.getElementById('canal-rapido-campo');
+  campo.value = canal ? canal.nome : '';
+  campo.maxLength = CANAL_LIMITE_NOME;
+  const cats = canaisDoProjeto(pid).filter(c=>c.tipo === 'categoria');
+  const sel = document.getElementById('canal-rapido-categoria');
+  sel.innerHTML = `<option value="">Sem categoria (no topo)</option>${cats.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join('')}`;
+  sel.value = o.categoriaId && cats.some(c=>c.id === o.categoriaId) ? o.categoriaId : '';
+  textosCanalRapido();
+  opcoesPosicaoCanal(true);
+  erroCanalRapido('');
+  atualizarOkCanalRapido();
+  caixa.classList.add('open');
+  const focar = (resta)=>{
+    if(canalRapido === null) return;
+    campo.focus();
+    if(document.activeElement !== campo && resta > 0) setTimeout(()=>focar(resta - 1), 40);
+  };
+  setTimeout(()=>focar(10), 30);
+}
+
+function textosCanalRapido(){
+  const r = canalRapido;
+  if(!r) return;
+  const t = TEXTOS_CANAL[r.tipo];
+  document.getElementById('canal-rapido-titulo').textContent = r.modo === 'editar' ? t.editar : t.criar;
+  document.getElementById('canal-rapido-texto').textContent = t.texto;
+  document.getElementById('canal-rapido-rotulo').textContent = t.rotulo;
+  document.getElementById('canal-rapido-campo').placeholder = t.placeholder;
+  document.getElementById('canal-rapido-apagar').textContent = t.apagar;
+  document.getElementById('canal-rapido-prefixo').innerHTML = r.tipo === 'texto' ? ICONE_CANAL_TEXTO : r.tipo === 'voz' ? ICONE_SALA : '';
+  document.getElementById('canal-rapido').dataset.tipo = r.tipo;
+  document.getElementById('canal-rapido-grupo-categoria').hidden = r.tipo === 'categoria';
+  document.getElementById('canal-rapido-ok').textContent = r.enviando ? (r.modo === 'editar' ? 'Salvando…' : 'Criando…') : (r.modo === 'editar' ? 'Salvar' : t.ok);
+}
+
+function tipoCanalRapido(tipo){
+  if(!canalRapido || canalRapido.modo !== 'criar' || !['texto', 'voz'].includes(tipo)) return;
+  canalRapido.tipo = tipo;
+  textosCanalRapido();
+  opcoesPosicaoCanal(false);
+}
+
+// "Lugar na lista": no topo do grupo ou depois de cada um dos outros. Ao
+// abrir, o canal fica onde está; canal novo, ou que muda de categoria, vai
+// para o fim.
+function opcoesPosicaoCanal(inicial){
+  const r = canalRapido;
+  if(!r) return;
+  const sel = document.getElementById('canal-rapido-posicao');
+  const categoriaId = r.tipo === 'categoria' ? null : (document.getElementById('canal-rapido-categoria').value || null);
+  const irmaos = irmaosNoGrupo(r.pid, r.tipo === 'categoria', categoriaId, r.id);
+  const rotulo = c=>c.tipo === 'texto' ? `#${c.nome}` : c.nome;
+  sel.innerHTML = `<option value="0">No topo</option>${irmaos.map((c, i)=>`<option value="${i + 1}">Depois de ${esc(rotulo(c))}</option>`).join('')}`;
+  let lugar = irmaos.length;
+  if(inicial && r.modo === 'editar'){
+    const atual = irmaosNoGrupo(r.pid, r.tipo === 'categoria', categoriaId, null).findIndex(c=>c.id === r.id);
+    if(atual >= 0) lugar = atual;
+  }
+  sel.value = String(lugar);
+}
+
+function categoriaCanalRapido(){
+  opcoesPosicaoCanal(false);
+}
+
+function fecharCanalRapido(){
+  document.getElementById('canal-rapido').classList.remove('open');
+  canalRapido = null;
+}
+
+function erroCanalRapido(msg){
+  const el = document.getElementById('canal-rapido-erro');
+  el.textContent = msg;
+  el.hidden = !msg;
+  document.getElementById('canal-rapido-campo').setAttribute('aria-invalid', msg ? 'true' : 'false');
+}
+
+function atualizarOkCanalRapido(){
+  const ok = document.getElementById('canal-rapido-ok');
+  ok.disabled = !canalRapido || canalRapido.enviando || !document.getElementById('canal-rapido-campo').value.trim();
+}
+
+function digitarCanalRapido(){
+  erroCanalRapido('');
+  atualizarOkCanalRapido();
+}
+
+function mensagemErroCanal(error){
+  const t = `${error.message || ''} ${error.code || ''}`;
+  if(/canal_limite/.test(t)) return 'O projeto já tem 100 canais e categorias. Apague algum para criar outro.';
+  if(/canal_categoria/.test(t)) return 'Essa categoria não existe mais. Escolha outra.';
+  if(/row-level security|42501/.test(t)) return 'Só o dono e quem edita o projeto mexem nos canais.';
+  if(/check/.test(t)) return 'O nome precisa ter de 1 a 60 caracteres.';
+  return 'Não deu para salvar. Confira a conexão e tente de novo.';
+}
+
+// Põe o canal no lugar escolhido e renumera o grupo (0, 1, 2…). Só grava o
+// que mudou de posição.
+async function reordenarGrupo(pid, canal, categoriaId, lugar){
+  const grupo = irmaosNoGrupo(pid, canal.tipo === 'categoria', categoriaId, canal.id);
+  grupo.splice(Math.max(0, Math.min(lugar, grupo.length)), 0, canal);
+  const mudar = grupo.map((c, i)=>({c, i})).filter(x=>x.c.posicao !== x.i);
+  if(!mudar.length) return true;
+  mudar.forEach(x=>{ x.c.posicao = x.i; });
+  const res = await Promise.all(mudar.map(x=>sb.from('project_channels').update({posicao: x.i}).eq('id', x.c.id)));
+  const falhou = res.find(x=>x.error);
+  if(falhou){ console.error(falhou.error); return false; }
+  return true;
+}
+
+async function salvarCanalRapido(){
+  const r = canalRapido;
+  if(!r || r.enviando) return;
+  const campo = document.getElementById('canal-rapido-campo');
+  const nome = campo.value.trim().slice(0, CANAL_LIMITE_NOME);
+  if(!nome) return;
+  const categoriaId = r.tipo === 'categoria' ? null : (document.getElementById('canal-rapido-categoria').value || null);
+  const lugar = Number(document.getElementById('canal-rapido-posicao').value) || 0;
+  r.enviando = true;
+  textosCanalRapido();
+  atualizarOkCanalRapido();
+  let ordemOk = true;
+  let novo = null;
+  try{
+    if(r.modo === 'criar'){
+      const {data, error} = await sb.from('project_channels').insert({project_id: r.pid, tipo: r.tipo, nome, categoria_id: categoriaId, posicao: 0}).select().single();
+      if(error){ console.error(error); erroCanalRapido(mensagemErroCanal(error)); campo.focus(); return; }
+      novo = canalLinha(data);
+      (canaisPorProjeto[r.pid] = canaisPorProjeto[r.pid] || []).push(novo);
+      ordemOk = await reordenarGrupo(r.pid, novo, categoriaId, lugar);
+    }else{
+      const canal = canalDoProjeto(r.pid, r.id);
+      if(!canal){ erroCanalRapido('Este canal não existe mais.'); return; }
+      const mudou = {};
+      if(nome !== canal.nome) mudou.nome = nome;
+      if(r.tipo !== 'categoria' && categoriaId !== canal.categoriaId) mudou.categoria_id = categoriaId;
+      if(Object.keys(mudou).length){
+        const {data, error} = await sb.from('project_channels').update(mudou).eq('id', canal.id).select().maybeSingle();
+        if(error || !data){
+          if(error) console.error(error);
+          erroCanalRapido(error ? mensagemErroCanal(error) : 'Só o dono e quem edita o projeto mexem nos canais.');
+          campo.focus();
+          return;
+        }
+        Object.assign(canal, canalLinha(data));
+      }
+      ordemOk = await reordenarGrupo(r.pid, canal, categoriaId, lugar);
+    }
+  }finally{
+    if(canalRapido === r){ r.enviando = false; textosCanalRapido(); atualizarOkCanalRapido(); }
+  }
+  if(canalRapido !== r) return;
+  const tipo = r.tipo;
+  fecharCanalRapido();
+  if(!ordemOk) showToast('Salvo, mas a ordem não foi gravada toda. Confira a lista.', 'erro');
+  else showToast(r.modo === 'criar' ? (tipo === 'categoria' ? 'Categoria criada' : tipo === 'voz' ? 'Sala criada' : 'Canal criado') : 'Salvo');
+  if(novo && novo.tipo === 'texto'){ abrirCanal(novo.id); return; }
+  aposMudarCanais();
+}
+
+async function apagarCanalRapido(){
+  const r = canalRapido;
+  if(!r || r.modo !== 'editar') return;
+  const canal = canalDoProjeto(r.pid, r.id);
+  if(!canal) return;
+  fecharCanalRapido();
+  const titulo = canal.tipo === 'categoria' ? `Apagar a categoria ${canal.nome}?` : canal.tipo === 'voz' ? `Apagar a sala ${canal.nome}?` : `Apagar #${canal.nome}?`;
+  const texto = canal.tipo === 'categoria' ? 'Os canais e as salas dela continuam, sem categoria.'
+    : canal.tipo === 'voz' ? 'Quem estiver nela continua na chamada até sair. Não tem como desfazer.'
+    : 'As mensagens deste canal somem para todo mundo do projeto. Não tem como desfazer.';
+  if(!await confirmar(texto, {title: titulo, okLabel: TEXTOS_CANAL[canal.tipo].apagar})){ editarCanal(canal.id); return; }
+  const {data, error} = await sb.from('project_channels').delete().eq('id', canal.id).select('id');
+  if(error || !data || !data.length){
+    if(error) console.error(error);
+    showToast(error ? 'Não deu para apagar. Confira a conexão e tente de novo.' : 'Só o dono e quem edita o projeto apagam canais.', 'erro');
+    return;
+  }
+  const lista = canaisPorProjeto[r.pid] || [];
+  canaisPorProjeto[r.pid] = lista.filter(c=>c.id !== canal.id);
+  if(canal.tipo === 'categoria') canaisPorProjeto[r.pid].forEach(c=>{ if(c.categoriaId === canal.id) c.categoriaId = null; });
+  delete state.chatProjeto[canal.id];
+  showToast(canal.tipo === 'categoria' ? 'Categoria apagada' : canal.tipo === 'voz' ? 'Sala apagada' : 'Canal apagado');
+  aposMudarCanais();
+}
+
+// A estrutura da captura do Discord que originou os canais (RFC 0004, 3.4),
+// com nomes genéricos. null é o #geral ou a sala Geral que já existem, que
+// entram no lugar com o histórico em vez de virar outro canal.
+const MODELO_EQUIPE = [
+  {nome: 'Administração', canais: [['texto', 'avisos']]},
+  {nome: 'Comunicação Geral', canais: [['texto', null], ['texto', 'drive'], ['texto', 'músicas']]},
+  {nome: 'Reuniões', canais: [['voz', null], ['voz', 'Em reunião'], ['voz', 'Sala 1'], ['voz', 'Sala 2'], ['voz', 'Sala 3'], ['voz', 'Sala 4'], ['voz', 'Sala 5'], ['voz', 'Silêncio']]},
+  {nome: 'Intervalo', canais: [['texto', 'intervalo'], ['voz', 'Intervalo']]}
+];
+
+let modeloEmAndamento = false;
+async function usarModeloEquipe(){
+  fecharMenuNovoAberto();
+  const pid = state.currentProjectId;
+  const p = pid && state.projects.find(x=>x.id === pid);
+  if(!podeEditarCanais(p) || modeloEmAndamento) return;
+  if(canaisDoProjeto(pid).some(c=>c.tipo === 'categoria')) return;
+  if(!await confirmar('Cria as categorias Administração, Comunicação Geral, Reuniões e Intervalo, com canais de texto e oito salas de voz. O #geral e a sala Geral entram nelas com o histórico. Dá para renomear e apagar tudo depois.', {title: 'Usar o modelo de equipe?', okLabel: 'Criar os canais', danger: false})) return;
+  modeloEmAndamento = true;
+  try{
+    const textoAtual = canaisDeTexto(pid)[0];
+    const salaAtual = salasDoProjeto(pid)[0];
+    const {data: cats, error} = await sb.from('project_channels')
+      .insert(MODELO_EQUIPE.map((g, i)=>({project_id: pid, tipo: 'categoria', nome: g.nome, posicao: i})))
+      .select();
+    if(error || !cats){
+      console.error(error);
+      showToast(error ? mensagemErroCanal(error) : 'Não deu para criar os canais. Tente de novo em instantes.', 'erro');
+      return;
+    }
+    const idCategoria = (nome)=>{ const c = cats.find(x=>x.nome === nome); return c ? c.id : null; };
+    const novos = [];
+    const mover = [];
+    MODELO_EQUIPE.forEach(g=>{
+      g.canais.forEach(([tipo, nome], i)=>{
+        const existente = nome === null ? (tipo === 'texto' ? textoAtual : salaAtual) : null;
+        if(existente) mover.push({id: existente.id, categoria_id: idCategoria(g.nome), posicao: i});
+        else novos.push({project_id: pid, tipo, nome: nome || (tipo === 'texto' ? 'geral' : 'Geral'), categoria_id: idCategoria(g.nome), posicao: i});
+      });
+    });
+    const res = await Promise.all([
+      sb.from('project_channels').insert(novos),
+      ...mover.map(m=>sb.from('project_channels').update({categoria_id: m.categoria_id, posicao: m.posicao}).eq('id', m.id))
+    ]);
+    await carregarCanais();
+    const falhou = res.find(x=>x.error);
+    if(falhou){
+      console.error(falhou.error);
+      showToast('O modelo ficou pela metade. Confira a lista e crie o que faltou.', 'erro');
+    }else showToast('Canais criados');
+    aposMudarCanais();
+  }finally{
+    modeloEmAndamento = false;
+  }
 }
 
 /* ---------- chamada do projeto (RFC 0002, fase 2) ---------- */
@@ -9366,6 +10094,12 @@ async function apagarMensagemChat(id){
 // Em cada par, só quem tem o menor user id oferece, com quatro transceptores
 // fixos na ordem de CHAMADA_FAIXAS. Ligar e desligar câmera ou tela é
 // replaceTrack, sem renegociar; a Presence diz o que está ligado.
+//
+// Salas de voz (RFC 0004): cada sala é uma chamada separada, todas no mesmo
+// canal do Realtime do projeto. A Presence diz em que sala cada um está, e as
+// conexões só se fazem entre quem está na mesma sala. A separação é do
+// cliente, não controle de acesso: qualquer pessoa do projeto entra em
+// qualquer sala.
 //
 // A janela fica presa ao <body>, fora do #main que o render() reescreve, para
 // a chamada continuar enquanto a pessoa navega pelo app.
@@ -9573,7 +10307,7 @@ function presencaChamada(pid){
     if(!ativas.length) continue;
     const m = ativas.reduce((a, b)=>(Number(b.desde) || 0) > (Number(a.desde) || 0) ? b : a);
     lista.push({
-      uid, sessao: m.sessao.slice(0, 64), desde: Number(m.desde) || Date.now(),
+      uid, sessao: m.sessao.slice(0, 64), desde: Number(m.desde) || Date.now(), sala: salaDaPresenca(pid, m.sala),
       mic: m.mic !== false, ensurdecido: !!m.ensurdecido, camera: !!m.camera, tela: !!m.tela, telaSom: !!(m.tela && m.telaSom)
     });
   }
@@ -9582,8 +10316,35 @@ function presencaChamada(pid){
   lista.sort((a, b)=>(a.desde - b.desde) || (a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0));
   reg.emChamada = lista;
   atualizarFaixaChamada();
+  if(state.currentProjectId === pid) atualizarListaCanais();
   if(previaChamada && previaChamada.pid === pid) desenharQuemEstaNaPrevia();
   if(chamada && chamada.pid === pid) reconciliarChamada();
+}
+
+// A sala que a pessoa diz estar. Quem não diz (a versão anterior do app, ou
+// sem os canais no banco) está na primeira sala do projeto.
+function salaDaPresenca(pid, sala){
+  if(typeof sala === 'string' && CHAMADA_UUID.test(sala)) return sala;
+  const primeira = salasDoProjeto(pid)[0];
+  return primeira ? primeira.id : null;
+}
+
+function nomeDaSala(pid, sala){
+  const s = canalDoProjeto(pid, sala);
+  return s ? s.nome : 'Sala apagada';
+}
+
+// Quem está na mesma sala que eu, e os da sala de alguém.
+function naSala(reg, sala){
+  return reg ? reg.emChamada.filter(p=>p.sala === sala) : [];
+}
+
+// "Sala 1 · Truth" quando o projeto tem mais de uma sala; só "Truth" quando
+// a sala é a única, como era antes.
+function nomeDaChamada(pid, sala){
+  const p = projetoDaChamada(pid);
+  const nome = p ? p.name : 'Projeto';
+  return salasDoProjeto(pid).length > 1 ? `${nomeDaSala(pid, sala)} · ${nome}` : nome;
 }
 
 function atualizarPresencaChamada(){
@@ -9591,7 +10352,7 @@ function atualizarPresencaChamada(){
   const reg = c && canaisChamada[c.pid];
   if(!reg || !reg.assinado) return Promise.resolve();
   return reg.canal.track({
-    sessao: c.sessao, em_chamada: true, desde: c.entrouEm,
+    sessao: c.sessao, em_chamada: true, desde: c.entrouEm, sala: CHAMADA_UUID.test(c.sala || '') ? c.sala : null,
     mic: c.mic && !!c.local.voz, ensurdecido: c.ensurdecido, camera: c.camera, tela: c.tela, telaSom: !!(c.tela && c.local.telaAudio)
   }).catch(e=>console.warn('chamada: presença', e));
 }
@@ -9638,6 +10399,11 @@ function receberSinalChamada(pid, s){
   if(s.para !== session.user.id || s.paraSessao !== c.sessao || s.de === session.user.id) return;
   // SEC-076: sinal de quem não é (mais) do projeto é ignorado.
   if(!permitidoNaChamada(pid, s.de)){ membroNovoNaChamada(pid, s.de); return; }
+  // Sinal de quem a Presence diz estar em outra sala também. Quem ainda não
+  // apareceu na Presence passa: a oferta às vezes chega antes dela.
+  const reg = canaisChamada[pid];
+  const quem = reg && reg.emChamada.find(x=>x.uid === s.de);
+  if(quem && quem.sala !== c.sala) return;
   let par = c.pares.get(s.de);
   if(s.tipo === 'oferta'){
     if(par && par.sessao !== s.deSessao){ fecharParChamada(par); par = null; }
@@ -9687,8 +10453,7 @@ function receberSinalChamada(pid, s){
     // Quem não oferece pediu uma oferta nova: a primeira se perdeu ou a
     // conexão caiu. Só quem tem o id menor oferece.
     if(!(session.user.id < s.de)) return;
-    const reg = canaisChamada[pid];
-    const p = reg && reg.emChamada.find(x=>x.uid === s.de && x.sessao === s.deSessao);
+    const p = reg && reg.emChamada.find(x=>x.uid === s.de && x.sessao === s.deSessao && x.sala === c.sala);
     if(!p) return;
     // Uma conexão recém-recomeçada (pela vigia ou por outro pedido) ainda
     // está negociando: recomeçar de novo agora só atrasaria.
@@ -10063,7 +10828,9 @@ function reconciliarChamada(){
   const reg = c && canaisChamada[c.pid];
   if(!c || !reg || !c.presente) return;
   const eu = session.user.id;
-  const dentro = reg.emChamada;
+  // Só quem está na mesma sala: quem vai para outra sala sai das conexões
+  // como quem sai da chamada.
+  const dentro = naSala(reg, c.sala);
   const estouNaPresenca = dentro.some(p=>p.uid === eu && p.sessao === c.sessao);
   c.inicio = Math.min(c.entrouEm, ...dentro.map(p=>p.desde));
   // "Chamada iniciada" sai de quem não viu ninguém ao entrar, mas só depois
@@ -10072,7 +10839,7 @@ function reconciliarChamada(){
   // fazia as duas se acharem sozinhas e gravarem a linha duas vezes.
   if(c.registrarInicio && estouNaPresenca && Date.now() - c.entrouEm >= 2400){
     c.registrarInicio = false;
-    if(dentro[0] && dentro[0].uid === eu && dentro[0].sessao === c.sessao) registrarLinhaChamada(c.pid, 'chamada_inicio', null);
+    if(dentro[0] && dentro[0].uid === eu && dentro[0].sessao === c.sessao) registrarLinhaChamada(c.pid, c.sala, 'chamada_inicio', null);
   }
   const vistos = new Set();
   for(const p of dentro){
@@ -10365,23 +11132,41 @@ function seletoresDispositivo(atual, acao){
 
 /* --- prévia (Q22) --- */
 
-async function abrirPreviaChamada(pid){
+// Sem sala, entra na primeira do projeto (o "Iniciar chamada" do topo).
+async function abrirPreviaChamada(pid, salaPedida){
   if(!session || !chamadaSuportada()){
     showToast('Este navegador não faz chamadas. Use o Chrome, o Edge, o Firefox ou o Safari atualizados.', 'erro');
     return;
   }
+  const p = projetoDaChamada(pid);
+  if(!p) return;
+  const sala = canalDoProjeto(pid, salaPedida) ? salaPedida : (salasDoProjeto(pid)[0] || {}).id;
+  if(!sala || (canalDoProjeto(pid, sala) || {}).tipo !== 'voz'){
+    showToast('Este projeto não tem sala de voz. Quem edita o projeto cria uma na aba Canais.');
+    return;
+  }
+  // A credencial TURN e a própria chamada pedem alguém do outro lado.
+  if(projectPeople(p).length < 2){
+    showToast('As salas de voz precisam de pelo menos duas pessoas no projeto. Chame alguém pelo Convidar.');
+    return;
+  }
   if(chamada){
-    if(chamada.pid === pid){ chamadaExpandir(); return; }
+    if(chamada.pid === pid){
+      // Outra sala do mesmo projeto: troca direto, como no Discord.
+      if(chamada.sala === sala) chamadaExpandir();
+      else trocarDeSalaChamada(sala);
+      return;
+    }
     if(!await confirmar('Você sai da chamada em que está para entrar nesta.', {title: 'Trocar de chamada?', okLabel: 'Trocar de chamada', danger: false})) return;
     await sairDaChamada();
   }
-  const p = projetoDaChamada(pid);
-  if(!p) return;
   fecharAvisoChamada();
   if(previaChamada) fecharPreviaChamada();
-  previaChamada = {pid, mic: true, camera: false, voz: null, cam: null, erro: '', entrando: false, dispositivos: {mic: '', cam: '', saida: ''}};
+  previaChamada = {pid, sala, mic: true, camera: false, voz: null, cam: null, erro: '', entrando: false, dispositivos: {mic: '', cam: '', saida: ''}};
   canalChamada(pid);
-  document.getElementById('chamada-previa-titulo').textContent = `Entrar na chamada · ${p.name}`;
+  // textContent: o nome da sala e do projeto entram como texto puro.
+  const varias = salasDoProjeto(pid).length >= 2;
+  document.getElementById('chamada-previa-titulo').textContent = varias ? `Entrar em ${nomeDaSala(pid, sala)} · ${p.name}` : `Entrar na chamada · ${p.name}`;
   desenharPreviaChamada();
   document.getElementById('chamada-previa').classList.add('open');
   // O clique em "Iniciar chamada" ou "Entrar" é o gesto que libera o pedido
@@ -10512,11 +11297,13 @@ function desenharQuemEstaNaPrevia(){
   const el = document.getElementById('ch-previa-quem');
   if(!pr || !el) return;
   const reg = canaisChamada[pr.pid];
-  const na = reg ? reg.emChamada : [];
+  const na = naSala(reg, pr.sala);
+  const varias = salasDoProjeto(pr.pid).length > 1;
+  const onde = varias ? `em ${nomeDaSala(pr.pid, pr.sala)}` : 'na chamada';
   if(reg && reg.erro){ el.textContent = 'O canal da chamada não abriu. Se é a primeira chamada do app, falta rodar o supabase/chamadas.sql no Supabase.'; return; }
-  if(!na.length){ el.textContent = 'Ninguém na chamada ainda. Quem estiver com o app aberto recebe um aviso quando você entrar.'; return; }
+  if(!na.length){ el.textContent = `Ninguém ${onde} ainda. Quem estiver com o app aberto recebe um aviso quando você entrar.`; return; }
   const nomes = na.map(p=>nomeNaChamada(pr.pid, p.uid));
-  el.textContent = `${listaDeNomes(nomes)} ${na.length === 1 ? 'está' : 'estão'} na chamada.`;
+  el.textContent = `${listaDeNomes(nomes)} ${na.length === 1 ? 'está' : 'estão'} ${onde}.`;
 }
 
 function fecharPreviaChamada(){
@@ -10579,20 +11366,22 @@ async function entrarNaChamada(){
   const falhar = (msg)=>{ pr.entrando = false; pr.erro = msg; desenharPreviaChamada(); };
   if(!pronto) return falhar('O canal da chamada não abriu. Confira a conexão. Se é a primeira chamada do app, falta rodar o supabase/chamadas.sql no Supabase.');
   const eu = session.user.id;
-  if(reg.emChamada.some(p=>p.uid === eu)) return falhar('Você já está nesta chamada em outra aba ou aparelho.');
+  // Uma conta fica em uma sala por vez no projeto: a Presence tem uma chave
+  // por pessoa.
+  if(reg.emChamada.some(p=>p.uid === eu)) return falhar('Você já está numa chamada deste projeto em outra aba ou aparelho.');
   const ice = await buscarTurnChamada(pr.pid);
   if(previaChamada !== pr) return;
 
   const agora = Date.now();
   chamada = {
-    pid: pr.pid, sessao: novaSessaoChamada(), entrouEm: agora, inicio: agora, presente: false,
+    pid: pr.pid, sala: pr.sala, sessao: novaSessaoChamada(), entrouEm: agora, inicio: agora, presente: false,
     local: {voz: pr.voz, cam: pr.camera ? pr.cam : null, tela: null, telaAudio: null},
     mic: !!(pr.mic && pr.voz), ensurdecido: false, micAntes: true, camera: !!(pr.camera && pr.cam), tela: false,
     dispositivos: Object.assign({}, pr.dispositivos),
     pares: new Map(), participantes: new Map(), iceAdiantado: {}, esperas: {}, vigias: {},
     iceServers: ice.servidores, semTurn: ice.semTurn, turnTimer: null,
     destaque: null, modo: 'expandida', painelDisp: false, volumeAberto: null,
-    registrarInicio: reg.emChamada.length === 0
+    registrarInicio: naSala(reg, pr.sala).length === 0
   };
   // As faixas passam da prévia para a chamada; a prévia não para elas.
   pr.voz = null; pr.cam = null;
@@ -10619,11 +11408,14 @@ async function entrarNaChamada(){
   safeRerender();
 }
 
-// O primeiro a entrar grava "Chamada iniciada" no chat, que chega como aviso
-// a quem está com o app aberto; o último a sair grava a duração.
-function registrarLinhaChamada(pid, kind, duracao){
+// O primeiro a entrar numa sala grava "Chamada iniciada" no canal dela, que
+// chega como aviso a quem está com o app aberto; o último a sair grava a
+// duração. Sem os canais no banco, vai sem canal e cai no chat, como antes.
+function registrarLinhaChamada(pid, sala, kind, duracao){
   if(chatSemTabela) return;
-  sb.from('project_messages').insert({project_id: pid, kind, body: '', duracao_seg: duracao})
+  const linha = {project_id: pid, kind, body: '', duracao_seg: duracao};
+  if(!canaisSemTabela && CHAMADA_UUID.test(sala || '')) linha.canal_id = sala;
+  sb.from('project_messages').insert(linha)
     .then(({error})=>{ if(error) console.warn('chamada: linha no chat', error); });
 }
 
@@ -10678,14 +11470,53 @@ async function sairDaChamada(opts){
   const audios = document.getElementById('chamada-audios');
   if(audios) audios.remove();
   const reg = canaisChamada[c.pid];
-  const restantes = reg ? reg.emChamada.filter(p=>!(p.uid === session.user.id && p.sessao === c.sessao)) : [];
+  const restantes = naSala(reg, c.sala).filter(p=>!(p.uid === session.user.id && p.sessao === c.sessao));
   if(reg && reg.assinado){ try{ await reg.canal.untrack(); }catch(e){} }
-  if(c.presente && !restantes.length) registrarLinhaChamada(c.pid, 'chamada_fim', Math.round((Date.now() - c.inicio) / 1000));
+  if(c.presente && !restantes.length) registrarLinhaChamada(c.pid, c.sala, 'chamada_fim', Math.round((Date.now() - c.inicio) / 1000));
   if(!o.silencioso) tocarSomChamada('sair');
   if(o.aviso) showToast(o.aviso, 'erro');
   sincronizarCanaisChamada();
   atualizarFaixaChamada();
   if(session) safeRerender();
+}
+
+// Troca de sala sem sair da chamada (Q11 da RFC 0004): fecha as conexões da
+// sala antiga, grava "Chamada encerrada" nela se a pessoa era a última e
+// entra na nova com uma sessão nova, para um sinal atrasado da sala antiga
+// não se misturar. Microfone, câmera e tela seguem como estavam.
+async function trocarDeSalaChamada(sala){
+  const c = chamada;
+  if(!c || c.sala === sala || c.trocando) return;
+  if((canalDoProjeto(c.pid, sala) || {}).tipo !== 'voz') return;
+  c.trocando = true;
+  const reg = canaisChamada[c.pid];
+  const eu = session.user.id;
+  const restantes = naSala(reg, c.sala).filter(p=>!(p.uid === eu && p.sessao === c.sessao));
+  if(c.presente && !restantes.length) registrarLinhaChamada(c.pid, c.sala, 'chamada_fim', Math.round((Date.now() - c.inicio) / 1000));
+  clearTimeout(c.timerInicio);
+  Object.values(c.esperas).forEach(clearTimeout);
+  c.esperas = {};
+  for(const par of [...c.pares.values()]) fecharParChamada(par);
+  c.participantes.clear();
+  c.vigias = {};
+  c.iceAdiantado = {};
+  c.destaque = null;
+  for(const k of Object.keys(chamadaVideos)) if(!k.startsWith(`${eu}:`)) delete chamadaVideos[k];
+  const agora = Date.now();
+  c.sala = sala;
+  c.sessao = novaSessaoChamada();
+  c.entrouEm = agora;
+  c.inicio = agora;
+  c.registrarInicio = naSala(reg, sala).length === 0;
+  tocarSomChamada('entrar');
+  anunciarNaChamada(`Você entrou em ${nomeDaSala(c.pid, sala)}`);
+  await atualizarPresencaChamada();
+  c.trocando = false;
+  if(chamada !== c) return;
+  if(c.registrarInicio) c.timerInicio = setTimeout(()=>{ if(chamada === c) reconciliarChamada(); }, 2500);
+  presencaChamada(c.pid);
+  desenharChamada();
+  safeRerender();
 }
 
 function chamadaSair(){ sairDaChamada(); }
@@ -11283,8 +12114,7 @@ function prepararJanelaFlutuante(win){
   if(tema !== null) d.documentElement.setAttribute('data-theme', tema);
   d.documentElement.lang = document.documentElement.lang || 'pt-BR';
   d.body.className = `${document.body.className} corpo-flutuante`;
-  const p = projetoDaChamada(chamada.pid);
-  d.title = `Chamada · ${p ? p.name : 'Projeto'}`;
+  d.title = `Chamada · ${nomeDaChamada(chamada.pid, chamada.sala)}`;
 }
 
 // Os onclick do HTML da chamada rodam no escopo global da janela onde o
@@ -11345,9 +12175,10 @@ function desenharAvisoFlutuante(){
   let el = document.getElementById('chamada-na-flutuante');
   if(!janelaFlutuante || !chamada){ if(el) el.remove(); return; }
   const p = projetoDaChamada(chamada.pid);
+  const nome = p ? nomeDaChamada(chamada.pid, chamada.sala) : 'Chamada';
   const html = `
     <span class="ch-ponto" aria-hidden="true"></span>
-    <span class="ch-na-flutuante-texto"><strong>${esc(p ? p.name : 'Chamada')}</strong><span>Na janela flutuante · <span class="ch-tempo"></span></span></span>
+    <span class="ch-na-flutuante-texto"><strong>${esc(nome)}</strong><span>Na janela flutuante · <span class="ch-tempo"></span></span></span>
     <button type="button" class="ch-na-flutuante-btn" id="ch-btn-trazer" onclick="chamadaTrazerParaPagina()">Trazer para cá</button>`;
   if(!el){
     el = document.createElement('div');
@@ -11357,6 +12188,12 @@ function desenharAvisoFlutuante(){
     document.body.appendChild(el);
     el.innerHTML = html;
   }else if(!el.querySelector('#ch-btn-trazer')) el.innerHTML = html;
+  else{
+    // Trocar de sala muda o nome; o botão fica, para não perder o foco.
+    const forte = el.querySelector('.ch-na-flutuante-texto strong');
+    if(forte && forte.textContent !== nome) forte.textContent = nome;
+  }
+  try{ janelaFlutuante.win.document.title = `Chamada · ${nome}`; }catch(e){}
 }
 
 function chamadaVoltarParaAba(){
@@ -11666,7 +12503,8 @@ function desenharChamada(){
   raiz.classList.toggle('via-ponteiro', chamadaViaPonteiro);
   if(janelaFlutuante && doc !== document) janelaFlutuante.raiz = raiz;
   const p = projetoDaChamada(c.pid);
-  const nomeProjeto = p ? p.name : 'Projeto';
+  // Com várias salas, o nome da sala vem na frente do projeto.
+  const nomeProjeto = p ? nomeDaChamada(c.pid, c.sala) : 'Projeto';
   raiz.dataset.modo = c.modo;
   raiz.setAttribute('aria-label', `Chamada em ${nomeProjeto}`);
   const foco = doc.activeElement && raiz.contains(doc.activeElement) ? doc.activeElement.id : null;
@@ -11797,8 +12635,11 @@ function pararRelogioChamada(){
 
 /* --- no projeto: botão, faixa e aviso --- */
 
+// "Iniciar chamada" entra na primeira sala de voz do projeto (Q14 da RFC
+// 0004). Some com alguém já numa sala: a faixa leva até ela.
 function botaoIniciarChamadaHtml(p){
   if(!chamadaSuportada() || projectPeople(p).length < 2) return '';
+  if(canaisCarregados && !salasDoProjeto(p.id).length) return '';
   const reg = canaisChamada[p.id];
   const ativa = (reg && reg.emChamada.length) || (chamada && chamada.pid === p.id);
   return `<span id="chamada-botao-projeto">${ativa ? '' : `<button class="btn-secondary btn-com-icone" onclick="abrirPreviaChamada('${p.id}')">${iconeChamada('ligar', 14)}Iniciar chamada</button>`}</span>`;
@@ -11809,7 +12650,24 @@ function faixaChamadaHtml(p){
   const na = reg ? reg.emChamada : [];
   const euDentro = chamada && chamada.pid === p.id;
   if(!na.length && !euDentro) return '<div id="chamada-faixa"></div>';
-  const pessoas = euDentro ? [{uid: session.user.id}, ...[...chamada.participantes.values()]] : na;
+  // O nome da sala só aparece quando o projeto tem mais de uma.
+  const varias = salasDoProjeto(p.id).length > 1;
+  const ocupadas = [...new Set(na.map(x=>x.sala).filter(s=>s && CANAL_ID.test(s)))];
+  let pessoas, titulo, acao;
+  if(euDentro){
+    pessoas = [{uid: session.user.id}, ...[...chamada.participantes.values()]];
+    titulo = varias ? `Você está em ${nomeDaSala(p.id, chamada.sala)}` : 'Você está na chamada';
+    acao = `<button class="btn-secondary" onclick="chamadaExpandir()">Abrir a chamada</button>`;
+  }else if(ocupadas.length > 1){
+    pessoas = na;
+    titulo = `Chamadas em ${listaDeNomes(ocupadas.map(s=>nomeDaSala(p.id, s)))}`;
+    acao = state.projectTasksView === 'chat' ? '' : `<button class="btn-primary" onclick="setProjectTasksView('chat')">Ver as salas</button>`;
+  }else{
+    const sala = ocupadas[0] || '';
+    pessoas = na;
+    titulo = varias && sala ? `Chamada em ${nomeDaSala(p.id, sala)}` : 'Chamada em andamento';
+    acao = `<button class="btn-primary btn-com-icone" onclick="abrirPreviaChamada('${p.id}','${sala}')">${iconeChamada('ligar', 14)}Entrar</button>`;
+  }
   const nomes = pessoas.map(x=>x.uid === session.user.id ? 'você' : nomeNaChamada(p.id, x.uid));
   const avatares = pessoas.slice(0, 4).map(x=>`<span data-fala="${x.uid}">${avatarChip(perfilNaChamada(p.id, x.uid), nomeNaChamada(p.id, x.uid)[0])}</span>`).join('')
     + (pessoas.length > 4 ? `<span class="ch-faixa-mais" aria-hidden="true">+${pessoas.length - 4}</span>` : '');
@@ -11817,10 +12675,8 @@ function faixaChamadaHtml(p){
     <div id="chamada-faixa" class="ch-faixa" role="status">
       <span class="ch-ponto" aria-hidden="true"></span>
       <span class="ch-faixa-avatares">${avatares}</span>
-      <span class="ch-faixa-texto"><strong>${euDentro ? 'Você está na chamada' : 'Chamada em andamento'}</strong><span>${esc(listaDeNomes(nomes))}</span></span>
-      ${euDentro
-        ? `<button class="btn-secondary" onclick="chamadaExpandir()">Abrir a chamada</button>`
-        : `<button class="btn-primary btn-com-icone" onclick="abrirPreviaChamada('${p.id}')">${iconeChamada('ligar', 14)}Entrar</button>`}
+      <span class="ch-faixa-texto"><strong>${esc(titulo)}</strong><span>${esc(listaDeNomes(nomes))}</span></span>
+      ${acao}
     </div>`;
 }
 
@@ -11842,12 +12698,15 @@ function avisarChamadaIniciada(m){
   const p = projetoDaChamada(m.projectId);
   if(!p || !chamadaSuportada()) return;
   const quem = nomeAutorChat(p, m.authorId);
+  // Com várias salas, o aviso diz qual; o Entrar vai para ela.
+  const sala = m.canalId && CHAMADA_UUID.test(m.canalId) && canalDoProjeto(p.id, m.canalId) ? m.canalId : '';
+  const ondeSala = sala && salasDoProjeto(p.id).length > 1 ? ` em ${nomeDaSala(p.id, sala)}` : '';
   const silenciado = !!(chatLeitura[p.id] && chatLeitura[p.id].silenciado);
   if(!silenciado){
     tocarSomChamada('chamando');
     if(document.hidden && window.Notification && Notification.permission === 'granted'){
       try{
-        const n = new Notification(`${quem} iniciou uma chamada`, {body: p.name, tag: `chamada-${p.id}`});
+        const n = new Notification(`${quem} iniciou uma chamada${ondeSala}`, {body: p.name, tag: `chamada-${p.id}`});
         n.onclick = ()=>{ window.focus(); n.close(); openProjectView(p.id); };
       }catch(e){}
     }
@@ -11861,10 +12720,10 @@ function avisarChamadaIniciada(m){
     <div class="alarm-banner-icon ch-aviso-icone">${iconeChamada('ligar', 22)}</div>
     <div class="alarm-banner-body">
       <div class="alarm-banner-label">${esc(p.name)}</div>
-      <div class="alarm-banner-title">${esc(quem)} iniciou uma chamada</div>
+      <div class="alarm-banner-title">${esc(`${quem} iniciou uma chamada${ondeSala}`)}</div>
     </div>
     <div class="alarm-banner-actions">
-      <button class="btn-primary" onclick="abrirPreviaChamada('${p.id}')">Entrar</button>
+      <button class="btn-primary" onclick="abrirPreviaChamada('${p.id}','${sala}')">Entrar</button>
       <button class="alarm-banner-dismiss" onclick="fecharAvisoChamada()" title="Agora não" aria-label="Agora não">
         <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
