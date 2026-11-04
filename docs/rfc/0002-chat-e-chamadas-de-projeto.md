@@ -56,7 +56,7 @@ Fechadas em duas rodadas de entrevista em 2026-10-26.
 | Q11 | O dono e qualquer membro aceito, inclusive o visualizador, iniciam e entram. |
 | Q12 | O chat é uma aba "Chat" do projeto, depois de Notas. |
 | Q13 | Até 4.000 caracteres por mensagem e 20 mensagens por minuto por pessoa, as duas regras no banco. |
-| Q14 | As mensagens de quem saiu ficam, e o autor aparece como "Ex-membro". |
+| Q14 | As mensagens de quem saiu ficam, e o autor aparece como "Ex-membro". Revista em 2026-11-04, a pedido do usuário: a mensagem guarda o nome do autor (`supabase/autor_das_mensagens.sql`, preenchido pelo banco) e quem saiu continua aparecendo com esse nome; "Ex-membro" só sobra para mensagem sem nome guardado. |
 | Q15 | A notificação mostra "Ana em Projeto X" e os 100 primeiros caracteres. |
 | Q16 | Cada pessoa pode silenciar o chat de um projeto: o contador continua, a notificação para. |
 | Q17 | Menções, reações, respostas encadeadas, busca e "digitando…" ficam fora. |
@@ -104,8 +104,8 @@ continua.
 **Na tela.** Aba "Chat" depois de Notas, na barra de abas do projeto. O contador de
 não lidas aparece na aba e no projeto, em todo lugar onde a lista de projetos é
 exibida. As mensagens ficam agrupadas por autor e por dia. Quem não divide mais
-projeto com você aparece como "Ex-membro": o perfil some sozinho pelo RLS de
-`profiles` (`shares_project_with`). Uma mensagem apagada vira "mensagem apagada", e
+projeto com você aparece com o nome que a mensagem guardou (Q14, revista); o perfil
+some sozinho pelo RLS de `profiles` (`shares_project_with`). Uma mensagem apagada vira "mensagem apagada", e
 as linhas de chamada aparecem como linhas de sistema.
 
 **Banco: `supabase/chat_projeto.sql`.** Esboço; o arquivo final segue o formato dos

@@ -62,13 +62,14 @@ decididas na implementação, seguindo o padrão do app.
 | Q16 | Na chamada aberta, o botão **Salas** (só com mais de uma sala) abre a lista das salas do projeto com quem está em cada uma, e um toque troca de sala como na Q11. Fechada com o usuário em 2026-11-04. |
 | Q17 | A tela da chamada segue o tema escolhido: fundo do tema com as manchas da página, vidro do tema nos quadros, na barra de controles e nos painéis; vídeo e tela continuam sobre preto. Substitui o palco escuro em todos os temas que a chamada tinha desde a fase 2 da RFC 0002. Pedido do usuário em 2026-11-04. |
 | Q18 | Sala só de voz (ninguém com câmera nem tela): cada pessoa aparece como a foto grande, com o nome embaixo e o selo de microfone fechado no canto da foto; a foto é o botão do volume dela. Com câmera ou tela, volta a grade de quadros. Comparado com a grade de quadros para todos (fotos dos dois em 2026-11-04); dois revisores independentes escolheram as fotos. A troca fica em `layoutSoVoz`, no `script.js`. |
+| Q19 | O botão **Chat**, no alto da chamada aberta, abre à direita um canal de texto do projeto da chamada (o último aberto no projeto, com um seletor para trocar), com as mesmas conversas, o mesmo tempo real e o mesmo envio da aba Canais. Com o chat fechado, o botão mostra as não lidas do projeto. No celular o chat cobre a chamada. Pedido do usuário em 2026-11-04. Não é um chat próprio da sala de voz, que segue fora do escopo. |
 
 ### Fora do escopo
 
 - Canal ou categoria privada (Q2).
 - Arrastar para reordenar (Q8).
 - Silenciar um canal só, menções, tópico do canal, canal de anúncios.
-- Chat de texto dentro da sala de voz.
+- Chat de texto próprio da sala de voz (a chamada abre os canais de texto do projeto, Q19).
 
 ## 3. Proposta
 

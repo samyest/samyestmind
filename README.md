@@ -71,6 +71,11 @@ projeto em `#geral` e a chamada em sala Geral, sem perder histórico. Pode rodar
 ou depois de publicar o código: sem ele, a aba Canais mostra só o `#geral` e a sala
 Geral, como era antes. A última linha do arquivo confere tudo e deve vir toda `true`.
 
+`supabase/autor_das_mensagens.sql` (depois do `chat_projeto.sql`) guarda em cada
+mensagem o nome de quem escreveu, preenchido pelo banco. Assim quem sai do projeto
+continua assinando as próprias mensagens, em vez de virar "Ex-membro". Ele também
+preenche as mensagens que já existem. Sem ele, o app segue mostrando "Ex-membro".
+
 Falta o reforço do SEC-075, que depende do passo 6 da RFC: conferir se uma conta de
 fora do projeto, assinando um canal **público** chamado `chamada:<id do projeto>`,
 recebe os sinais do privado. Se receber, a saída é desligar **Allow public access**

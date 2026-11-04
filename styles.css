@@ -2215,6 +2215,65 @@
   .ch-salas-seta{display:grid;color:var(--ch-suave);transition:transform .2s var(--mov-curva);}
   .ch-salas-btn[aria-expanded="true"] .ch-salas-seta{transform:rotate(180deg);}
 
+  /* Chat dentro da chamada: o botão Chat abre um canal de texto do projeto à
+     direita, num painel do tema, e o palco e os controles ficam à esquerda.
+     No celular o painel cobre a chamada, com o X para voltar. */
+  .ch-chat-btn{position:relative;}
+  .ch-chat-btn.ativo{background:color-mix(in srgb, var(--ch-ativo) 14%, var(--ch-painel));}
+  .ch-chat-selo{
+    min-width:18px;
+    height:18px;
+    padding:0 5px;
+    display:grid;
+    place-items:center;
+    border-radius:9px;
+    background:var(--ch-perigo);
+    color:#fff;
+    font-size:11px;
+    font-weight:700;
+    font-variant-numeric:tabular-nums;
+  }
+  .chamada[data-modo="expandida"].com-chat{
+    display:grid;
+    grid-template-columns:minmax(0, 1fr) min(380px, 40%);
+    grid-template-rows:auto minmax(0, 1fr) auto;
+  }
+  .chamada.com-chat > .ch-topo{grid-column:1;grid-row:1;}
+  .chamada.com-chat > .ch-palco{grid-column:1;grid-row:2;}
+  .chamada.com-chat > .ch-rodape{grid-column:1;grid-row:3;}
+  .chamada.com-chat > .ch-chat{grid-column:2;grid-row:1 / -1;}
+  .ch-chat{
+    display:flex;
+    flex-direction:column;
+    min-width:0;
+    min-height:0;
+    margin:14px 14px 14px 0;
+    border-radius:20px;
+    background:var(--ch-painel);
+    color:var(--text);
+    box-shadow:var(--ch-sombra);
+    overflow:hidden;
+    animation:chChatEntra .22s var(--mov-curva) both;
+  }
+  @keyframes chChatEntra{from{opacity:0;transform:translateX(12px);}}
+  .ch-chat-topo{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:56px;padding:8px 8px 8px 14px;border-bottom:1px solid color-mix(in srgb, var(--ch-texto) 9%, transparent);}
+  .ch-chat-canal{display:flex;align-items:center;gap:7px;min-width:0;margin:0;font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:500;color:var(--ch-texto);}
+  .ch-chat-canal .cn-icone{flex-shrink:0;color:var(--ch-suave);}
+  .ch-chat-canal > span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ch-chat-select{min-width:0;max-width:100%;padding:6px 26px 6px 8px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--ch-texto);font:inherit;cursor:pointer;}
+  .ch-chat-select:hover{background:var(--ch-botao);}
+  .ch-chat-select:focus-visible{outline:2px solid var(--ch-foco);outline-offset:1px;}
+  .ch-chat .ch-chat-fechar{background:transparent;border:0;}
+  .ch-chat .ch-chat-fechar:hover{background:var(--ch-botao);}
+  .ch-chat .chat-lista{flex:1;min-height:0;overflow-y:auto;padding:14px 14px 8px;}
+  .ch-chat .chat-msg-corpo{max-width:84%;}
+  .ch-chat .chat-escrever{padding:10px 12px 12px;}
+  @media (max-width:900px){
+    .chamada[data-modo="expandida"].com-chat{display:flex;}
+    .chamada.com-chat > .ch-chat{position:absolute;inset:0;z-index:8;margin:0;border-radius:0;padding-bottom:env(safe-area-inset-bottom);}
+    .ch-chat-btn > span:not(.ch-chat-selo){display:none;}
+  }
+
   /* Salas de voz do projeto, para trocar sem sair da chamada. */
   .ch-salas{
     position:absolute;

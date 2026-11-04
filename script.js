@@ -8962,7 +8962,10 @@ function chatErroSemTabela(error){
 }
 
 function mensagemChatLinha(r){
-  return {id: r.id, projectId: r.project_id, canalId: r.canal_id || null, authorId: r.author_id, kind: r.kind, body: r.body || '', created: r.created_at, apagada: !!r.apagada_em, duracao: r.duracao_seg};
+  // autorNome: o nome que o banco guardou na mensagem (autor_das_mensagens.sql),
+  // para quem já saiu do projeto continuar assinando o que escreveu.
+  const autorNome = typeof r.autor_nome === 'string' && r.autor_nome.trim() ? r.autor_nome.trim().slice(0, 80) : null;
+  return {id: r.id, projectId: r.project_id, canalId: r.canal_id || null, authorId: r.author_id, autorNome, kind: r.kind, body: r.body || '', created: r.created_at, apagada: !!r.apagada_em, duracao: r.duracao_seg};
 }
 
 function canalLinha(r){
@@ -9225,11 +9228,19 @@ async function carregarChatCanal(canal, anteriores){
     else { skipEntranceOnce = true; safeRerender(); }
     marcarChatLido();
   }
+  if(chatDaChamadaMostra(canal.id)){
+    if(anteriores) atualizarChatDaChamada(canal.id, true);
+    else montarPainelChat();
+    marcarLidoNaChamada();
+  }
 }
 
+// O botão vem da página do projeto ou do chat da chamada (que pode ser de
+// outro projeto que o da tela).
 function carregarAnterioresChat(canalId){
   const pid = state.currentProjectId;
-  carregarChatCanal(pid && canalDoProjeto(pid, canalId), true);
+  const canal = (pid && canalDoProjeto(pid, canalId)) || (chamada && canalDoProjeto(chamada.pid, canalId));
+  carregarChatCanal(canal, true);
 }
 
 // Canal próprio, ligado só depois que a tabela respondeu, como o das notas.
@@ -9248,7 +9259,7 @@ function ligarRealtimeChat(){
       const c = chave && state.chatProjeto[chave];
       if(c){
         const i = c.lista.findIndex(x=>x.id === m.id);
-        if(i >= 0){ c.lista[i] = m; atualizarListaChat(chave); }
+        if(i >= 0){ c.lista[i] = m; atualizarListaChat(chave); atualizarChatDaChamada(chave); }
       }
       // Uma mensagem apagada sai da contagem de quem ainda não tinha lido.
       if(m.apagada && m.authorId !== session.user.id) agendarContagemChat();
@@ -9264,17 +9275,20 @@ function receberMensagemChat(m){
   if(c && !c.lista.some(x=>x.id === m.id)){
     c.lista.push(m);
     atualizarListaChat(chave);
+    atualizarChatDaChamada(chave);
   }
   if(m.kind === 'chamada_inicio') avisarChamadaIniciada(m);
   if(m.authorId === session.user.id || m.kind !== 'texto' || m.apagada) return;
-  if(chatAberto(chave) && !document.hidden){
+  if((chatAberto(chave) || chatDaChamadaMostra(chave)) && !document.hidden){
     marcarChatLido();
+    marcarLidoNaChamada();
     return;
   }
   if(chave) chatNaoLidasCanal[chave] = (chatNaoLidasCanal[chave] || 0) + 1;
   chatNaoLidas[pid] = (chatNaoLidas[pid] || 0) + 1;
   renderSidebarProjects();
   atualizarContadorAbaChat();
+  atualizarSeloChatDaChamada();
   atualizarListaCanais();
   if(state.view === 'projects') safeRerender();
   notificarMensagemChat(m);
@@ -9293,7 +9307,7 @@ function notificarMensagemChat(m){
   // Com um canal só, o nome dele não diz nada; com vários, vai na frente.
   const corpo = canal && canaisDeTexto(p.id).length > 1 ? `#${canal.nome}: ${trecho}` : trecho;
   try{
-    const n = new Notification(`${nomeAutorChat(p, m.authorId)} em ${p.name}`, {body: corpo, tag: `chat-${canal ? canal.id : p.id}`});
+    const n = new Notification(`${nomeAutorChat(p, m.authorId, m.autorNome)} em ${p.name}`, {body: corpo, tag: `chat-${canal ? canal.id : p.id}`});
     n.onclick = ()=>{
       window.focus();
       n.close();
@@ -9340,6 +9354,13 @@ async function marcarChatLido(){
   if(!pid || document.hidden || chatSemTabela) return;
   const canal = canalAberto(pid);
   if(!canal || !chatAberto(canal.id)) return;
+  await marcarCanalLido(pid, canal);
+}
+
+// O "até onde li" de um canal que está à vista (na página do projeto ou no
+// chat da chamada).
+async function marcarCanalLido(pid, canal){
+  if(!pid || !canal || document.hidden || chatSemTabela) return;
   const c = state.chatProjeto[canal.id];
   if(!c || !c.lista.length) return;
   const ultima = c.lista[c.lista.length - 1].created;
@@ -9351,7 +9372,7 @@ async function marcarChatLido(){
   chatNaoLidasCanal[canal.id] = 0;
   chatNaoLidas[pid] = Math.max(0, (chatNaoLidas[pid] || 0) - tinha);
   leituraCanal[canal.id] = ultima;
-  if(tinha){ renderSidebarProjects(); atualizarListaCanais(); }
+  if(tinha){ renderSidebarProjects(); atualizarListaCanais(); atualizarSeloChatDaChamada(); }
   const {error} = canal.virtual
     ? await sb.from('project_chat_reads').upsert({project_id: pid, user_id: session.user.id, lido_ate: ultima}, {onConflict: 'project_id,user_id'})
     : await sb.from('project_channel_reads').upsert({canal_id: canal.id, project_id: pid, user_id: session.user.id, lido_ate: ultima}, {onConflict: 'canal_id,user_id'});
@@ -9360,7 +9381,7 @@ async function marcarChatLido(){
 }
 
 document.addEventListener('visibilitychange', ()=>{
-  if(!document.hidden) marcarChatLido();
+  if(!document.hidden){ marcarChatLido(); marcarLidoNaChamada(); }
 });
 
 async function alternarSilencioChat(){
@@ -9383,11 +9404,14 @@ async function alternarSilencioChat(){
   showToast(silenciado ? 'Projeto silenciado: o contador continua, a notificação para' : 'Notificações do projeto ligadas');
 }
 
-function nomeAutorChat(p, authorId){
+function nomeAutorChat(p, authorId, autorNome){
   if(authorId && authorId === session.user.id) return 'Você';
-  // Quem não divide mais projeto com você some do RLS de profiles e daqui.
+  // Quem ainda está no projeto aparece com o nome de agora. Quem saiu some do
+  // RLS de profiles e daqui, e fica o nome que a mensagem guardou; sem ele
+  // (mensagem de antes do autor_das_mensagens.sql, ou perfil sem nome),
+  // "Ex-membro".
   const pessoa = authorId && projectPeople(p).find(pe=>pe.id === authorId);
-  return pessoa ? pessoa.label : 'Ex-membro';
+  return pessoa ? pessoa.label : (autorNome || 'Ex-membro');
 }
 
 function perfilAutorChat(p, authorId){
@@ -9459,7 +9483,7 @@ function renderListaChat(p, c, canal){
     ultimaHora = t;
     // nomeAutorChat diz "Você" para a própria conta (serve à notificação);
     // no balão vai o nome do perfil, o mesmo que os outros veem.
-    const nome = minha ? (getUserName() || 'Você') : nomeAutorChat(p, m.authorId);
+    const nome = minha ? (getUserName() || 'Você') : nomeAutorChat(p, m.authorId, m.autorNome);
     const podeApagar = !m.apagada && (isOwner || minha);
     // O horário é de cada mensagem e vai dentro do balão; em cima do grupo
     // fica só o nome, ao lado da foto.
@@ -9763,16 +9787,21 @@ function teclaChat(e){
 }
 
 let chatEnviando = false;
-async function enviarMensagemChat(){
-  const pid = state.currentProjectId;
+function enviarMensagemChat(){
   const {canal, c} = conversaAberta();
-  const campo = document.getElementById('chat-input');
+  return enviarNoCanal(state.currentProjectId, canal, c, 'chat-input', 'chat-enviar');
+}
+
+// Envia o que está no campo para um canal: o da página do projeto
+// (chat-input) ou o do chat da chamada (ch-chat-input).
+async function enviarNoCanal(pid, canal, c, idCampo, idBotao){
+  const campo = document.getElementById(idCampo);
   if(!pid || !canal || !c || !campo || chatEnviando) return;
   const texto = campo.value.trim();
   if(!texto) return;
   if(texto.length > CHAT_LIMITE_TEXTO){ showToast(`A mensagem passa de ${CHAT_LIMITE_TEXTO.toLocaleString(LOCALE_APP)} caracteres.`, 'erro'); return; }
   chatEnviando = true;
-  const botao = document.getElementById('chat-enviar');
+  const botao = document.getElementById(idBotao);
   if(botao) botao.disabled = true;
   // O clique em Enviar é o gesto que o navegador pede para liberar a permissão.
   pedirPermissaoNotificacao();
@@ -9789,14 +9818,19 @@ async function enviarMensagemChat(){
   }
   c.rascunho = '';
   c.doFim = 0;
-  const atual = document.getElementById('chat-input');
+  const atual = document.getElementById(idCampo);
   if(atual){ atual.value = ''; ajustarAlturaChat(atual); atual.focus(); }
   receberMensagemChat(mensagemChatLinha(data));
   marcarChatLido();
+  marcarLidoNaChamada();
 }
 
+// A mensagem pode estar na conversa da página ou na do chat da chamada:
+// procura nas conversas carregadas.
 async function apagarMensagemChat(id){
-  const {canal, c} = conversaAberta();
+  const achada = Object.entries(state.chatProjeto).find(([, conv])=>conv && conv.lista.some(x=>x.id === id));
+  const canal = achada ? {id: achada[0]} : null;
+  const c = achada ? achada[1] : null;
   const m = c && c.lista.find(x=>x.id === id);
   if(!m) return;
   const minha = m.authorId === session.user.id;
@@ -9810,6 +9844,7 @@ async function apagarMensagemChat(id){
   const i = c.lista.findIndex(x=>x.id === id);
   if(i >= 0) c.lista[i] = mensagemChatLinha(data);
   atualizarListaChat(canal.id, true);
+  atualizarChatDaChamada(canal.id, true);
 }
 
 /* --- criar, editar e apagar canais (dono e editores) --- */
@@ -10191,7 +10226,9 @@ const ICONES_CHAMADA = {
   volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/>',
   volumeOff: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/>',
   flutuar: '<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="11" width="7" height="6" rx="1"/>',
-  seta: '<polyline points="6 9 12 15 18 9"/>'
+  seta: '<polyline points="6 9 12 15 18 9"/>',
+  chat: '<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>',
+  fechar: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'
 };
 
 function iconeChamada(nome, tam){
@@ -11673,7 +11710,11 @@ function escolhaTelaSalva(){
     fonte: FONTES_TELA[e.fonte] ? e.fonte : 'monitor',
     qualidade: QUALIDADES_TELA[e.qualidade] ? e.qualidade : '1080',
     som: e.som !== false,
-    flutuante: e.flutuante !== false
+    // Levar a chamada para a janela flutuante junto com a transmissão: vem
+    // desligado. Dentro do samyest a chamada fica na página; a flutuante abre
+    // sozinha quando a pessoa sai da aba. Chave nova, para a escolha antiga
+    // (que vinha ligada) não valer mais.
+    flutuanteJunto: e.flutuanteJunto === true
   };
 }
 
@@ -11702,7 +11743,7 @@ function escolherTela(campo, valor){
   if(campo === 'fonte' && FONTES_TELA[valor]) c.escolhaTela.fonte = valor;
   else if(campo === 'qualidade' && QUALIDADES_TELA[valor]) c.escolhaTela.qualidade = valor;
   else if(campo === 'som') c.escolhaTela.som = !!valor;
-  else if(campo === 'flutuante') c.escolhaTela.flutuante = !!valor;
+  else if(campo === 'flutuante') c.escolhaTela.flutuanteJunto = !!valor;
   else return;
   try{ localStorage.setItem('chamadaTela', JSON.stringify(c.escolhaTela)); }catch(e){}
   desenharChamada();
@@ -11757,7 +11798,7 @@ function escolhaTelaHtml(){
         </label>
         ${janelaFlutuanteSuportada() ? `<label class="ch-som">
           <span class="ch-som-texto"><span>Janela flutuante</span><span class="ch-dialogo-dica">A chamada fica por cima dos outros programas enquanto você transmite.</span></span>
-          <input type="checkbox" role="switch" class="ch-interruptor" id="ch-tela-flutuante" ${e.flutuante ? 'checked' : ''} onchange="escolherTela('flutuante', this.checked)">
+          <input type="checkbox" role="switch" class="ch-interruptor" id="ch-tela-flutuante" ${e.flutuanteJunto ? 'checked' : ''} onchange="escolherTela('flutuante', this.checked)">
         </label>` : ''}
         <div class="ch-dialogo-acoes">
           <button type="button" class="ch-dialogo-cancelar" id="ch-tela-cancelar" onclick="fecharEscolhaTela()">Cancelar</button>
@@ -11783,7 +11824,7 @@ function transmitirTelaEscolhida(){
   // Como no Meet: quem transmite costuma ir para outro programa, e a chamada
   // vai junto, por cima. Usa o mesmo clique, que é o gesto que o navegador
   // exige para abrir a janela; o pedido da tela já saiu antes.
-  if(e.flutuante && !janelaFlutuante && janelaFlutuanteSuportada()) abrirJanelaFlutuante('tela');
+  if(e.flutuanteJunto && !janelaFlutuante && janelaFlutuanteSuportada()) abrirJanelaFlutuante('tela');
   c.pedindoTela = true;
   const soltar = ()=>{ c.pedindoTela = false; c.telaPedidaAte = Date.now() + 800; };
   pedirTela.then(soltar, soltar);
@@ -12036,6 +12077,199 @@ function painelSalasHtml(c){
     </div>`;
 }
 
+/* --- chat dentro da chamada --- */
+
+// O botão Chat, no alto da chamada aberta, abre à direita um canal de texto
+// do projeto da chamada, como o chat de uma reunião: o último canal aberto
+// no projeto, e um seletor para trocar. Usa as mesmas conversas, o mesmo
+// tempo real e o mesmo envio da aba Canais, com ids próprios (ch-chat-*),
+// porque a página do projeto pode estar atrás com a mesma conversa. O
+// painel é um elemento só, que sobrevive aos redesenhos da chamada: o texto,
+// o cursor e a rolagem ficam onde estavam.
+let painelChatEl = null;
+
+function canalDoChatDaChamada(c){
+  if(!c) return null;
+  const lista = canaisDeTexto(c.pid);
+  return lista.find(x=>x.id === c.chatCanal) || canalAberto(c.pid) || lista[0] || null;
+}
+
+function chatDaChamadaVisivel(){
+  const c = chamada;
+  return !!c && !!c.chatAberto && c.modo === 'expandida' && !janelaFlutuante;
+}
+
+function chatDaChamadaMostra(canalId){
+  if(!chatDaChamadaVisivel()) return false;
+  const canal = canalDoChatDaChamada(chamada);
+  return !!canal && canal.id === canalId;
+}
+
+function chamadaAlternarChat(){
+  const c = chamada;
+  if(!c) return;
+  c.chatAberto = !c.chatAberto;
+  c.painelSalas = false;
+  c.painelDisp = false;
+  if(c.chatAberto && !canaisCarregados && !canaisCarregando){
+    carregarCanais().then(()=>{ if(chamada === c && c.chatAberto) montarPainelChat(); });
+  }
+  if(!c.chatAberto) painelChatEl = null;
+  // O campo pode ainda não existir (mensagens carregando): o foco vai para
+  // ele quando a conversa chegar (montarPainelChat).
+  c.focarChat = c.chatAberto;
+  desenharChamada();
+  if(c.chatAberto){
+    const campo = document.getElementById('ch-chat-input');
+    if(campo){ campo.focus({preventScroll: true}); c.focarChat = false; }
+    marcarLidoNaChamada();
+  }else{
+    const b = document.getElementById('ch-btn-chat');
+    if(b) b.focus();
+  }
+}
+
+function chamadaTrocarCanalChat(id){
+  const c = chamada;
+  if(!c || !CANAL_ID.test(id || '')) return;
+  const canal = canaisDeTexto(c.pid).find(x=>x.id === id);
+  if(!canal) return;
+  c.chatCanal = canal.id;
+  montarPainelChat();
+  marcarLidoNaChamada();
+  const campo = document.getElementById('ch-chat-input');
+  if(campo) campo.focus({preventScroll: true});
+}
+
+// Monta (ou remonta) o conteúdo do painel: o topo com o canal, a lista e o
+// campo. Mensagem nova não passa por aqui: troca só a lista
+// (atualizarChatDaChamada).
+function montarPainelChat(){
+  const c = chamada;
+  if(!c || !c.chatAberto) return null;
+  if(!painelChatEl){
+    painelChatEl = document.createElement('section');
+    painelChatEl.className = 'ch-chat';
+    painelChatEl.setAttribute('aria-label', 'Chat do projeto');
+  }
+  const p = projetoDaChamada(c.pid);
+  const canal = canalDoChatDaChamada(c);
+  const textos = canaisDeTexto(c.pid);
+  const fechar = `<button type="button" class="ch-botao ch-botao-leve ch-chat-fechar" onclick="chamadaAlternarChat()" aria-label="Fechar o chat" title="Fechar o chat">${iconeChamada('fechar', 16)}</button>`;
+  let topo;
+  if(canal && textos.length > 1){
+    const opcoes = textos.map(t=>`<option value="${esc(t.id)}"${t.id === canal.id ? ' selected' : ''}>#${esc(t.nome)}${chatNaoLidasCanal[t.id] ? ` (${chatNaoLidasCanal[t.id]})` : ''}</option>`).join('');
+    topo = `<label class="ch-chat-canal">${ICONE_CANAL_TEXTO}<span class="sr-only">Canal</span><select class="ch-chat-select" onchange="chamadaTrocarCanalChat(this.value)">${opcoes}</select></label>`;
+  }else{
+    topo = `<h3 class="ch-chat-canal">${ICONE_CANAL_TEXTO}<span>${canal ? esc(canal.nome) : 'Chat'}</span></h3>`;
+  }
+  let corpo;
+  const conv = canal && state.chatProjeto[canal.id];
+  if(!p || !canal){
+    corpo = `<div class="chat-lista"><div class="chat-vazio">${canaisCarregados ? '<strong>Nenhum canal de texto.</strong>Quem edita o projeto cria os canais na aba Canais.' : 'Carregando os canais…'}</div></div>`;
+  }else if(!conv){
+    if(!chatCarregando.has(canal.id)) carregarChatCanal(canal);
+    corpo = `<div class="chat-lista" role="status"><div class="chat-vazio">Carregando as mensagens…</div></div>`;
+  }else if(conv.erro){
+    corpo = `<div class="chat-lista"><div class="chat-vazio"><strong>Não deu para carregar as mensagens.</strong>${esc(conv.erro)}</div></div>`;
+  }else{
+    corpo = `
+      <div class="chat-lista" id="ch-chat-lista" role="log" aria-live="polite" aria-label="${esc(`Mensagens de #${canal.nome}`)}" onscroll="rolagemChatDaChamada(this)">${renderListaChat(p, conv, canal)}</div>
+      <form class="chat-escrever" onsubmit="event.preventDefault();enviarChatDaChamada()">
+        <textarea id="ch-chat-input" class="input chat-input" rows="1" maxlength="${CHAT_LIMITE_TEXTO}" placeholder="${esc(`Escreva em #${canal.nome}…`)}" aria-label="${esc(`Mensagem para #${canal.nome}`)}" oninput="rascunhoChatDaChamada(this)" onkeydown="teclaChatDaChamada(event)">${esc(conv.rascunho)}</textarea>
+        <button type="submit" class="btn-primary chat-enviar" id="ch-chat-enviar" aria-label="Enviar mensagem" title="Enviar (Enter)" ${conv.rascunho.trim() ? '' : 'disabled'}>
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </form>`;
+  }
+  painelChatEl.innerHTML = `<div class="ch-chat-topo">${topo}${fechar}</div>${corpo}`;
+  const lista = painelChatEl.querySelector('#ch-chat-lista');
+  if(lista && conv) requestAnimationFrame(()=>{ lista.scrollTop = lista.scrollHeight - lista.clientHeight - (conv.doFimChamada || 0); });
+  const campo = painelChatEl.querySelector('#ch-chat-input');
+  if(campo) requestAnimationFrame(()=>ajustarAlturaChat(campo));
+  // Fora da chamada (ainda não desenhada) o painel entra no próximo desenho.
+  const raiz = document.getElementById('chamada');
+  if(raiz && chatDaChamadaVisivel() && painelChatEl.parentNode !== raiz) raiz.appendChild(painelChatEl);
+  if(campo && c.focarChat && painelChatEl.isConnected){
+    c.focarChat = false;
+    requestAnimationFrame(()=>campo.focus({preventScroll: true}));
+  }
+  return painelChatEl;
+}
+
+// Mensagem nova ou apagada: troca só a lista. Quem estava no fim continua no
+// fim; "mostrar anteriores" mantém a mensagem que estava em cima.
+function atualizarChatDaChamada(canalId, manterTopo){
+  if(!chatDaChamadaMostra(canalId)) return;
+  const lista = document.getElementById('ch-chat-lista');
+  const conv = state.chatProjeto[canalId];
+  const p = projetoDaChamada(chamada.pid);
+  const canal = canalDoChatDaChamada(chamada);
+  if(!lista || !conv || !p || !canal){ montarPainelChat(); return; }
+  const alturaAntes = lista.scrollHeight;
+  const topoAntes = lista.scrollTop;
+  lista.innerHTML = renderListaChat(p, conv, canal);
+  if(manterTopo) lista.scrollTop = topoAntes + (lista.scrollHeight - alturaAntes);
+  else lista.scrollTop = lista.scrollHeight - lista.clientHeight - (conv.doFimChamada || 0);
+}
+
+function rolagemChatDaChamada(lista){
+  const canal = canalDoChatDaChamada(chamada);
+  const conv = canal && state.chatProjeto[canal.id];
+  if(!conv) return;
+  const doFim = lista.scrollHeight - lista.clientHeight - lista.scrollTop;
+  conv.doFimChamada = doFim < 40 ? 0 : doFim;
+}
+
+function rascunhoChatDaChamada(campo){
+  const canal = canalDoChatDaChamada(chamada);
+  const conv = canal && state.chatProjeto[canal.id];
+  if(conv) conv.rascunho = campo.value;
+  ajustarAlturaChat(campo);
+  const b = document.getElementById('ch-chat-enviar');
+  if(b) b.disabled = !campo.value.trim();
+}
+
+function teclaChatDaChamada(e){
+  if(e.key === 'Enter' && !e.shiftKey && !e.isComposing){
+    e.preventDefault();
+    enviarChatDaChamada();
+  }
+}
+
+function enviarChatDaChamada(){
+  const c = chamada;
+  if(!c) return;
+  const canal = canalDoChatDaChamada(c);
+  const conv = canal && state.chatProjeto[canal.id];
+  if(conv) conv.doFimChamada = 0;
+  return enviarNoCanal(c.pid, canal, conv, 'ch-chat-input', 'ch-chat-enviar');
+}
+
+function marcarLidoNaChamada(){
+  if(!chatDaChamadaVisivel()) return;
+  const canal = canalDoChatDaChamada(chamada);
+  if(canal) marcarCanalLido(chamada.pid, canal);
+}
+
+// O número de não lidas do projeto no botão Chat (com o chat fechado), sem
+// redesenhar a chamada.
+function seloChatHtml(c){
+  const n = !c.chatAberto ? (chatNaoLidas[c.pid] || 0) : 0;
+  return n ? `<span class="ch-chat-selo" aria-hidden="true">${rotuloNaoLidas(n)}</span>` : '';
+}
+
+function atualizarSeloChatDaChamada(){
+  const c = chamada;
+  const b = c && document.getElementById('ch-btn-chat');
+  if(!b) return;
+  const n = !c.chatAberto ? (chatNaoLidas[c.pid] || 0) : 0;
+  const antigo = b.querySelector('.ch-chat-selo');
+  if(antigo) antigo.remove();
+  if(n) b.insertAdjacentHTML('beforeend', seloChatHtml(c));
+  b.setAttribute('aria-label', n ? `Chat do projeto, ${n} não lida${n > 1 ? 's' : ''}` : 'Chat do projeto');
+}
+
 function chamadaDestacar(chave, e){
   if(e) e.stopPropagation();
   const c = chamada;
@@ -12058,13 +12292,10 @@ function chamadaTelaCheia(chave, e){
 function chamadaMinimizar(){
   const c = chamada;
   if(!c || c.modo === 'mini') return;
-  // Minimizar leva a chamada para a janela flutuante fixa, por cima das outras
-  // abas e programas. Sem ela (navegador sem suporte ou pedido recusado), fica
-  // minimizada no canto da página.
-  if(janelaFlutuanteSuportada() && !janelaFlutuante){
-    abrirJanelaFlutuante('minimizar').then(abriu=>{ if(!abriu && chamada === c && c.modo !== 'mini') minimizarNaPagina(c); });
-    return;
-  }
+  // Dentro do samyest, minimizar é o cartão no canto da página. A janela
+  // flutuante, por cima das outras abas e programas, é para quando a pessoa
+  // sai: abre sozinha na troca de aba (ligarFlutuanteAutomatico) ou pelo
+  // botão do cartão, e fecha quando ela volta para a aba.
   minimizarNaPagina(c);
 }
 
@@ -12114,7 +12345,8 @@ document.addEventListener('keydown', (e)=>{
     desenharChamada();
     const b = voltar && document.getElementById(voltar.id);
     if(b) b.focus();
-  }else if(chamada.modo === 'expandida') chamadaMinimizar();
+  }else if(chamada.chatAberto && chatDaChamadaVisivel()) chamadaAlternarChat();
+  else if(chamada.modo === 'expandida') chamadaMinimizar();
 });
 
 // Com a escolha da tela aberta, o Tab fica dentro dela, como nos modais.
@@ -12317,7 +12549,9 @@ function chamadaVoltarParaAba(){
 
 // Troca de aba com a chamada aberta: o navegador oferece abrir a flutuante
 // sozinho (Chrome 134+, e a pessoa pode desligar). Ao voltar para a aba, a
-// que abriu sozinha fecha.
+// flutuante fecha, a que abriu sozinha e a que a pessoa abriu pelo botão:
+// dentro do samyest a chamada fica na página (o cartão no canto, ou aberta
+// se estava aberta), e fora dele fica na flutuante.
 function ligarFlutuanteAutomatico(){
   if(!janelaFlutuanteSuportada() || !('mediaSession' in navigator)) return;
   try{ navigator.mediaSession.setActionHandler('enterpictureinpicture', ()=>abrirJanelaFlutuante('auto')); }catch(e){}
@@ -12330,7 +12564,7 @@ function desligarFlutuanteAutomatico(){
 
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState !== 'visible' || !janelaFlutuante) return;
-  if(janelaFlutuante.auto){ try{ janelaFlutuante.win.close(); }catch(e){} }
+  try{ janelaFlutuante.win.close(); }catch(e){}
   conferirJanelaFlutuante();
 });
 window.addEventListener('focus', ()=>conferirJanelaFlutuante());
@@ -12656,7 +12890,7 @@ function desenharChamada(){
   travarAppAtrasDaChamada();
   const doc = docChamada();
   let raiz = doc.getElementById('chamada');
-  if(!c){ if(raiz) raiz.remove(); return; }
+  if(!c){ painelChatEl = null; if(raiz) raiz.remove(); return; }
   if(!raiz){
     raiz = doc.createElement('section');
     raiz.id = 'chamada';
@@ -12744,7 +12978,7 @@ function desenharChamada(){
     const sala = canalDoProjeto(c.pid, c.sala);
     const nomeSala = sala ? sala.nome : (p ? p.name : 'Chamada');
     const salas = salasDoProjeto(c.pid);
-    const minimizar = janelaFlutuanteSuportada() ? 'Minimizar para a janela flutuante (Esc)' : 'Minimizar a chamada (Esc)';
+    const minimizar = 'Minimizar a chamada (Esc)';
     html = `
       <header class="ch-topo">
         <div class="ch-titulo">
@@ -12756,6 +12990,7 @@ function desenharChamada(){
         </div>
         <div class="ch-topo-acoes">
           ${salas.length > 1 ? `<button type="button" id="ch-btn-salas" class="ch-salas-btn" onclick="chamadaAlternarSalas()" aria-expanded="${!!c.painelSalas}" aria-label="Salas de voz: trocar de sala">${iconeChamada('volume', 16)}<span>Salas</span><span class="ch-salas-seta">${iconeChamada('seta', 14)}</span></button>` : ''}
+          ${doc === document ? `<button type="button" id="ch-btn-chat" class="ch-salas-btn ch-chat-btn ${c.chatAberto ? 'ativo' : ''}" onclick="chamadaAlternarChat()" aria-expanded="${!!c.chatAberto}" aria-label="${!c.chatAberto && chatNaoLidas[c.pid] ? `Chat do projeto, ${chatNaoLidas[c.pid]} não lida${chatNaoLidas[c.pid] > 1 ? 's' : ''}` : 'Chat do projeto'}" title="Chat do projeto">${iconeChamada('chat', 16)}<span>Chat</span>${seloChatHtml(c)}</button>` : ''}
           <button type="button" id="ch-btn-minimizar" class="ch-botao ch-botao-leve" onclick="chamadaMinimizar()" aria-label="${minimizar}" title="${minimizar}">${iconeChamada('minimizar', 18)}</button>
         </div>
         ${c.painelSalas && salas.length > 1 ? painelSalasHtml(c) : ''}
@@ -12771,7 +13006,19 @@ function desenharChamada(){
   const anuncio = doc.getElementById('ch-anuncio');
   const textoAnuncio = anuncio ? anuncio.textContent : '';
   if(doc !== document) exporFuncoesNaJanela(doc.defaultView, html);
+  // O chat da chamada é um elemento só, que sai junto com o innerHTML e volta
+  // logo depois: o texto e o cursor ficam; a rolagem é devolvida à mão.
+  const comChat = c.modo === 'expandida' && chatDaChamadaVisivel();
+  raiz.classList.toggle('com-chat', comChat);
+  const listaChatAntes = painelChatEl && painelChatEl.querySelector('#ch-chat-lista');
+  const rolagemChatAntes = listaChatAntes && listaChatAntes.isConnected ? listaChatAntes.scrollTop : null;
   raiz.innerHTML = html;
+  if(comChat){
+    if(painelChatEl && painelChatEl.firstChild) raiz.appendChild(painelChatEl);
+    else montarPainelChat();
+    const listaChat = painelChatEl && painelChatEl.querySelector('#ch-chat-lista');
+    if(listaChat && rolagemChatAntes !== null) listaChat.scrollTop = rolagemChatAntes;
+  }
   raiz.querySelectorAll('[data-slot]').forEach(slot=>{
     const v = videoDaChamada(slot.dataset.slot);
     if(v) slot.appendChild(v);
@@ -12890,7 +13137,7 @@ function avisarChamadaIniciada(m){
   if(Date.now() - new Date(m.created).getTime() > 2 * 60 * 1000) return;
   const p = projetoDaChamada(m.projectId);
   if(!p || !chamadaSuportada()) return;
-  const quem = nomeAutorChat(p, m.authorId);
+  const quem = nomeAutorChat(p, m.authorId, m.autorNome);
   // Com várias salas, o aviso diz qual; o Entrar vai para ela.
   const sala = m.canalId && CHAMADA_UUID.test(m.canalId) && canalDoProjeto(p.id, m.canalId) ? m.canalId : '';
   const ondeSala = sala && salasDoProjeto(p.id).length > 1 ? ` em ${nomeDaSala(p.id, sala)}` : '';
