@@ -12149,8 +12149,14 @@ function montarPainelChat(){
   if(!c || !c.chatAberto) return null;
   if(!painelChatEl){
     painelChatEl = document.createElement('section');
-    painelChatEl.className = 'ch-chat';
+    // A entrada anima uma vez, ao abrir; depois a classe sai, para o painel
+    // não piscar quando a chamada se redesenha e ele volta para o lugar.
+    painelChatEl.className = 'ch-chat abrindo';
     painelChatEl.setAttribute('aria-label', 'Chat do projeto');
+    const el = painelChatEl;
+    const tirar = ()=>el.classList.remove('abrindo');
+    el.addEventListener('animationend', tirar, {once: true});
+    setTimeout(tirar, 400);
   }
   const p = projetoDaChamada(c.pid);
   const canal = canalDoChatDaChamada(c);
@@ -12275,11 +12281,73 @@ function chamadaDestacar(chave, e){
   const c = chamada;
   if(!c || !chaveDaChamadaExiste(chave)) return;
   // Sozinho na chamada, não há o que destacar (ver desenharChamada).
-  if(ladrilhosChamada().length < 2){ c.destaque = null; return; }
-  c.destaque = c.destaque === chave ? null : chave;
+  const ladrilhos = ladrilhosChamada();
+  if(ladrilhos.length < 2){ c.destaque = null; return; }
+  // Clicar no que está em destaque (escolhido ou a tela que entrou sozinha)
+  // tira do destaque; a tela tirada não volta sozinha.
+  const atual = destaqueDaChamada(c, ladrilhos);
+  if(atual && atual.chave === chave){
+    c.destaque = null;
+    c.semDestaqueAuto = chave;
+  }else c.destaque = chave;
   c.volumeAberto = null;
   desenharChamada();
 }
+
+// O que vai para o destaque: o que a pessoa escolheu ou, sem escolha, a
+// tela que alguém está transmitindo, como no Meet. Com um quadro só, nada.
+function destaqueDaChamada(c, ladrilhos){
+  if(!c || ladrilhos.length < 2) return null;
+  const escolhido = c.destaque && ladrilhos.find(l=>l.chave === c.destaque);
+  if(escolhido) return escolhido;
+  // A tela que a pessoa tirou do destaque parou de ser transmitida: na
+  // próxima transmissão ela volta a entrar sozinha.
+  if(c.semDestaqueAuto && !ladrilhos.some(l=>l.chave === c.semDestaqueAuto)) c.semDestaqueAuto = null;
+  return ladrilhos.find(l=>l.tipo === 'tela' && l.chave !== c.semDestaqueAuto) || null;
+}
+
+// Colunas da grade pelo tamanho do palco, não só pela quantidade: com o chat
+// aberto (palco estreito e alto), 2 quadros um embaixo do outro ficam bem
+// maiores que lado a lado. Escolhe as colunas que dão o maior quadro (16:9,
+// ou 4:3 no celular em pé) e fixa a largura da grade nessa conta.
+function ajustarGradeChamada(raiz){
+  const grade = raiz && raiz.querySelector('.ch-grade');
+  const palco = grade && grade.parentElement;
+  if(!grade || !palco) return;
+  const n = grade.children.length;
+  if(!n) return;
+  const r = palco.getBoundingClientRect();
+  const cs = getComputedStyle(palco);
+  const larg = r.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const alt = r.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  if(larg <= 0 || alt <= 0) return;
+  const vao = parseFloat(getComputedStyle(grade).columnGap) || 12;
+  const emPe = window.matchMedia && window.matchMedia('(max-width:900px) and (orientation:portrait)').matches;
+  const proporcao = emPe ? 4 / 3 : 16 / 9;
+  const larguras = [];
+  for(let cols = 1; cols <= n; cols++){
+    const linhas = Math.ceil(n / cols);
+    larguras[cols] = Math.min((larg - (cols - 1) * vao) / cols, ((alt - (linhas - 1) * vao) / linhas) * proporcao);
+  }
+  // Menos colunas só quando o quadro cresce mais de 10%: com quadros quase do
+  // mesmo tamanho, lado a lado aproveita melhor a largura do palco.
+  const teto = Math.max(...larguras.slice(1));
+  let melhor = 1;
+  for(let cols = n; cols >= 1; cols--){ if(larguras[cols] >= teto * 0.9){ melhor = cols; break; } }
+  const maior = larguras[melhor];
+  grade.style.setProperty('--cols', melhor);
+  grade.style.setProperty('--linhas', Math.ceil(n / melhor));
+  grade.style.width = `${Math.floor(Math.min(larg, maior * melhor + (melhor - 1) * vao))}px`;
+}
+
+let ajusteGradePendente = null;
+window.addEventListener('resize', ()=>{
+  if(ajusteGradePendente) cancelAnimationFrame(ajusteGradePendente);
+  ajusteGradePendente = requestAnimationFrame(()=>{
+    ajusteGradePendente = null;
+    if(chamada && chamada.modo === 'expandida') ajustarGradeChamada(docChamada().getElementById('chamada'));
+  });
+});
 
 function chamadaTelaCheia(chave, e){
   if(e) e.stopPropagation();
@@ -12709,7 +12777,7 @@ function ladrilhoChamadaHtml(l, opts){
   const tela = l.tipo === 'tela';
   const rotulo = tela ? (eu ? 'Sua tela' : `Tela de ${nome}`) : (eu ? `${nome} (você)` : nome);
   const estado = tela ? '' : estadoDoLadrilho(l.uid);
-  const destacado = c.destaque === l.chave;
+  const destacado = (c.destaqueAtual || null) === l.chave;
   // Volume de cada um, só para mim: a voz no ladrilho da pessoa e o som da
   // transmissão no ladrilho da tela, quando ela vem com som.
   const chaveVol = eu || o.mini ? null : tela ? (l.p.telaSom ? `${l.uid}:tela` : null) : l.uid;
@@ -12946,7 +13014,8 @@ function desenharChamada(){
     // Com um quadro só não há o que destacar: o clique esticava a câmera para
     // a largura do palco e parecia zoom.
     const podeDestacar = ladrilhos.length > 1;
-    const destaque = !emFotos && podeDestacar && c.destaque && ladrilhos.find(l=>l.chave === c.destaque);
+    const destaque = !emFotos ? destaqueDaChamada(c, ladrilhos) : null;
+    c.destaqueAtual = destaque ? destaque.chave : null;
     let palco;
     if(emFotos){
       const n = ladrilhos.length;
@@ -13019,6 +13088,7 @@ function desenharChamada(){
     const listaChat = painelChatEl && painelChatEl.querySelector('#ch-chat-lista');
     if(listaChat && rolagemChatAntes !== null) listaChat.scrollTop = rolagemChatAntes;
   }
+  if(c.modo === 'expandida') ajustarGradeChamada(raiz);
   raiz.querySelectorAll('[data-slot]').forEach(slot=>{
     const v = videoDaChamada(slot.dataset.slot);
     if(v) slot.appendChild(v);
