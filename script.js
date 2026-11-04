@@ -3673,6 +3673,7 @@ async function inviteToProject(projectId){
   const p = state.projects.find(x=>x.id===projectId);
   if(p && p.members.some(m=>m.invited_email === email)){showToast('Essa pessoa já foi convidada para este projeto.', 'erro');return;}
   const role = cargoValido(roleSelect.value);
+  if(!cargosParaConvidar(projectId).includes(role)){showToast('Seu cargo não convida para esse cargo.', 'erro');return;}
   const {error} = await sb.from('project_members').insert({
     project_id: projectId,
     invited_email: email,
@@ -3701,6 +3702,7 @@ async function generateInviteCode(projectId){
   const roleSelect = document.getElementById(`code-role-${projectId}`);
   const code = genInviteCode();
   const role = cargoValido(roleSelect.value);
+  if(!cargosParaConvidar(projectId).includes(role)){showToast('Seu cargo não convida para esse cargo.', 'erro');return;}
   const {error} = await sb.from('project_members').insert({
     project_id: projectId,
     invited_email: null,
@@ -3711,11 +3713,14 @@ async function generateInviteCode(projectId){
   if(error){console.error(error);showToast(erroDeCargo(error, role) || 'Não deu para gerar o código. Tente de novo em instantes.', 'erro');return;}
   await loadProjects();
   renderProjectsModal();
+  // Só o dono vê os convites pendentes na lista (SEC-044): quem não é dono
+  // fica com o código no aviso, que dura mais.
+  const dono = (state.projects.find(x=>x.id === projectId) || {}).myRole === 'owner';
   try{
     await navigator.clipboard.writeText(linkDoConvite(code));
     showToast(`Código ${code} gerado e link copiado. Mande para uma pessoa.`);
   }catch(e){
-    showToast(`Código gerado: ${code}. Use "Copiar link" ao lado dele.`);
+    showToast(dono ? `Código gerado: ${code}. Use "Copiar link" ao lado dele.` : `Código gerado: ${code}. Anote e mande para a pessoa: ela entra com ele em "Entrar com código".`);
   }
 }
 
@@ -3765,6 +3770,7 @@ function erroDeCargo(error, role){
   const t = `${error.message || ''} ${error.code || ''}`;
   if(/PGRST202|42883/.test(t)) return 'Mudar cargo precisa do supabase/configuracoes_projeto.sql. Rode ele no Supabase.';
   if(role === 'participante' && /row-level security|42501|check/.test(t)) return 'O cargo Participante precisa do supabase/configuracoes_projeto.sql. Rode ele no Supabase.';
+  if(/row-level security|42501/.test(t)) return 'O banco recusou o convite. Se você não é o dono, confira na aba Cargos se o seu cargo convida, e se o supabase/configuracoes_projeto.sql novo já rodou.';
   if(/cargo_sem_permissao/.test(t)) return 'Só o dono do projeto muda cargos.';
   return '';
 }
@@ -4320,7 +4326,7 @@ function renderProjectPage(){
         </button>
         ${botaoIniciarChamadaHtml(p)}
         <button class="btn-back proj-config-btn" onclick="abrirConfigProjeto('${p.id}')" title="Configurações do projeto" aria-label="Configurações do projeto">${ICONE_ENGRENAGEM}</button>
-        ${isOwner ? `<button class="btn-secondary btn-com-icone" onclick="convidarNoProjeto('${p.id}')"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg>Convidar</button>` : ''}
+        ${podeConvidar(p.id) ? `<button class="btn-secondary btn-com-icone" onclick="convidarNoProjeto('${p.id}')"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg>Convidar</button>` : ''}
         ${canEdit && visao === 'kanban' ? `<button class="btn-secondary" onclick="openColumnModal(null, '${p.id}')">+ Nova coluna</button>` : ''}
         ${mexe ? renderMenuNovo(canEdit) : ''}
       </div>
@@ -4358,13 +4364,33 @@ const SECOES_CONFIG_PROJETO = [
   ['membros', 'Membros', '<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>']
 ];
 
-// As duas permissões de voz de cada cargo (regras de cargo). O dono tem as
-// duas sempre; sem regra salva, vale o padrão: o editor com as duas.
+// As permissões de cada cargo (regras de cargo). O dono tem todas sempre; sem
+// regra salva, vale o padrão: o editor com as três e o participante
+// convidando. Convidar é só para cargo igual ou abaixo do de quem convida.
 const PERMISSOES_VOZ = {
+  convidar: {nome: 'Convidar pessoas', desc: 'Cria convite por email ou por código, para cargo igual ou abaixo do seu.'},
   silenciar: {nome: 'Silenciar outros nas salas', desc: 'Fecha o microfone de alguém na chamada, em todas as salas, até alguém liberar.'},
   mover: {nome: 'Mover e desconectar outros', desc: 'Leva alguém para outra sala de voz ou tira da chamada.'}
 };
-const REGRAS_PADRAO = {editor: ['silenciar', 'mover'], participante: [], viewer: []};
+const REGRAS_PADRAO = {editor: ['convidar', 'silenciar', 'mover'], participante: ['convidar'], viewer: []};
+
+function podeConvidar(pid){
+  return temPermissaoVoz(pid, 'convidar');
+}
+
+// Os cargos que eu posso dar num convite: o meu e os de baixo (o dono, todos).
+function cargosParaConvidar(pid){
+  const p = state.projects.find(x=>x.id === pid);
+  const meu = cargoNoProjeto(p, session.user.id);
+  if(!meu || !podeConvidar(pid)) return [];
+  return CARGOS_DE_MEMBRO.filter(r=>CARGOS[r].nivel <= CARGOS[meu].nivel);
+}
+
+function opcoesDeConvite(pid){
+  const cargos = cargosParaConvidar(pid);
+  const padrao = cargos.includes('editor') ? 'editor' : cargos[0];
+  return cargos.map(r=>`<option value="${r}" ${r === padrao ? 'selected' : ''}>${CARGOS[r].nome}</option>`).join('');
+}
 
 function regrasDoProjeto(p){
   const r = p && p.regras_cargos && typeof p.regras_cargos === 'object' && !Array.isArray(p.regras_cargos) ? p.regras_cargos : {};
@@ -4705,9 +4731,9 @@ function painelCargosProjeto(p){
   };
   return `
     <h3 class="set-painel-titulo">Cargos</h3>
-    <p class="set-painel-desc">${dono ? 'O que cada cargo pode fazer. As permissões das salas de voz você liga e desliga aqui, e valem na hora para todo mundo daquele cargo.' : 'O que cada cargo pode fazer. Só o dono muda as permissões.'}</p>
+    <p class="set-painel-desc">${dono ? 'O que cada cargo pode fazer. Convidar e as permissões das salas de voz você liga e desliga aqui, e valem na hora para todo mundo daquele cargo.' : 'O que cada cargo pode fazer. Só o dono muda as permissões.'}</p>
     <div class="cp-cargos">${['owner', ...CARGOS_DE_MEMBRO].map(bloco).join('')}</div>
-    <p class="cp-nota">Ninguém silencia nem move o dono, e cada pessoa só modera quem tem cargo igual ou abaixo do seu.</p>`;
+    <p class="cp-nota">Cada pessoa só convida para um cargo igual ou abaixo do seu. Ninguém silencia nem move o dono, e cada pessoa só modera quem tem cargo igual ou abaixo do seu.</p>`;
 }
 
 async function alternarRegraCargo(cargo, perm, ligado, input){
@@ -4772,7 +4798,7 @@ function painelMembrosProjeto(p){
   return `
     <div class="set-sub-head">
       <h3 class="set-painel-titulo">Membros</h3>
-      ${dono ? `<button type="button" class="btn-secondary btn-com-icone set-btn-pequeno" onclick="fecharConfigProjeto();convidarNoProjeto('${p.id}')">${ICONE_MAIS}Convidar</button>` : ''}
+      ${podeConvidar(p.id) ? `<button type="button" class="btn-secondary btn-com-icone set-btn-pequeno" onclick="fecharConfigProjeto();convidarNoProjeto('${p.id}')">${ICONE_MAIS}Convidar</button>` : ''}
     </div>
     <p class="set-painel-desc">${dono ? 'Mude o cargo de cada pessoa. Vale na hora, inclusive para quem está com o projeto aberto.' : 'Quem está no projeto e o cargo de cada um. Só o dono muda cargos.'}</p>
     <ul class="cp-membros" role="list">${linhaDono}${linhas}</ul>`;
@@ -5103,11 +5129,11 @@ function renderProjectsModal(){
           </div>
           ${ownerRow}
           ${membersHtml}
-          ${isOwner ? `
+          ${podeConvidar(p.id) ? `
             <div class="invite-row">
-              <input type="email" class="input" id="invite-email-${p.id}" placeholder="Email pra convidar">
-              <select id="invite-role-${p.id}">
-                ${opcoesDeCargo('editor')}
+              <input type="email" class="input" id="invite-email-${p.id}" placeholder="Email pra convidar" aria-label="Email pra convidar para ${esc(p.name)}">
+              <select id="invite-role-${p.id}" aria-label="Cargo de quem for convidado">
+                ${opcoesDeConvite(p.id)}
               </select>
               <button class="btn-secondary" style="flex-shrink:0;padding:0 14px;" onclick="inviteToProject('${p.id}')">Convidar</button>
             </div>
@@ -5117,15 +5143,15 @@ function renderProjectsModal(){
                 <div class="invite-code-title">Código de convite</div>
                 <div class="invite-code-hint">Pra quem já tem login no app.</div>
               </div>
-              <select id="code-role-${p.id}" aria-label="Papel de quem entrar pelo código">
-                ${opcoesDeCargo('editor')}
+              <select id="code-role-${p.id}" aria-label="Cargo de quem entrar pelo código">
+                ${opcoesDeConvite(p.id)}
               </select>
               <button class="btn-secondary" style="flex-shrink:0;padding:0 14px;" onclick="generateInviteCode('${p.id}')">Gerar código</button>
             </div>
-            <button class="btn-danger" style="width:100%;margin-top:10px;" onclick="deleteProject('${p.id}')">Excluir projeto</button>
-          ` : `
-            <button class="btn-danger" style="width:100%;margin-top:12px;" onclick="leaveProject('${p.id}')">Sair do projeto</button>
-          `}
+          ` : ''}
+          ${isOwner
+            ? `<button class="btn-danger" style="width:100%;margin-top:10px;" onclick="deleteProject('${p.id}')">Excluir projeto</button>`
+            : `<button class="btn-danger" style="width:100%;margin-top:12px;" onclick="leaveProject('${p.id}')">Sair do projeto</button>`}
         </div>
       `;
     }).join('');
@@ -13392,6 +13418,9 @@ async function sairDaChamada(opts){
   trocarRelogioFala();
   desligarFlutuanteAutomatico();
   chamada = null;
+  // Saindo da chamada aberta, o app atrás dela volta a responder. Antes ele
+  // ficava inerte (sem clique) até a próxima chamada.
+  travarAppAtrasDaChamada();
   // A próxima chamada começa sem animar a troca dos botões a partir desta.
   for(const id of Object.keys(estadosDosBotoes)) delete estadosDosBotoes[id];
   vozNoBotao = 0;
@@ -14511,6 +14540,114 @@ function minimizarNaPagina(c){
   });
 }
 
+/* --- arrastar a chamada minimizada --- */
+// O cartão da chamada minimizada se arrasta pela tela, pelo vídeo ou pela
+// barra de baixo (os botões continuam botões), e fica onde foi solto. O
+// lugar é guardado no aparelho como a distância até a borda direita e a de
+// baixo, e volta para dentro da tela quando a janela muda de tamanho. Um
+// arrasto não conta como clique: soltar não abre a chamada.
+const MINI_MARGEM = 8;
+let lugarDoMini = null;
+let arrastoMini = null;
+let ignorarCliqueMini = false;
+
+try{
+  const salvo = JSON.parse(localStorage.getItem('chamadaMiniLugar') || 'null');
+  if(salvo && Number.isFinite(salvo.direita) && Number.isFinite(salvo.baixo)) lugarDoMini = {direita: salvo.direita, baixo: salvo.baixo};
+}catch(e){}
+
+// No celular, a barra de baixo do app fica livre.
+function margemDeBaixoDoMini(){
+  return telaDeCelular && telaDeCelular.matches ? 76 : MINI_MARGEM;
+}
+
+function lugarDentroDaTela(lugar, largura, altura){
+  const maxDireita = Math.max(MINI_MARGEM, window.innerWidth - largura - MINI_MARGEM);
+  const maxBaixo = Math.max(margemDeBaixoDoMini(), window.innerHeight - altura - MINI_MARGEM);
+  return {
+    direita: Math.round(Math.min(Math.max(lugar.direita, MINI_MARGEM), maxDireita)),
+    baixo: Math.round(Math.min(Math.max(lugar.baixo, margemDeBaixoDoMini()), maxBaixo))
+  };
+}
+
+function aplicarLugarDoMini(raiz, doc){
+  const usar = !!lugarDoMini && doc === document && chamada && chamada.modo === 'mini';
+  if(!usar){
+    raiz.style.removeProperty('--mini-direita');
+    raiz.style.removeProperty('--mini-baixo');
+    return;
+  }
+  const r = raiz.getBoundingClientRect();
+  const l = lugarDentroDaTela(lugarDoMini, r.width || 340, r.height || 240);
+  raiz.style.setProperty('--mini-direita', `${l.direita}px`);
+  raiz.style.setProperty('--mini-baixo', `${l.baixo}px`);
+}
+
+function iniciarArrastoMini(e){
+  const raiz = e.target.closest && e.target.closest('#chamada');
+  if(!raiz || raiz.dataset.modo !== 'mini' || raiz.classList.contains('na-janela') || janelaFlutuante) return;
+  if(e.button > 0 || arrastoMini) return;
+  // Os botões e campos continuam respondendo ao clique; o alvo transparente do
+  // vídeo (que abre a chamada) é por onde mais se arrasta.
+  if(e.target.closest('button:not(.ch-alvo), select, input, a')) return;
+  const r = raiz.getBoundingClientRect();
+  arrastoMini = {raiz, pointerId: e.pointerId, x: e.clientX, y: e.clientY, r, ativo: false};
+  document.addEventListener('pointermove', moverArrastoMini);
+  document.addEventListener('pointerup', soltarArrastoMini);
+  document.addEventListener('pointercancel', soltarArrastoMini);
+}
+
+function moverArrastoMini(e){
+  const a = arrastoMini;
+  if(!a || e.pointerId !== a.pointerId) return;
+  let dx = e.clientX - a.x, dy = e.clientY - a.y;
+  if(!a.ativo){
+    if(Math.hypot(dx, dy) < 5) return;
+    a.ativo = true;
+    a.raiz.classList.remove('assentando');
+    a.raiz.classList.add('arrastando');
+    try{ a.raiz.setPointerCapture(a.pointerId); }catch(err){}
+  }
+  // O cartão não sai da tela no meio do arrasto.
+  dx = Math.min(Math.max(dx, MINI_MARGEM - a.r.left), window.innerWidth - MINI_MARGEM - a.r.right);
+  dy = Math.min(Math.max(dy, MINI_MARGEM - a.r.top), window.innerHeight - margemDeBaixoDoMini() - a.r.bottom);
+  a.dx = dx;
+  a.dy = dy;
+  a.raiz.style.transform = `translate(${dx}px, ${dy}px)`;
+}
+
+function soltarArrastoMini(e){
+  const a = arrastoMini;
+  if(!a || (e && e.pointerId !== a.pointerId)) return;
+  document.removeEventListener('pointermove', moverArrastoMini);
+  document.removeEventListener('pointerup', soltarArrastoMini);
+  document.removeEventListener('pointercancel', soltarArrastoMini);
+  arrastoMini = null;
+  if(!a.ativo) return;
+  ignorarCliqueMini = true;
+  setTimeout(()=>{ ignorarCliqueMini = false; }, 0);
+  const r = a.raiz.getBoundingClientRect();
+  lugarDoMini = lugarDentroDaTela({direita: window.innerWidth - r.right, baixo: window.innerHeight - r.bottom}, r.width, r.height);
+  try{ localStorage.setItem('chamadaMiniLugar', JSON.stringify(lugarDoMini)); }catch(err){}
+  // Troca o deslocamento do arrasto pelo lugar novo sem pular.
+  a.raiz.classList.remove('arrastando');
+  a.raiz.style.setProperty('--mini-direita', `${lugarDoMini.direita}px`);
+  a.raiz.style.setProperty('--mini-baixo', `${lugarDoMini.baixo}px`);
+  a.raiz.style.transform = '';
+}
+
+document.addEventListener('pointerdown', iniciarArrastoMini);
+document.addEventListener('click', (e)=>{
+  if(ignorarCliqueMini && e.target.closest && e.target.closest('#chamada')){
+    e.stopPropagation();
+    e.preventDefault();
+  }
+}, true);
+window.addEventListener('resize', ()=>{
+  const raiz = document.getElementById('chamada');
+  if(raiz && raiz.dataset.modo === 'mini') aplicarLugarDoMini(raiz, document);
+});
+
 function chamadaExpandir(){
   if(janelaFlutuante){ chamadaVoltarParaAba(); return; }
   const c = chamada;
@@ -15136,6 +15273,7 @@ function desenharChamada(){
   // sala (o nome inteiro fica no title), com uma só vai o projeto.
   const nomeCurto = p && salasDoProjeto(c.pid).length > 1 ? nomeDaSala(c.pid, c.sala) : (p ? p.name : 'Projeto');
   raiz.dataset.modo = c.modo;
+  aplicarLugarDoMini(raiz, doc);
   raiz.setAttribute('aria-label', `Chamada em ${nomeProjeto}`);
   const foco = doc.activeElement && raiz.contains(doc.activeElement) ? doc.activeElement.id : null;
   const ladrilhos = ladrilhosChamada();

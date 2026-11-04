@@ -17,8 +17,10 @@
 --      abas). Editor e visualizador continuam como eram (SEC-085).
 --    - definir_cargo_membro(): o dono muda o cargo de alguém. O UPDATE direto em
 --      project_members continua fechado (SEC-084).
---    - projects.regras_cargos: quais cargos podem silenciar e mover outros nas
---      salas de voz. Só o dono muda (SEC-086).
+--    - projects.regras_cargos: quais cargos podem convidar pessoas e silenciar
+--      e mover outros nas salas de voz. Só o dono muda (SEC-086).
+--    - Convite: além do dono, convida quem o cargo deixa, sempre para cargo
+--      igual ou abaixo do seu (pode_convidar_como, SEC-084).
 --    - projects.ordem_abas: a ordem das abas do projeto, igual para todos. Dono
 --      e editores mudam.
 --    - tem_permissao_voz() e nivel_no_projeto(): usadas pela moderação das
@@ -38,17 +40,8 @@ begin
       check (role in ('editor', 'participante', 'viewer')) not valid;
   end if;
 end $$;
-
--- A mesma policy do rls_correcoes.sql, com o cargo novo na lista.
-drop policy if exists members_insert on public.project_members;
-create policy members_insert on public.project_members
-  for insert to authenticated
-  with check (
-    is_project_owner(project_id)
-    and status = 'pending'
-    and user_id is null
-    and role in ('editor', 'participante', 'viewer')
-  );
+-- A policy de convite (members_insert) fica no bloco 6, depois das funções
+-- que ela usa: além do dono, convida quem tem a permissão do cargo.
 
 
 -- 2. Tarefas: o participante mexe nelas (SEC-085) --------------------------------
@@ -138,10 +131,25 @@ grant execute on function public.definir_cargo_membro(uuid, text) to authenticat
 --    As duas colunas são jsonb de lista fechada. O check usa funções immutable
 --    porque check não aceita subconsulta.
 --
---    regras_cargos: {"editor": ["silenciar", "mover"], "participante": [], ...}
---      Nulo, ou cargo ausente, é o padrão: editor com as duas, os outros sem.
+--    regras_cargos: {"editor": ["convidar", "silenciar", "mover"], "participante": ["convidar"], ...}
+--      Nulo, ou cargo ausente, é o padrão: editor com as três, participante
+--      convidando, visualizador sem nenhuma.
 --    ordem_abas: ["chat", "inicio", "kanban", "calendar", "notes"]
 --      Nulo é a ordem padrão do app. Aba que faltar na lista entra no fim.
+--
+--    "convidar" entrou depois das outras duas. Na primeira vez que este
+--    arquivo roda com ela, as regras já salvas ganham "convidar" no editor e
+--    no participante (o padrão); rodar de novo não desfaz a escolha do dono.
+
+do $$
+begin
+  create temp table if not exists _regras_sem_convidar (v boolean);
+  delete from _regras_sem_convidar;
+  if to_regprocedure('public.regras_cargos_validas(jsonb)') is not null then
+    insert into _regras_sem_convidar
+      select not public.regras_cargos_validas('{"editor": ["convidar"]}'::jsonb);
+  end if;
+end $$;
 
 create or replace function public.regras_cargos_validas(r jsonb)
 returns boolean
@@ -155,8 +163,8 @@ as $$
       select 1 from jsonb_each(r) e
        where e.key not in ('editor', 'participante', 'viewer')
           or jsonb_typeof(e.value) <> 'array'
-          or jsonb_array_length(e.value) > 2
-          or not (e.value <@ '["silenciar", "mover"]'::jsonb)
+          or jsonb_array_length(e.value) > 3
+          or not (e.value <@ '["convidar", "silenciar", "mover"]'::jsonb)
     )
   );
 $$;
@@ -185,6 +193,20 @@ alter table public.projects add constraint projects_regras_cargos_validas
 alter table public.projects drop constraint if exists projects_ordem_abas_valida;
 alter table public.projects add constraint projects_ordem_abas_valida
   check (public.ordem_abas_valida(ordem_abas));
+
+-- Só na primeira vez com "convidar" (veja acima): as regras já salvas ganham o
+-- padrão dela. Cargo sem lista salva já usa o padrão.
+update public.projects p
+   set regras_cargos = p.regras_cargos
+     || case when jsonb_typeof(p.regras_cargos -> 'editor') = 'array'
+             then jsonb_build_object('editor', (p.regras_cargos -> 'editor') || '["convidar"]'::jsonb)
+             else '{}'::jsonb end
+     || case when jsonb_typeof(p.regras_cargos -> 'participante') = 'array'
+             then jsonb_build_object('participante', (p.regras_cargos -> 'participante') || '["convidar"]'::jsonb)
+             else '{}'::jsonb end
+ where p.regras_cargos is not null
+   and exists (select 1 from _regras_sem_convidar where v);
+delete from _regras_sem_convidar;
 
 -- O editor altera projects pela policy de sempre (projects_update). As regras
 -- de cargo ficam só com o dono: sem isto, o editor daria a si mesmo poder de
@@ -262,25 +284,64 @@ as $$
       when dono then true
       when cargo is null then false
       when regras ? cargo then (regras -> cargo) ? p_permissao
-      else cargo = 'editor' and p_permissao in ('silenciar', 'mover')
+      when cargo = 'editor' then p_permissao in ('convidar', 'silenciar', 'mover')
+      when cargo = 'participante' then p_permissao = 'convidar'
+      else false
     end
     from eu
   ), false)
-  and p_permissao in ('silenciar', 'mover');
+  and p_permissao in ('convidar', 'silenciar', 'mover');
 $$;
 
 revoke all on function public.tem_permissao_voz(uuid, text) from public, anon;
 grant execute on function public.tem_permissao_voz(uuid, text) to authenticated;
 
+-- Quem chama pode criar convite para este cargo: é o dono, ou tem a
+-- permissão "convidar" e o cargo do convite é igual ou abaixo do seu. Usada
+-- pela policy de convite logo abaixo.
+create or replace function public.pode_convidar_como(p_project_id uuid, p_cargo text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select p_cargo in ('editor', 'participante', 'viewer')
+     and tem_permissao_voz(p_project_id, 'convidar')
+     and (case p_cargo when 'editor' then 2 when 'participante' then 1 else 0 end)
+         <= coalesce(nivel_no_projeto(p_project_id, auth.uid()), -1);
+$$;
 
--- 6. Atualiza o cache de esquema --------------------------------------------------
+revoke all on function public.pode_convidar_como(uuid, text) from public, anon;
+grant execute on function public.pode_convidar_como(uuid, text) to authenticated;
+
+
+-- 6. Convites: o dono e quem o cargo deixa (SEC-084) ----------------------------
+--    A policy do rls_correcoes.sql, com o participante na lista de cargos e a
+--    permissão de convidar. O convite continua nascendo pendente e sem
+--    usuário; quem preenche o user_id é o convidado ao aceitar. Ver e apagar
+--    convites pendentes continua só com o dono e o convidado (SEC-044).
+
+drop policy if exists members_insert on public.project_members;
+create policy members_insert on public.project_members
+  for insert to authenticated
+  with check (
+    status = 'pending'
+    and user_id is null
+    and role in ('editor', 'participante', 'viewer')
+    and (is_project_owner(project_id) or pode_convidar_como(project_id, role))
+  );
+
+
+-- 7. Atualiza o cache de esquema --------------------------------------------------
 
 notify pgrst, 'reload schema';
 
 
--- 7. Verificação ------------------------------------------------------------------
+-- 8. Verificação ------------------------------------------------------------------
 --    Deve retornar UMA linha com tudo true:
---      cargo     — a policy de convite aceita participante e o check existe
+--      cargo     — a policy de convite aceita participante e quem tem a
+--                  permissão de convidar, e o check existe
 --      tarefas   — as três policies de escrita usam mexe_em_tarefas
 --      funcao    — definir_cargo_membro é security definer com search_path, e
 --                  authenticated continua sem UPDATE em project_members.role
@@ -291,7 +352,8 @@ notify pgrst, 'reload schema';
 select
   exists (select 1 from pg_policies
            where schemaname = 'public' and tablename = 'project_members'
-             and policyname = 'members_insert' and with_check like '%participante%')
+             and policyname = 'members_insert' and with_check like '%participante%'
+             and with_check like '%pode_convidar_como%')
   and exists (select 1 from pg_constraint where conname = 'project_members_role_valido') as cargo,
   (select count(*) = 3 from pg_policies
     where schemaname = 'public' and tablename = 'tasks'

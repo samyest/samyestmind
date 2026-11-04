@@ -320,7 +320,11 @@ Requisitos da [RFC 0005](../rfc/0005-cargos-e-configuracoes-do-projeto.md).
 `definir_cargo_membro(membro, cargo)` é `security definer` com `search_path` fixo,
 recusa quem não é dono do projeto daquela linha e cargo fora de `editor`,
 `participante` e `viewer`. O grant de UPDATE de `project_members` continua só com
-`user_id` e `status`, e a policy de convite só aceita os três cargos. **Por quê:** o
+`user_id` e `status`, e a policy de convite só aceita os três cargos. Além do dono,
+convida quem tem a permissão `convidar` do cargo, e só para cargo igual ou abaixo do
+seu (`pode_convidar_como`, `security definer` com `search_path` fixo); o convite nasce
+pendente e sem usuário, e ver e apagar convite pendente continua com o dono e o
+convidado (SEC-044). **Por quê:** o
 grant de `role` valeria também para o convidado, que escolheria o próprio cargo ao
 aceitar (o furo que o `rls_correcoes.sql` fechou). **Verificação:** revisão + teste
 do SQL (editor, participante e conta de fora recusados; cargo inválido recusado).
@@ -336,7 +340,7 @@ do SQL com os quatro cargos.
 
 ### SEC-086 — Regras de cargo só o dono muda, e as configurações são de lista fechada *(atendido em `supabase/configuracoes_projeto.sql`; falta aplicar no Supabase)*
 `projects.regras_cargos` só aceita as chaves `editor`, `participante` e `viewer`, cada
-uma com uma lista dentro de `silenciar` e `mover`, e um gatilho recusa a mudança
+uma com uma lista dentro de `convidar`, `silenciar` e `mover`, e um gatilho recusa a mudança
 feita por quem não é o dono. `projects.ordem_abas` só aceita as cinco chaves de aba,
 sem repetir. As duas colunas entram no grant de UPDATE de `projects`; `owner_id`
 continua fora. **Por quê:** o editor altera `projects` pela policy de sempre; sem o

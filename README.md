@@ -103,6 +103,11 @@ ordem, depois dos arquivos de cima:
 Os três podem rodar antes ou depois de publicar o código, e mais de uma vez. A última
 linha de cada um confere tudo e deve vir toda `true`.
 
+O `configuracoes_projeto.sql` ganhou depois a regra **Convidar pessoas** (editor e
+participante convidam, para cargo igual ou abaixo do seu). Quem já tinha rodado o
+arquivo roda de novo: as regras de cargo já salvas ganham o convidar no editor e no
+participante só nessa primeira vez.
+
 Falta o reforço do SEC-075, que depende do passo 6 da RFC: conferir se uma conta de
 fora do projeto, assinando um canal **público** chamado `chamada:<id do projeto>`,
 recebe os sinais do privado. Se receber, a saída é desligar **Allow public access**
