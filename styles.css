@@ -4258,8 +4258,13 @@
     .gcal-banner-text{flex-basis:100%;order:2;}
     .gcal-banner .btn-primary{width:100%;order:3;}
     .table-filters{flex-direction:column;}
-    .kanban-filter-row{flex-direction:column;}
-    .kanban-filter-row .select{width:100%;}
+    /* Celular: a busca numa linha e os filtros lado a lado, e o "+ Nova
+       tarefa" do topo sai, porque o + da barra de baixo faz o mesmo. Antes o
+       quadro só começava na metade da tela. */
+    .kanban-filter-row{display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:8px;}
+    .kanban-filter-row .search-box{grid-column:1 / -1;min-width:0;}
+    .kanban-filter-row .select{width:100% !important;min-width:0;}
+    .kanban-header-actions .kb-nova-tarefa{display:none;}
     .task-table th:nth-child(3), .task-table td:nth-child(3){display:none;}
     .task-table th, .task-table td{padding:12px 14px;}
 
@@ -5576,7 +5581,8 @@
   .dash-meta-barra{grid-column:2 / -1;grid-row:2;height:3px;border-radius:4px;background:var(--line);overflow:hidden;}
   .dash-meta-barra > span{display:block;height:100%;border-radius:4px;background:var(--area);}
   .dash-metas-vazio{padding:28px 16px;}
-  .dash-metas-vazio .btn-com-icone{margin:12px auto 0;}
+  /* O botão numa linha só dele: no meio do texto, ele quebrava a frase. */
+  .dash-metas-vazio .btn-com-icone{display:flex;width:fit-content;margin:14px auto 0;}
   @media (max-width:900px){
     .dash-acoes .panel-head{flex-direction:column;align-items:stretch;gap:10px;}
     .dash-prazo{overflow-x:auto;scrollbar-width:none;}

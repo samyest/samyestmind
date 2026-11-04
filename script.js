@@ -4592,21 +4592,21 @@ function renderKanban(){
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px;"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>${state.selecting?'Cancelar':'Selecionar'}
         </button>
         <button class="btn-secondary" onclick="openColumnModal()">+ Nova coluna</button>
-        <button class="btn-primary" onclick="openModal()">+ Nova tarefa</button>
+        <button class="btn-primary kb-nova-tarefa" onclick="openModal()">+ Nova tarefa</button>
       </div>
     </div>
     ${renderBulkBar()}
     <div class="kanban-filter-row">
       <div class="search-box">
-        <svg class="search-box-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="search" class="input" id="kf-search" name="kf-search" autocomplete="off" placeholder="Pesquisar tarefas…" value="${esc(state.filter.kanbanSearch)}">
+        <svg class="search-box-icon" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" class="input" id="kf-search" name="kf-search" autocomplete="off" placeholder="Pesquisar tarefas…" aria-label="Pesquisar tarefas" value="${esc(state.filter.kanbanSearch)}">
       </div>
-      <select class="select" id="kf-client" style="width:auto;">
+      <select class="select" id="kf-client" style="width:auto;" aria-label="Filtrar por cliente">
         <option value="">Todos clientes</option>
         ${clientOptions.map(c=>`<option value="${esc(c)}" ${state.filter.kanbanClient===c?'selected':''}>${esc(c)}</option>`).join('')}
       </select>
       ${renderTagFilterSelect('kf-tag', tagOptions, state.filter.kanbanTag)}
-      <select class="select" id="kf-date" style="width:auto;">
+      <select class="select" id="kf-date" style="width:auto;" aria-label="Filtrar por prazo">
         <option value="all" ${(!state.filter.kanbanDate||state.filter.kanbanDate==='all')?'selected':''}>Qualquer prazo</option>
         <option value="today" ${state.filter.kanbanDate==='today'?'selected':''}>Hoje</option>
         <option value="next3" ${state.filter.kanbanDate==='next3'?'selected':''}>Próximos dias</option>
