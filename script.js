@@ -13791,7 +13791,13 @@ function avisarChamadaIniciada(m){
   const sala = m.canalId && CHAMADA_UUID.test(m.canalId) && canalDoProjeto(p.id, m.canalId) ? m.canalId : '';
   const ondeSala = sala && salasDoProjeto(p.id).length > 1 ? ` em ${nomeDaSala(p.id, sala)}` : '';
   const silenciado = !!(chatLeitura[p.id] && chatLeitura[p.id].silenciado);
-  if(!silenciado){
+  // O toque e a notificação são para uma chamada nova. Não tocam se já estou
+  // numa chamada (de qualquer projeto, nem que seja em outra aba) nem se o
+  // projeto já tem gente em outra sala: alguém entrar noutra sala aparece na
+  // lista de salas, sem barulho.
+  const reg = canaisChamada[p.id];
+  const jaTemChamada = !!chamada || !!(reg && reg.emChamada.some(x=>x.uid !== m.authorId));
+  if(!silenciado && !jaTemChamada){
     tocarSomChamada('chamando');
     if(document.hidden && window.Notification && Notification.permission === 'granted'){
       try{
