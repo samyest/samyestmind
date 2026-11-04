@@ -1807,8 +1807,15 @@
 
   @media (max-width:900px){
     .proj-head{grid-template-columns:auto minmax(0,1fr);gap:12px 14px;margin-bottom:20px;}
-    .proj-head-actions{grid-column:1 / -1;}
-    .proj-head-actions .btn-primary, .proj-head-actions .btn-secondary{flex:1;justify-content:center;text-align:center;}
+    /* Cada botão numa linha de texto só ("Iniciar chamada" quebrava em duas e
+       o + do "+ Novo" ficava em cima da palavra); o que não couber desce
+       para a linha de baixo e ocupa ela toda. O "+ Novo" vem dentro do
+       .novo-menu, que é quem precisa crescer. */
+    .proj-head-actions{grid-column:1 / -1;flex-wrap:wrap;gap:8px;}
+    .proj-head-actions > *{flex:1 1 auto;}
+    .proj-head-actions .btn-primary, .proj-head-actions .btn-secondary{flex:1 1 auto;justify-content:center;text-align:center;white-space:nowrap;padding-left:14px;padding-right:14px;}
+    .proj-head-actions .novo-menu{display:flex;}
+    .proj-head-actions .novo-menu-btn{width:100%;}
     /* A barra do topo no celular já tem o botão de atualizar. */
     .proj-head-actions .refresh-btn{display:none;}
     .proj-title{font-size:24px;white-space:normal;}
