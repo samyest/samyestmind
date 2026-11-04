@@ -12062,7 +12062,11 @@ async function abrirJanelaFlutuante(origem){
   if(!c || janelaFlutuante || !janelaFlutuanteSuportada()) return false;
   let win;
   try{
-    win = await window.documentPictureInPicture.requestWindow({width: 380, height: 270});
+    // A largura do cartão na página (340px). O Chrome desenha a barra dele
+    // por cima disto, então a altura pedida já desconta essa barra, para a
+    // janela inteira ficar do tamanho do cartão. Se a pessoa redimensionar, o
+    // Chrome guarda o tamanho dela para a próxima vez.
+    win = await window.documentPictureInPicture.requestWindow({width: 340, height: 216});
   }catch(e){
     if(!origem) showToast('O navegador não abriu a janela flutuante.', 'erro');
     return false;
@@ -12170,16 +12174,19 @@ function chamadaTrazerParaPagina(){
 }
 
 // Enquanto a chamada está na flutuante, a página mostra no canto, no lugar da
-// janela minimizada, que ela está lá, com o relógio e o caminho de volta.
+// janela minimizada, só o caminho de volta. Nome e relógio já estão na
+// própria flutuante, que fica por cima de tudo; aqui eles vão só para o
+// leitor de tela.
 function desenharAvisoFlutuante(){
   let el = document.getElementById('chamada-na-flutuante');
   if(!janelaFlutuante || !chamada){ if(el) el.remove(); return; }
   const p = projetoDaChamada(chamada.pid);
   const nome = p ? nomeDaChamada(chamada.pid, chamada.sala) : 'Chamada';
+  const texto = `${nome}, na janela flutuante`;
   const html = `
     <span class="ch-ponto" aria-hidden="true"></span>
-    <span class="ch-na-flutuante-texto"><strong>${esc(nome)}</strong><span>Na janela flutuante · <span class="ch-tempo"></span></span></span>
-    <button type="button" class="ch-na-flutuante-btn" id="ch-btn-trazer" onclick="chamadaTrazerParaPagina()">Trazer para cá</button>`;
+    <span class="sr-only ch-na-flutuante-texto">${esc(texto)}</span>
+    <button type="button" class="ch-na-flutuante-btn" id="ch-btn-trazer" onclick="chamadaTrazerParaPagina()" aria-label="Trazer a chamada para cá">Trazer para cá</button>`;
   if(!el){
     el = document.createElement('div');
     el.id = 'chamada-na-flutuante';
@@ -12190,8 +12197,8 @@ function desenharAvisoFlutuante(){
   }else if(!el.querySelector('#ch-btn-trazer')) el.innerHTML = html;
   else{
     // Trocar de sala muda o nome; o botão fica, para não perder o foco.
-    const forte = el.querySelector('.ch-na-flutuante-texto strong');
-    if(forte && forte.textContent !== nome) forte.textContent = nome;
+    const leitor = el.querySelector('.ch-na-flutuante-texto');
+    if(leitor && leitor.textContent !== texto) leitor.textContent = texto;
   }
   try{ janelaFlutuante.win.document.title = `Chamada · ${nome}`; }catch(e){}
 }
@@ -12453,10 +12460,10 @@ function controlesChamadaHtml(mini){
     if(telaSuportada()) partes.push(botaoChamada('ch-btn-tela', 'chamadaAlternarTela()', 'tela', c.tela ? 'Parar de transmitir a tela' : 'Transmitir a tela', c.tela ? 'ativo' : '', c.tela));
     partes.push(botaoChamada('ch-btn-disp', 'chamadaAlternarDispositivos()', 'ajustes', 'Microfone, câmera e alto-falante', c.painelDisp ? 'ativo' : '', c.painelDisp));
   }else if(janelaFlutuante){
-    // Na janela flutuante, a câmera também, e a volta para a aba no lugar de
-    // abrir a chamada.
+    // Na janela flutuante, a câmera no lugar de flutuar e abrir. A volta para
+    // a aba já está no ⇱ que o Chrome põe na barra da janela, e o clique no
+    // vídeo faz o mesmo.
     partes.push(botaoChamada('ch-btn-cam-mini', 'chamadaAlternarCamera()', c.camera ? 'cam' : 'camOff', c.camera ? 'Desligar a câmera' : 'Ligar a câmera', c.camera ? '' : 'desligado', !c.camera));
-    partes.push(botaoChamada('ch-btn-voltar-aba', 'chamadaVoltarParaAba()', 'expandir', 'Voltar para a aba da chamada', ''));
   }else{
     if(janelaFlutuanteSuportada()) partes.push(botaoChamada('ch-btn-flutuar-mini', 'abrirJanelaFlutuante()', 'flutuar', 'Janela flutuante, por cima dos outros programas', ''));
     partes.push(botaoChamada('ch-btn-expandir', 'chamadaExpandir()', 'expandir', 'Abrir a chamada', ''));
