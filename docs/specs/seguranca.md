@@ -163,7 +163,10 @@ realtime. No chat, seria a conversa inteira do projeto. **Verificação:** revis
 
 ### SEC-071 — Autoria, projeto e data da mensagem são fixados pelo banco *(fase 1, atendido em `supabase/chat_projeto.sql`; falta aplicar no Supabase)*
 `author_id` vem de `auth.uid()` e `created_at` de `now()`, e as duas colunas ficam
-fora do `grant insert`. Nenhuma delas, nem `project_id` nem `canal_id` (RFC 0004), tem
+fora do `grant insert`. `autor_nome` (o nome de quem escreveu, para a mensagem
+continuar assinada depois que a pessoa sai do projeto) vem do próprio perfil do autor,
+por gatilho, e também fica fora dos grants (`supabase/autor_das_mensagens.sql`).
+Nenhuma delas, nem `project_id` nem `canal_id` (RFC 0004), tem
 `grant update`. UPDATE só
 serve para apagar: o `with check` exige `body = ''` e `apagada_em` preenchido. Não
 existe DELETE pela API. **Por quê:** é o SEC-047 valendo desde o primeiro dia. Sem

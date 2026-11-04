@@ -8962,7 +8962,10 @@ function chatErroSemTabela(error){
 }
 
 function mensagemChatLinha(r){
-  return {id: r.id, projectId: r.project_id, canalId: r.canal_id || null, authorId: r.author_id, kind: r.kind, body: r.body || '', created: r.created_at, apagada: !!r.apagada_em, duracao: r.duracao_seg};
+  // autorNome: o nome que o banco guardou na mensagem (autor_das_mensagens.sql),
+  // para quem já saiu do projeto continuar assinando o que escreveu.
+  const autorNome = typeof r.autor_nome === 'string' && r.autor_nome.trim() ? r.autor_nome.trim().slice(0, 80) : null;
+  return {id: r.id, projectId: r.project_id, canalId: r.canal_id || null, authorId: r.author_id, autorNome, kind: r.kind, body: r.body || '', created: r.created_at, apagada: !!r.apagada_em, duracao: r.duracao_seg};
 }
 
 function canalLinha(r){
@@ -9293,7 +9296,7 @@ function notificarMensagemChat(m){
   // Com um canal só, o nome dele não diz nada; com vários, vai na frente.
   const corpo = canal && canaisDeTexto(p.id).length > 1 ? `#${canal.nome}: ${trecho}` : trecho;
   try{
-    const n = new Notification(`${nomeAutorChat(p, m.authorId)} em ${p.name}`, {body: corpo, tag: `chat-${canal ? canal.id : p.id}`});
+    const n = new Notification(`${nomeAutorChat(p, m.authorId, m.autorNome)} em ${p.name}`, {body: corpo, tag: `chat-${canal ? canal.id : p.id}`});
     n.onclick = ()=>{
       window.focus();
       n.close();
@@ -9383,11 +9386,14 @@ async function alternarSilencioChat(){
   showToast(silenciado ? 'Projeto silenciado: o contador continua, a notificação para' : 'Notificações do projeto ligadas');
 }
 
-function nomeAutorChat(p, authorId){
+function nomeAutorChat(p, authorId, autorNome){
   if(authorId && authorId === session.user.id) return 'Você';
-  // Quem não divide mais projeto com você some do RLS de profiles e daqui.
+  // Quem ainda está no projeto aparece com o nome de agora. Quem saiu some do
+  // RLS de profiles e daqui, e fica o nome que a mensagem guardou; sem ele
+  // (mensagem de antes do autor_das_mensagens.sql, ou perfil sem nome),
+  // "Ex-membro".
   const pessoa = authorId && projectPeople(p).find(pe=>pe.id === authorId);
-  return pessoa ? pessoa.label : 'Ex-membro';
+  return pessoa ? pessoa.label : (autorNome || 'Ex-membro');
 }
 
 function perfilAutorChat(p, authorId){
@@ -9459,7 +9465,7 @@ function renderListaChat(p, c, canal){
     ultimaHora = t;
     // nomeAutorChat diz "Você" para a própria conta (serve à notificação);
     // no balão vai o nome do perfil, o mesmo que os outros veem.
-    const nome = minha ? (getUserName() || 'Você') : nomeAutorChat(p, m.authorId);
+    const nome = minha ? (getUserName() || 'Você') : nomeAutorChat(p, m.authorId, m.autorNome);
     const podeApagar = !m.apagada && (isOwner || minha);
     // O horário é de cada mensagem e vai dentro do balão; em cima do grupo
     // fica só o nome, ao lado da foto.
@@ -11673,7 +11679,11 @@ function escolhaTelaSalva(){
     fonte: FONTES_TELA[e.fonte] ? e.fonte : 'monitor',
     qualidade: QUALIDADES_TELA[e.qualidade] ? e.qualidade : '1080',
     som: e.som !== false,
-    flutuante: e.flutuante !== false
+    // Levar a chamada para a janela flutuante junto com a transmissão: vem
+    // desligado. Dentro do samyest a chamada fica na página; a flutuante abre
+    // sozinha quando a pessoa sai da aba. Chave nova, para a escolha antiga
+    // (que vinha ligada) não valer mais.
+    flutuanteJunto: e.flutuanteJunto === true
   };
 }
 
@@ -11702,7 +11712,7 @@ function escolherTela(campo, valor){
   if(campo === 'fonte' && FONTES_TELA[valor]) c.escolhaTela.fonte = valor;
   else if(campo === 'qualidade' && QUALIDADES_TELA[valor]) c.escolhaTela.qualidade = valor;
   else if(campo === 'som') c.escolhaTela.som = !!valor;
-  else if(campo === 'flutuante') c.escolhaTela.flutuante = !!valor;
+  else if(campo === 'flutuante') c.escolhaTela.flutuanteJunto = !!valor;
   else return;
   try{ localStorage.setItem('chamadaTela', JSON.stringify(c.escolhaTela)); }catch(e){}
   desenharChamada();
@@ -11757,7 +11767,7 @@ function escolhaTelaHtml(){
         </label>
         ${janelaFlutuanteSuportada() ? `<label class="ch-som">
           <span class="ch-som-texto"><span>Janela flutuante</span><span class="ch-dialogo-dica">A chamada fica por cima dos outros programas enquanto você transmite.</span></span>
-          <input type="checkbox" role="switch" class="ch-interruptor" id="ch-tela-flutuante" ${e.flutuante ? 'checked' : ''} onchange="escolherTela('flutuante', this.checked)">
+          <input type="checkbox" role="switch" class="ch-interruptor" id="ch-tela-flutuante" ${e.flutuanteJunto ? 'checked' : ''} onchange="escolherTela('flutuante', this.checked)">
         </label>` : ''}
         <div class="ch-dialogo-acoes">
           <button type="button" class="ch-dialogo-cancelar" id="ch-tela-cancelar" onclick="fecharEscolhaTela()">Cancelar</button>
@@ -11783,7 +11793,7 @@ function transmitirTelaEscolhida(){
   // Como no Meet: quem transmite costuma ir para outro programa, e a chamada
   // vai junto, por cima. Usa o mesmo clique, que é o gesto que o navegador
   // exige para abrir a janela; o pedido da tela já saiu antes.
-  if(e.flutuante && !janelaFlutuante && janelaFlutuanteSuportada()) abrirJanelaFlutuante('tela');
+  if(e.flutuanteJunto && !janelaFlutuante && janelaFlutuanteSuportada()) abrirJanelaFlutuante('tela');
   c.pedindoTela = true;
   const soltar = ()=>{ c.pedindoTela = false; c.telaPedidaAte = Date.now() + 800; };
   pedirTela.then(soltar, soltar);
@@ -12889,7 +12899,7 @@ function avisarChamadaIniciada(m){
   if(Date.now() - new Date(m.created).getTime() > 2 * 60 * 1000) return;
   const p = projetoDaChamada(m.projectId);
   if(!p || !chamadaSuportada()) return;
-  const quem = nomeAutorChat(p, m.authorId);
+  const quem = nomeAutorChat(p, m.authorId, m.autorNome);
   // Com várias salas, o aviso diz qual; o Entrar vai para ela.
   const sala = m.canalId && CHAMADA_UUID.test(m.canalId) && canalDoProjeto(p.id, m.canalId) ? m.canalId : '';
   const ondeSala = sala && salasDoProjeto(p.id).length > 1 ? ` em ${nomeDaSala(p.id, sala)}` : '';
