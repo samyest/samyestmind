@@ -207,9 +207,10 @@ com o mesmo nome não recebe as mensagens do privado. **Por quê:** oferta, resp
 candidatos ICE carregam o IP de cada participante, e quem os recebe pode entrar na
 negociação da chamada. As salas de voz (RFC 0004) usam o mesmo tópico do projeto: a
 sala vai na Presence e a separação entre salas é do cliente, não controle de acesso.
-Uma sala privada exigiria um tópico por sala e começa por RFC. **Verificação:**
-revisão + navegador (uma conta de fora do projeto tenta assinar o tópico e é
-recusada).
+A sala privada (RFC 0005) tem tópico próprio, `chamada:<project_id>:<sala_id>`, e a
+mesma função só o libera para sala de voz privada do projeto que a pessoa pode ver
+(SEC-088). **Verificação:** revisão + navegador (uma conta de fora do projeto tenta
+assinar o tópico e é recusada).
 
 ### SEC-076 — Só dono e membros aceitos ficam na chamada *(fase 2, atendido em `script.js`: `permitidoNaChamada` e `conferirAcessoChamada`)*
 Além do SEC-075, cada participante recusa sinal de user id que não está entre o dono
@@ -273,7 +274,8 @@ e `tipo` ficam fora do `grant update`. O nome tem de 1 a 60 caracteres, a catego
 de um canal é do mesmo projeto e é do tipo categoria, e um projeto tem no máximo 100
 itens. **Por quê:** é a estrutura que todos do projeto veem. Sem a regra no banco, a
 chave pública deixaria um visualizador apagar canais (e o histórico deles), ou uma
-conta qualquer inundar a lista. **Verificação:** revisão (toda policy de
+conta qualquer inundar a lista. Canal privado (RFC 0005) soma a regra do SEC-088.
+**Verificação:** revisão (toda policy de
 `project_channels` passa por `is_project_owner`/`is_project_member`, e a escrita exige
 `'editor'`) + teste do SQL com dono, editor, visualizador e conta de fora.
 
@@ -309,3 +311,71 @@ endereço de fora, que veria o IP e a hora de quem abriu o projeto. Um SVG ou um
 cor vindos do banco entrariam crus no HTML. **Verificação:** revisão + teste do SQL
 (chave fora da lista, cor inválida, URL externa, pasta de outra pessoa e imagem de
 outro projeto recusadas; visualizador não muda).
+
+## Cargos e configurações do projeto
+
+Requisitos da [RFC 0005](../rfc/0005-cargos-e-configuracoes-do-projeto.md).
+
+### SEC-084 — Cargo só muda pelo dono, por função *(atendido em `supabase/configuracoes_projeto.sql`; falta aplicar no Supabase)*
+`definir_cargo_membro(membro, cargo)` é `security definer` com `search_path` fixo,
+recusa quem não é dono do projeto daquela linha e cargo fora de `editor`,
+`participante` e `viewer`. O grant de UPDATE de `project_members` continua só com
+`user_id` e `status`, e a policy de convite só aceita os três cargos. **Por quê:** o
+grant de `role` valeria também para o convidado, que escolheria o próprio cargo ao
+aceitar (o furo que o `rls_correcoes.sql` fechou). **Verificação:** revisão + teste
+do SQL (editor, participante e conta de fora recusados; cargo inválido recusado).
+
+### SEC-085 — Participante mexe em tarefas, não na estrutura *(atendido em `supabase/configuracoes_projeto.sql`; falta aplicar no Supabase)*
+`tasks_insert`, `tasks_update` e `tasks_delete` aceitam tarefa de projeto de dono,
+editor e participante, antes e depois da alteração. `projects_update`,
+`project_channels` e as notas continuam exigindo `'editor'` ou dono. Visualizador
+continua sem escrita em tarefa de projeto. **Por quê:** é o cargo novo; sem a regra no
+banco, o app esconderia botões mas a chave pública deixaria o participante mudar
+colunas e notas, ou o visualizador mexer em tarefas. **Verificação:** revisão + teste
+do SQL com os quatro cargos.
+
+### SEC-086 — Regras de cargo só o dono muda, e as configurações são de lista fechada *(atendido em `supabase/configuracoes_projeto.sql`; falta aplicar no Supabase)*
+`projects.regras_cargos` só aceita as chaves `editor`, `participante` e `viewer`, cada
+uma com uma lista dentro de `silenciar` e `mover`, e um gatilho recusa a mudança
+feita por quem não é o dono. `projects.ordem_abas` só aceita as cinco chaves de aba,
+sem repetir. As duas colunas entram no grant de UPDATE de `projects`; `owner_id`
+continua fora. **Por quê:** o editor altera `projects` pela policy de sempre; sem o
+gatilho, ele daria a si mesmo poder de moderar quem o dono não quis. **Verificação:**
+revisão + teste do SQL (editor muda abas e não muda regras).
+
+### SEC-087 — Moderação de voz autorizada pelo banco *(atendido em `supabase/salas_projeto.sql` e `script.js`; falta aplicar no Supabase)*
+Silenciar, mover e desconectar outra pessoa é uma linha em `project_voz_moderacao`,
+nunca um Broadcast. Leitura: dono e membros aceitos. Escrita: quem tem a permissão do
+cargo (`tem_permissao_voz`), sobre alguém do projeto que não é o dono e tem cargo igual
+ou abaixo (`pode_moderar`). Um gatilho `security definer` confere a permissão de
+cada campo que mudou, fixa `atualizado_por`, `atualizado_em` e `comando_em` pelo
+banco e só aceita sala de destino de voz, do mesmo projeto, que o alvo pode ver. No
+app, os receptores aplicam a moderação por conta própria: não tocam a voz de quem
+está silenciado (ou numa sala de silêncio sem poder falar) e não conectam com a sessão
+que recebeu ordem de mover ou desconectar. **Por quê:** o campo `de` do Broadcast é
+escrito pelo cliente; aceitar ordem por ali deixaria um visualizador silenciar a sala
+inteira em nome do dono. **Verificação:** revisão + teste do SQL (sem permissão,
+contra o dono, contra cargo acima e sala de outro projeto recusados).
+
+### SEC-088 — Canal privado só para o dono, quem criou e a lista *(atendido em `supabase/salas_projeto.sql`; falta aplicar no Supabase)*
+`pode_ver_canal(canal)` exige acesso ao projeto e, se o canal é privado, ser o dono,
+quem o criou (`criado_por`, preenchido pelo banco e fora dos grants) ou estar em
+`project_channel_membros`. Ela entra nas policies de `project_channels` (ler, alterar,
+apagar), de `project_messages` (ler, escrever, apagar), de `project_channel_reads` e
+da própria lista. A lista só aceita pessoa do projeto, e sair do projeto apaga a
+pessoa dela. O tópico `chamada:<project_id>:<sala_id>` só é liberado para sala de
+voz privada daquele projeto que a pessoa pode ver. **Por quê:** esconder o canal só
+na tela deixaria as mensagens e a sinalização da sala chegarem a todos do projeto pela
+API e pelo Realtime. **Verificação:** revisão + teste do SQL (membro fora da lista não
+lê canal, mensagem nem tópico; dono e lista leem).
+
+## Fonte do nome
+
+### SEC-089 — Fonte e cor do nome de lista fechada *(atendido em `supabase/fonte_do_nome.sql` e `script.js`; falta aplicar no Supabase)*
+`profiles.nome_fonte` só aceita uma chave de `FONTES_NOME` (a mesma lista no `check`
+do banco e no `script.js`), e o app só usa a chave depois de conferir na lista; a
+`font-family` sai do `styles.css`, nunca do banco. `profiles.nome_cor` é `#rrggbb` no
+banco e passa por `corSegura()` no app. **Por quê:** o nome aparece no navegador de
+todo mundo do projeto; um valor cru no `style` viraria injeção de CSS (ou de HTML,
+fora do atributo). **Verificação:** revisão + teste do SQL (fonte fora da lista e cor
+inválida recusadas).

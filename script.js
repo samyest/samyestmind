@@ -231,6 +231,8 @@ function openSettings(){
   const nConcluidas = state.metas.lista.filter(g=>g.status === 'concluida').length;
   document.getElementById('s-historico-metas').textContent = nConcluidas ? `Ver histórico (${nConcluidas})` : 'Ver histórico';
   renderMyAvatar('settings-avatar-preview', getUserName());
+  rascunhoNome = {fonte: state.minhaFonteNome || null, cor: state.minhaCorNome || null};
+  desenharEscolhaDeFonte();
   const grid = document.getElementById('theme-grid');
   // Cada tema vira um quadro em miniatura: o fundo, três colunas nos tons
   // dele e o accent no botão — mais fácil de reconhecer que cinco quadradinhos.
@@ -498,9 +500,12 @@ async function saveSettings(){
   state.myName = name;
   state.savedTheme = currentTheme;
   state.soundEnabled = soundEnabled;
+  await salvarFonteNome();
   document.getElementById('settings-modal').classList.remove('open');
   render();
+  if(chamada) desenharChamada();
   document.getElementById('user-name-display').textContent = name;
+  aplicarFonteNoMeuNome();
   atualizarDicaUsuario();
   renderMyAvatar('user-avatar', name);
 }
@@ -1014,12 +1019,13 @@ function renderBulkBar(){
 }
 
 // Só deixa agir sobre o que o usuário pode mesmo alterar. Mesma regra do
-// tasks_update: tarefa pessoal, só o dono; tarefa de projeto, só editor ou dono
-// do projeto, mesmo para quem criou a tarefa e hoje é visualizador.
+// tasks_update: tarefa pessoal, só o dono; tarefa de projeto, dono, editor ou
+// participante do projeto, mesmo para quem criou a tarefa e hoje é
+// visualizador (configuracoes_projeto.sql, SEC-085).
 function canEditTask(t){
   if(!session || !session.user) return false;
   if(!t.project_id) return t.owner_id === session.user.id;
-  return canEditProject(t.project_id);
+  return mexeEmTarefas(t.project_id);
 }
 
 async function bulkMove(status){
@@ -1213,6 +1219,8 @@ async function checkAuth(){
     appEl.classList.toggle('sidebar-collapsed', localStorage.getItem('sidebarCollapsed') === '1');
     state.myName = myProfile.name;
     state.myAvatarUrl = myProfile.avatar_url || null;
+    state.minhaFonteNome = fonteDoPerfil(myProfile);
+    state.minhaCorNome = corDoNome(myProfile);
     state.savedTheme = myProfile.theme || 'vidro';
     state.ordemProjetosPerfil = myProfile.ordem_projetos || null;
     state.soundEnabled = myProfile.sound_enabled !== false;
@@ -1220,6 +1228,7 @@ async function checkAuth(){
     applyTheme(state.savedTheme);
     state.columns = normalizarColunas(myProfile.kanban_columns) || JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
     document.getElementById('user-name-display').textContent = state.myName;
+    aplicarFonteNoMeuNome();
     atualizarDicaUsuario();
     renderMyAvatar('user-avatar', state.myName);
     // A barra lateral aparece completa já no primeiro desenho: o Desafio só
@@ -2388,6 +2397,150 @@ async function uploadAvatar(fileInput){
   showToast('Foto atualizada');
 }
 
+/* --- fonte e cor do nome (RFC 0005, SEC-089) --- */
+// Cada pessoa escolhe a fonte e a cor com que o nome dela aparece nos
+// projetos. A chave vem do banco, mas só vale se estiver nesta lista (a mesma
+// do check em supabase/fonte_do_nome.sql), e a font-family sai do styles.css.
+// Grotesca e Máquina já vêm com o app; as outras carregam do Google Fonts só
+// quando aparece um nome com elas.
+const FONTES_NOME = {
+  grotesca: 'Grotesca',
+  serifada: 'Serifada',
+  mono: 'Máquina',
+  manuscrita: 'Manuscrita',
+  arredondada: 'Arredondada',
+  pixel: 'Pixel',
+  marcante: 'Marcante',
+  elegante: 'Elegante',
+  retro: 'Retrô'
+};
+const FONTES_NOME_DE_FORA = new Set(['serifada', 'manuscrita', 'arredondada', 'pixel', 'marcante', 'elegante', 'retro']);
+const CORES_NOME = FAMILIAS_COR.filter(f=>f.nome !== 'Cinza').map(f=>f.cores[1]);
+let fontesDeNomeCarregadas = false;
+let fontesDeNomeSemColuna = false;
+
+function carregarFontesDeNome(){
+  if(fontesDeNomeCarregadas) return;
+  fontesDeNomeCarregadas = true;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = 'https://fonts.googleapis.com/css2?family=Young+Serif&family=Caveat:wght@600&family=Nunito:wght@800&family=Pixelify+Sans:wght@500&family=Bebas+Neue&family=Playfair+Display:ital,wght@1,600&family=Righteous&display=swap';
+  document.head.appendChild(link);
+}
+
+function fonteDoPerfil(perfil){
+  const f = perfil && perfil.nome_fonte;
+  return typeof f === 'string' && Object.prototype.hasOwnProperty.call(FONTES_NOME, f) ? f : null;
+}
+
+function corDoNome(perfil){
+  const c = perfil && perfil.nome_cor;
+  return typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? corSegura(c) : null;
+}
+
+// O nome escapado, dentro de um span com a fonte e a cor da pessoa (quando
+// ela escolheu). Sem escolha, só o texto, como antes.
+function nomePessoaHtml(perfil, texto){
+  const t = esc(texto || '');
+  const f = fonteDoPerfil(perfil);
+  const cor = corDoNome(perfil);
+  if(!f && !cor) return t;
+  if(f && FONTES_NOME_DE_FORA.has(f)) carregarFontesDeNome();
+  return `<span class="nome-fonte"${f ? ` data-fonte="${f}"` : ''}${cor ? ` style="--nome-cor:${cor}"` : ''}>${t}</span>`;
+}
+
+function meuPerfilDeNome(){
+  return {avatar_url: state.myAvatarUrl, nome_fonte: state.minhaFonteNome || null, nome_cor: state.minhaCorNome || null};
+}
+
+// Perfis com fonte e cor; sem o fonte_do_nome.sql, a consulta com as colunas
+// novas falha e o app segue com as de antes.
+async function buscarPerfis(ids){
+  const base = 'id, name, avatar_url';
+  if(!fontesDeNomeSemColuna){
+    const r = await sb.from('profiles').select(`${base}, nome_fonte, nome_cor`).in('id', ids);
+    if(!r.error || !faltaColuna(r.error)) return r;
+    fontesDeNomeSemColuna = true;
+  }
+  return sb.from('profiles').select(base).in('id', ids);
+}
+
+// O próprio nome na barra lateral também vai com a fonte escolhida.
+function aplicarFonteNoMeuNome(){
+  const el = document.getElementById('user-name-display');
+  if(!el) return;
+  const perfil = meuPerfilDeNome();
+  const f = fonteDoPerfil(perfil), cor = corDoNome(perfil);
+  el.classList.toggle('nome-fonte', !!(f || cor));
+  if(f){ el.dataset.fonte = f; if(FONTES_NOME_DE_FORA.has(f)) carregarFontesDeNome(); } else delete el.dataset.fonte;
+  if(cor) el.style.setProperty('--nome-cor', cor); else el.style.removeProperty('--nome-cor');
+}
+
+// Rascunho das Configurações: muda na hora a prévia e só grava no Salvar.
+let rascunhoNome = {fonte: null, cor: null};
+
+function desenharEscolhaDeFonte(){
+  const grade = document.getElementById('fonte-nome-grade');
+  const cores = document.getElementById('cor-nome-grade');
+  if(!grade || !cores) return;
+  const nome = (document.getElementById('s-name').value || '').trim() || getUserName() || 'Seu nome';
+  const perfil = (f)=>({nome_fonte: f, nome_cor: rascunhoNome.cor});
+  const opcoes = [[null, 'Padrão'], ...Object.entries(FONTES_NOME)];
+  grade.innerHTML = opcoes.map(([k, rotulo])=>{
+    const sel = (rascunhoNome.fonte || null) === k;
+    return `<button type="button" class="fonte-nome-opcao ${sel ? 'selected' : ''}" role="radio" aria-checked="${sel}" tabindex="${sel ? 0 : -1}" data-fonte-opcao="${k || ''}" onclick="escolherFonteNome('${k || ''}')">
+      <span class="fonte-nome-amostra">${nomePessoaHtml(perfil(k), nome)}</span>
+      <span class="fonte-nome-rotulo">${rotulo}</span>
+    </button>`;
+  }).join('');
+  cores.innerHTML = [null, ...CORES_NOME].map(c=>{
+    const sel = (rascunhoNome.cor || null) === c;
+    return `<button type="button" class="cor-nome-opcao ${sel ? 'selected' : ''} ${c ? '' : 'sem-cor'}" role="radio" aria-checked="${sel}" tabindex="${sel ? 0 : -1}" data-cor-opcao="${c || ''}" ${c ? `style="--cor:${corSegura(c)}"` : ''} onclick="escolherCorNome('${c || ''}')" aria-label="${c ? `Cor ${c}` : 'Cor do texto, sem cor própria'}" title="${c ? c : 'Sem cor própria'}"></button>`;
+  }).join('');
+}
+
+function escolherFonteNome(k){
+  rascunhoNome.fonte = Object.prototype.hasOwnProperty.call(FONTES_NOME, k) ? k : null;
+  desenharEscolhaDeFonte();
+  const b = document.querySelector(`#fonte-nome-grade [data-fonte-opcao="${rascunhoNome.fonte || ''}"]`);
+  if(b) b.focus();
+}
+
+function escolherCorNome(c){
+  rascunhoNome.cor = CORES_NOME.includes(c) ? c : null;
+  desenharEscolhaDeFonte();
+  const b = document.querySelector(`#cor-nome-grade [data-cor-opcao="${rascunhoNome.cor || ''}"]`);
+  if(b) b.focus();
+}
+
+// Setas andam entre as opções, como num grupo de rádios.
+document.addEventListener('keydown', (e)=>{
+  const op = e.target.closest && e.target.closest('.fonte-nome-opcao, .cor-nome-opcao');
+  if(!op || !['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
+  const grupo = [...op.parentElement.children];
+  const i = grupo.indexOf(op);
+  const n = (i + (e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1) + grupo.length) % grupo.length;
+  e.preventDefault();
+  grupo[n].click();
+});
+
+// Grava fonte e cor separado do resto do perfil: sem o fonte_do_nome.sql, o
+// upsert com as colunas novas derrubaria o Salvar inteiro.
+async function salvarFonteNome(){
+  const fonte = rascunhoNome.fonte || null, cor = rascunhoNome.cor || null;
+  if(fonte === (state.minhaFonteNome || null) && cor === (state.minhaCorNome || null)) return true;
+  const {error} = await sb.from('profiles').update({nome_fonte: fonte, nome_cor: cor}).eq('id', session.user.id);
+  if(error){
+    console.error(error);
+    showToast(faltaColuna(error) ? 'A fonte do nome precisa do supabase/fonte_do_nome.sql. Rode ele no Supabase.' : 'O resto foi salvo, mas a fonte do nome não. Tente de novo.', 'erro');
+    return false;
+  }
+  state.minhaFonteNome = fonte;
+  state.minhaCorNome = cor;
+  aplicarFonteNoMeuNome();
+  return true;
+}
+
 function getUserName(){
   if(state.myName) return state.myName;
   if(!session || !session.user.email) return '';
@@ -2707,7 +2860,7 @@ async function loadProjects(){
       p.members.forEach(m=>{if(m.user_id) profileIds.add(m.user_id);});
     });
     if(profileIds.size > 0){
-      const {data: profiles} = await sb.from('profiles').select('id, name, avatar_url').in('id', [...profileIds]);
+      const {data: profiles} = await buscarPerfis([...profileIds]);
       const profileMap = {};
       (profiles || []).forEach(pr=>{profileMap[pr.id] = pr;});
       Object.values(projectMap).forEach(p=>{
@@ -2730,6 +2883,9 @@ async function loadProjects(){
   carregarNaoLidasChat();
   // E muda quem pode continuar numa chamada (SEC-076).
   conferirAcessoChamada();
+  // A moderação das salas vale por projeto; um cargo novo muda quem pode o quê.
+  carregarModeracao();
+  if(configProjeto) desenharConfigProjeto();
 }
 
 function updatePendingInvitesBadge(){
@@ -3269,7 +3425,7 @@ function renderSidebarProjects(){
       <button class="nav-empty-acao" onclick="entrarComCodigoRapido()">Entrar com código de convite</button>`;
   } else {
     html += state.projects.map(p=>{
-      const role = p.myRole === 'owner' ? 'Dono' : (myRoleInProject(p.id) === 'editor' ? 'Editor' : 'Vendo');
+      const role = CARGOS[cargoValido(myRoleInProject(p.id))].curto;
       const isActive = state.view === 'project' && state.currentProjectId === p.id;
       return `
         <button class="sidebar-project-item ${isActive?'active':''}" data-pid="${p.id}" onclick="openProjectView('${p.id}')" title="${esc(p.name)} · segure e arraste para mudar a ordem" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown">
@@ -3295,6 +3451,45 @@ function myRoleInProject(projectId){
 function canEditProject(projectId){
   const role = myRoleInProject(projectId);
   return role === 'owner' || role === 'editor';
+}
+
+// Cargos (RFC 0005): dono, editor, participante e visualizador. O
+// participante mexe nas tarefas, não na estrutura (colunas, notas, canais,
+// ícone, abas). Quem decide de verdade é o RLS (configuracoes_projeto.sql,
+// SEC-085); aqui é só o que a tela mostra. Cargo desconhecido conta como
+// visualizador, o que pode menos.
+const CARGOS = {
+  owner: {nome: 'Dono', curto: 'Dono', nivel: 3, desc: 'Tudo, inclusive cargos, regras e excluir o projeto.'},
+  editor: {nome: 'Editor', curto: 'Editor', nivel: 2, desc: 'Tarefas, colunas, notas, canais, ícone e abas.'},
+  participante: {nome: 'Participante', curto: 'Participa', nivel: 1, desc: 'Cria e mexe nas tarefas, conversa e entra nas salas.'},
+  viewer: {nome: 'Visualizador', curto: 'Vendo', nivel: 0, desc: 'Vê o projeto, conversa e entra nas salas.'}
+};
+const CARGOS_DE_MEMBRO = ['editor', 'participante', 'viewer'];
+
+function cargoValido(role){
+  return role === 'owner' || CARGOS_DE_MEMBRO.includes(role) ? role : 'viewer';
+}
+
+function nomeDoCargo(role){
+  return CARGOS[cargoValido(role)].nome;
+}
+
+// O cargo de qualquer pessoa no projeto, pela lista carregada. null para
+// quem não é (mais) do projeto.
+function cargoNoProjeto(p, uid){
+  if(!p || !uid) return null;
+  if(uid === p.owner_id) return 'owner';
+  const m = (p.members || []).find(x=>x.user_id === uid && x.status === 'accepted');
+  return m ? cargoValido(m.role) : null;
+}
+
+function mexeEmTarefas(projectId){
+  const role = myRoleInProject(projectId);
+  return role === 'owner' || role === 'editor' || role === 'participante';
+}
+
+function opcoesDeCargo(atual){
+  return CARGOS_DE_MEMBRO.map(r=>`<option value="${r}" ${r === atual ? 'selected' : ''}>${CARGOS[r].nome}</option>`).join('');
 }
 
 // Título de seção da barra lateral com o + que só aparece ao passar o mouse
@@ -3477,13 +3672,14 @@ async function inviteToProject(projectId){
   if(email === (session.user.email || '').toLowerCase()){showToast('Esse é o seu email — você já está no projeto.', 'erro');return;}
   const p = state.projects.find(x=>x.id===projectId);
   if(p && p.members.some(m=>m.invited_email === email)){showToast('Essa pessoa já foi convidada para este projeto.', 'erro');return;}
+  const role = cargoValido(roleSelect.value);
   const {error} = await sb.from('project_members').insert({
     project_id: projectId,
     invited_email: email,
-    role: roleSelect.value,
+    role,
     status: 'pending'
   });
-  if(error){console.error(error);showToast('Não deu para enviar o convite. Confira o email e tente de novo.', 'erro');return;}
+  if(error){console.error(error);showToast(erroDeCargo(error, role) || 'Não deu para enviar o convite. Confira o email e tente de novo.', 'erro');return;}
   emailInput.value = '';
   await loadProjects();
   renderProjectsModal();
@@ -3504,14 +3700,15 @@ function genInviteCode(){
 async function generateInviteCode(projectId){
   const roleSelect = document.getElementById(`code-role-${projectId}`);
   const code = genInviteCode();
+  const role = cargoValido(roleSelect.value);
   const {error} = await sb.from('project_members').insert({
     project_id: projectId,
     invited_email: null,
-    role: roleSelect.value,
+    role,
     status: 'pending',
     code
   });
-  if(error){console.error(error);showToast('Não deu para gerar o código. Tente de novo em instantes.', 'erro');return;}
+  if(error){console.error(error);showToast(erroDeCargo(error, role) || 'Não deu para gerar o código. Tente de novo em instantes.', 'erro');return;}
   await loadProjects();
   renderProjectsModal();
   try{
@@ -3557,7 +3754,47 @@ async function removeMember(memberId){
   if(error){console.error(error);showToast('Não deu para concluir a ação. Tente de novo em instantes.', 'erro');return;}
   await loadProjects();
   renderProjectsModal();
+  if(configProjeto) desenharConfigProjeto();
   showToast('Removido');
+}
+
+// Sem o configuracoes_projeto.sql, a policy de convite recusa o participante e
+// a função de mudar cargo não existe: o aviso diz o que falta.
+function erroDeCargo(error, role){
+  if(!error) return '';
+  const t = `${error.message || ''} ${error.code || ''}`;
+  if(/PGRST202|42883/.test(t)) return 'Mudar cargo precisa do supabase/configuracoes_projeto.sql. Rode ele no Supabase.';
+  if(role === 'participante' && /row-level security|42501|check/.test(t)) return 'O cargo Participante precisa do supabase/configuracoes_projeto.sql. Rode ele no Supabase.';
+  if(/cargo_sem_permissao/.test(t)) return 'Só o dono do projeto muda cargos.';
+  return '';
+}
+
+// O dono muda o cargo pela função do banco (SEC-084): o UPDATE direto em
+// project_members continua fechado, para o convidado não escolher o próprio
+// cargo ao aceitar. O select volta ao cargo de antes se não der.
+async function mudarCargo(memberId, role, select){
+  role = cargoValido(role);
+  let p = null, m = null;
+  for(const x of state.projects){ const achou = (x.members || []).find(y=>y.id === memberId); if(achou){ p = x; m = achou; break; } }
+  if(!p || !m || p.myRole !== 'owner' || role === 'owner') return;
+  const antes = cargoValido(m.role);
+  if(antes === role) return;
+  if(select) select.disabled = true;
+  const {error} = await sb.rpc('definir_cargo_membro', {p_membro: memberId, p_cargo: role});
+  if(select) select.disabled = false;
+  if(error){
+    console.error(error);
+    if(select) select.value = antes;
+    showToast(erroDeCargo(error, role) || 'Não deu para mudar o cargo. Tente de novo em instantes.', 'erro');
+    return;
+  }
+  m.role = role;
+  const nome = (m.profile && m.profile.name) || m.invited_email || 'O convite';
+  showToast(`${nome} agora é ${CARGOS[role].nome.toLowerCase()}`);
+  await loadProjects();
+  if(document.getElementById('projects-modal').classList.contains('open')) renderProjectsModal();
+  if(configProjeto) desenharConfigProjeto();
+  safeRerender();
 }
 
 async function acceptInvite(memberId){
@@ -3623,12 +3860,16 @@ function flushNotesIfPending(){
 
 function openProjectView(projectId){
   flushNotesIfPending();
+  const outroLugar = state.currentProjectId !== projectId || state.view !== 'project';
   if(state.currentProjectId !== projectId) state.projCalSelectedDate = null;
   if(state.view !== 'project') state.viewBeforeProject = state.view;
-  if(state.currentProjectId !== projectId || state.view !== 'project') state.projectTasksView = visaoProjetoSalva(projectId);
+  if(outroLugar) state.projectTasksView = visaoProjetoSalva(projectId);
   state.currentProjectId = projectId;
   state.view = 'project';
-  render();
+  // Chegar num projeto (ou trocar de projeto) tem a transição da tela; clicar
+  // no projeto em que já se está só redesenha.
+  if(outroLugar) trocarComTransicao(()=>render(), 'projeto', false);
+  else render();
   window.scrollTo(0,0);
 }
 
@@ -3727,12 +3968,25 @@ async function insertProjectImage(){
 // projetos e fica salvo no aparelho, como a aba do Desafio.
 // Cada projeto lembra a última aba; o primeiro acesso abre no Início.
 const VISOES_PROJETO = ['inicio', 'kanban', 'calendar', 'notes', 'chat'];
+const ABAS_PROJETO = {inicio: 'Início', kanban: 'Quadro', calendar: 'Calendário', notes: 'Notas', chat: 'Canais'};
+
+// A ordem das abas é do projeto e igual para todos (projects.ordem_abas,
+// configuracoes_projeto.sql, RFC 0005). Chave desconhecida sai; aba que
+// faltar entra no fim, na ordem padrão.
+function ordemAbasDoProjeto(p){
+  const salva = p && Array.isArray(p.ordem_abas) ? p.ordem_abas.filter(k=>VISOES_PROJETO.includes(k)) : [];
+  const unicas = [...new Set(salva)];
+  return [...unicas, ...VISOES_PROJETO.filter(k=>!unicas.includes(k))];
+}
+
+// Sem aba guardada, abre a primeira da ordem do projeto.
 function visaoProjetoSalva(pid){
   if(!pid) return 'inicio';
+  const primeira = ordemAbasDoProjeto(state.projects.find(x=>x.id === pid))[0];
   try{
     const v = localStorage.getItem(`projectView:${pid}`);
-    return VISOES_PROJETO.includes(v) ? v : 'inicio';
-  }catch(e){ return 'inicio'; }
+    return VISOES_PROJETO.includes(v) ? v : primeira;
+  }catch(e){ return primeira; }
 }
 
 function setProjectTasksView(visao){
@@ -3746,13 +4000,79 @@ function setProjectTasksView(visao){
   // Quadro e no Calendário.
   if(antes !== visao){
     const comFiltros = v => v === 'kanban' || v === 'calendar';
+    const ordem = ordemAbasDoProjeto(state.projects.find(x=>x.id === state.currentProjectId));
     trocaDeAba = {
-      volta: VISOES_PROJETO.indexOf(visao) < VISOES_PROJETO.indexOf(antes),
+      de: antes,
+      volta: ordem.indexOf(visao) < ordem.indexOf(antes),
       filtros: comFiltros(visao) && !comFiltros(antes)
     };
+    realceAntes = medirRealceDasAbas();
   }
   skipEntranceOnce = true;
-  render();
+  if(antes !== visao) trocarComTransicao(()=>render(), 'aba', trocaDeAba.volta);
+  else render();
+}
+
+// O realce da aba ativa anda da aba de antes até a nova (RFC 0005, Q18). Cada
+// render cria a barra de novo; o lugar de antes é medido antes e entra aqui.
+let realceAntes = null;
+
+function medirRealceDasAbas(){
+  const r = document.querySelector('#main .proj-view-abas .proj-aba-realce');
+  if(!r) return null;
+  const x = r.style.getPropertyValue('--realce-x'), w = r.style.getPropertyValue('--realce-w');
+  return x && w ? {x, w} : null;
+}
+
+function posicionarRealceDasAbas(de){
+  const caixa = document.querySelector('#main .proj-view-abas');
+  const r = caixa && caixa.querySelector('.proj-aba-realce');
+  const ativa = caixa && caixa.querySelector('.proj-view-aba.ativa');
+  if(!r || !ativa) return;
+  const x = `${ativa.offsetLeft}px`, w = `${ativa.offsetWidth}px`;
+  r.classList.add('sem-animar');
+  if(de && (de.x !== x || de.w !== w)){
+    r.style.setProperty('--realce-x', de.x);
+    r.style.setProperty('--realce-w', de.w);
+    void r.offsetWidth;
+    r.classList.remove('sem-animar');
+  }
+  r.style.setProperty('--realce-x', x);
+  r.style.setProperty('--realce-w', w);
+  if(r.classList.contains('sem-animar')){ void r.offsetWidth; r.classList.remove('sem-animar'); }
+}
+window.addEventListener('resize', ()=>posicionarRealceDasAbas(null));
+if(document.fonts && document.fonts.ready) document.fonts.ready.then(()=>posicionarRealceDasAbas(null));
+
+// Troca de aba ou de projeto pela View Transition do navegador: a tela velha
+// sai (recua para o lado, ou afunda) enquanto a nova entra com as animações
+// do CSS. Sem a API, com menos movimento pedido, com uma chamada aberta (o
+// vídeo congelaria na captura) ou com um modal por cima, a troca é direta e
+// só a entrada anima.
+let trocaVtSeq = 0;
+function trocarComTransicao(mudar, tipo, volta){
+  const reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(!document.startViewTransition || reduzir || chamada || document.visibilityState !== 'visible' || topOpenModal()){ mudar(); return; }
+  const raiz = document.documentElement;
+  const meu = ++trocaVtSeq;
+  raiz.dataset.troca = tipo;
+  if(volta) raiz.dataset.trocaVolta = ''; else delete raiz.dataset.trocaVolta;
+  const limpar = ()=>{
+    if(trocaVtSeq !== meu) return;
+    delete raiz.dataset.troca;
+    delete raiz.dataset.trocaVolta;
+  };
+  try{
+    const t = document.startViewTransition(mudar);
+    // Uma troca nova no meio de outra faz o navegador pular a antiga; não é erro.
+    t.ready.catch(()=>{});
+    t.updateCallbackDone.catch(()=>{});
+    const vigia = setTimeout(()=>{ try{ t.skipTransition(); }catch(e){} }, 1200);
+    t.finished.then(()=>{ clearTimeout(vigia); limpar(); }, ()=>{ clearTimeout(vigia); limpar(); });
+  }catch(e){
+    limpar();
+    mudar();
+  }
 }
 
 // Dono e membros aceitos, cada um com o perfil que tiver carregado.
@@ -3838,8 +4158,11 @@ function renderProjectPage(){
   }
   const isOwner = p.myRole === 'owner';
   const role = myRoleInProject(p.id);
+  // canEdit é a estrutura (colunas, notas, ícone); mexe é criar e mexer nas
+  // tarefas, que o participante também faz.
   const canEdit = isOwner || role === 'editor';
-  const roleLabel = isOwner ? 'Dono' : (role === 'editor' ? 'Editor' : 'Visualizador');
+  const mexe = mexeEmTarefas(p.id);
+  const roleLabel = nomeDoCargo(isOwner ? 'owner' : role);
   // Itens = tarefas e eventos; o quadro e as contagens são só das tarefas.
   const projectItems = state.tasks.filter(t=>t.project_id===p.id);
   const projectTasks = projectItems.filter(t=>!ehEvento(t));
@@ -3884,13 +4207,11 @@ function renderProjectPage(){
     ? 'Nenhuma tarefa ainda'
     : `${openCount} em aberto · ${doneCount} concluída${doneCount!==1?'s':''}`;
 
-  const abas = [
-    {key:'inicio', label:'Início'},
-    {key:'kanban', label:'Quadro'},
-    {key:'calendar', label:'Calendário'},
-    {key:'notes', label:'Notas', marca: !asNotes && (state.notasProjeto[p.id] && !state.notasProjeto[p.id].semTabela ? state.notasProjeto[p.id].lista.length > 0 : projectHasNotes(p))},
-    {key:'chat', label:'Canais', selo: !asChat}
-  ];
+  const extrasDaAba = {
+    notes: {marca: !asNotes && (state.notasProjeto[p.id] && !state.notasProjeto[p.id].semTabela ? state.notasProjeto[p.id].lista.length > 0 : projectHasNotes(p))},
+    chat: {selo: !asChat}
+  };
+  const abas = ordemAbasDoProjeto(p).map(key=>({key, label: ABAS_PROJETO[key], ...(extrasDaAba[key] || {})}));
 
   const filtros = (asNotes || asInicio || asChat) ? '' : `
       <div class="proj-filtros">
@@ -3920,16 +4241,16 @@ function renderProjectPage(){
 
   let corpo;
   if(asInicio){
-    corpo = renderProjectInicio(p, canEdit, projectItems, projectTasks, cols);
+    corpo = renderProjectInicio(p, canEdit, projectItems, projectTasks, cols, mexe);
   } else if(asNotes){
     corpo = renderProjectNotes(p, canEdit);
   } else if(asChat){
     corpo = renderProjectChat(p);
-  } else if(!asCalendar && !canEdit && projectTasks.length === 0){
+  } else if(!asCalendar && !mexe && projectTasks.length === 0){
     corpo = `<div class="glass proj-surface proj-vazio"><strong>Nenhuma tarefa neste projeto ainda.</strong>Quem edita o projeto cria as tarefas aqui; elas aparecem para você assim que forem criadas.</div>`;
   } else if(asCalendar){
     corpo = `<div class="glass proj-surface">${renderProjectCalendar(p, filteredProjectTasks)}</div>
-      ${state.projCalSelectedDate ? renderDayPanel(state.projCalSelectedDate, groupTasksByCalDate(filteredProjectTasks)[state.projCalSelectedDate] || [], {projectId: p.id, canEdit}) : ''}`;
+      ${state.projCalSelectedDate ? renderDayPanel(state.projCalSelectedDate, groupTasksByCalDate(filteredProjectTasks)[state.projCalSelectedDate] || [], {projectId: p.id, canEdit: mexe}) : ''}`;
   } else {
     corpo = `
       <div class="kanban kanban-projeto">
@@ -3989,7 +4310,7 @@ function renderProjectPage(){
             </button>
             <div class="proj-pessoas-pop" role="dialog" aria-label="${esc(`Pessoas em ${p.name}`)}" hidden>${pessoasDoProjetoHtml(p, isOwner)}</div>
           </div>
-          <span class="proj-role ${canEdit ? '' : 'leitura'}">${roleLabel}${canEdit ? '' : ' · só leitura'}</span>
+          <span class="proj-role ${mexe ? '' : 'leitura'}">${roleLabel}${mexe ? '' : ' · só leitura'}</span>
           <span class="proj-andamento">${andamento}</span>
         </div>
       </div>
@@ -3998,16 +4319,18 @@ function renderProjectPage(){
           <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
         </button>
         ${botaoIniciarChamadaHtml(p)}
+        <button class="btn-back proj-config-btn" onclick="abrirConfigProjeto('${p.id}')" title="Configurações do projeto" aria-label="Configurações do projeto">${ICONE_ENGRENAGEM}</button>
         ${isOwner ? `<button class="btn-secondary btn-com-icone" onclick="convidarNoProjeto('${p.id}')"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="16" y1="11" x2="22" y2="11"/></svg>Convidar</button>` : ''}
         ${canEdit && visao === 'kanban' ? `<button class="btn-secondary" onclick="openColumnModal(null, '${p.id}')">+ Nova coluna</button>` : ''}
-        ${canEdit ? renderMenuNovo() : ''}
+        ${mexe ? renderMenuNovo(canEdit) : ''}
       </div>
     </header>
 
     ${faixaChamadaHtml(p)}
 
     <div class="proj-toolbar">
-      <div class="proj-view-abas" role="group" aria-label="Ver o projeto como">
+      <div class="proj-view-abas com-realce" role="group" aria-label="Ver o projeto como">
+        <span class="proj-aba-realce sem-animar" aria-hidden="true"></span>
         ${abas.map(a=>`<button class="proj-view-aba ${visao===a.key ? 'ativa' : ''}" data-aba="${a.key}" aria-pressed="${visao===a.key}" onclick="setProjectTasksView('${a.key}')">${a.label}${a.marca ? '<span class="proj-view-marca" title="Tem notas"></span>' : ''}${a.selo ? seloNaoLidas(p.id) : ''}</button>`).join('')}
       </div>
       ${filtros}
@@ -4015,6 +4338,444 @@ function renderProjectPage(){
 
     ${corpo}
   `;
+}
+
+/* ---------- configurações do projeto (RFC 0005) ---------- */
+// A engrenagem ao lado do Convidar, como as configurações de um servidor do
+// Discord: Geral, Abas, Cargos e Membros. Todo mundo do projeto abre e vê como
+// está; os controles só aparecem para quem pode mudar, e o banco confere de
+// novo (configuracoes_projeto.sql, SEC-084 a SEC-086).
+
+const ICONE_ENGRENAGEM = '<svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>';
+const ICONE_PEGA = '<svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
+const SETA_ACIMA = '<svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>';
+const SETA_ABAIXO = '<svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+
+const SECOES_CONFIG_PROJETO = [
+  ['geral', 'Geral', '<rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8 9h8M8 13h8M8 17h5"/>'],
+  ['abas', 'Abas', '<rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 10h18M9 5v5M15 5v5"/>'],
+  ['cargos', 'Cargos', '<path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/>'],
+  ['membros', 'Membros', '<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>']
+];
+
+// As duas permissões de voz de cada cargo (regras de cargo). O dono tem as
+// duas sempre; sem regra salva, vale o padrão: o editor com as duas.
+const PERMISSOES_VOZ = {
+  silenciar: {nome: 'Silenciar outros nas salas', desc: 'Fecha o microfone de alguém na chamada, em todas as salas, até alguém liberar.'},
+  mover: {nome: 'Mover e desconectar outros', desc: 'Leva alguém para outra sala de voz ou tira da chamada.'}
+};
+const REGRAS_PADRAO = {editor: ['silenciar', 'mover'], participante: [], viewer: []};
+
+function regrasDoProjeto(p){
+  const r = p && p.regras_cargos && typeof p.regras_cargos === 'object' && !Array.isArray(p.regras_cargos) ? p.regras_cargos : {};
+  const out = {};
+  for(const cargo of CARGOS_DE_MEMBRO){
+    const lista = Array.isArray(r[cargo]) ? r[cargo] : REGRAS_PADRAO[cargo];
+    out[cargo] = Object.keys(PERMISSOES_VOZ).filter(k=>lista.includes(k));
+  }
+  return out;
+}
+
+function temPermissaoVoz(pid, perm, uid){
+  const p = state.projects.find(x=>x.id === pid);
+  const cargo = cargoNoProjeto(p, uid || (session && session.user.id));
+  if(!cargo || !PERMISSOES_VOZ[perm]) return false;
+  return cargo === 'owner' || regrasDoProjeto(p)[cargo].includes(perm);
+}
+
+// O que a tela oferece; quem decide é o banco (pode_moderar, SEC-087).
+// Ninguém modera o dono, e cada um só modera cargo igual ou abaixo do seu.
+function podeModerar(pid, alvo, perm){
+  const p = state.projects.find(x=>x.id === pid);
+  if(!p || !alvo || moderacaoSemTabela) return false;
+  const eu = cargoNoProjeto(p, session.user.id), dele = cargoNoProjeto(p, alvo);
+  if(!eu || !dele || dele === 'owner') return false;
+  if(CARGOS[dele].nivel > CARGOS[eu].nivel) return false;
+  return perm ? temPermissaoVoz(pid, perm) : (temPermissaoVoz(pid, 'silenciar') || temPermissaoVoz(pid, 'mover'));
+}
+
+function faltaColuna(error){
+  return !!error && (['42703', 'PGRST204'].includes(error.code) || /column|coluna/i.test(error.message || ''));
+}
+
+let configProjeto = null;
+
+function abrirConfigProjeto(pid, secao){
+  const p = state.projects.find(x=>x.id === pid);
+  if(!p) return;
+  alternarPessoasDoProjeto(null, true);
+  const mesma = configProjeto && configProjeto.pid === pid;
+  configProjeto = {pid, secao: secao || (mesma ? configProjeto.secao : 'geral')};
+  desenharConfigProjeto();
+  document.getElementById('config-projeto').classList.add('open');
+  setTimeout(()=>{
+    const b = document.querySelector('#config-projeto .set-aba[aria-selected="true"]');
+    if(b) b.focus();
+  }, 40);
+}
+
+function fecharConfigProjeto(){
+  document.getElementById('config-projeto').classList.remove('open');
+  configProjeto = null;
+}
+
+function abrirSecaoProjeto(secao, focar){
+  if(!configProjeto) return;
+  configProjeto.secao = secao;
+  desenharConfigProjeto();
+  const paineis = document.getElementById('config-projeto-paineis');
+  if(paineis) paineis.scrollTop = 0;
+  if(focar){
+    const b = document.querySelector(`#config-projeto .set-aba[data-secao="${secao}"]`);
+    if(b) b.focus();
+  }
+}
+
+document.addEventListener('keydown', (e)=>{
+  const aba = e.target.closest && e.target.closest('#config-projeto .set-aba');
+  if(!aba || !['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+  const chaves = SECOES_CONFIG_PROJETO.map(s=>s[0]);
+  const i = chaves.indexOf(aba.dataset.secao);
+  const n = e.key === 'Home' ? 0 : e.key === 'End' ? chaves.length - 1
+    : (i + (e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : -1) + chaves.length) % chaves.length;
+  e.preventDefault();
+  abrirSecaoProjeto(chaves[n], true);
+});
+
+// Redesenha o modal inteiro a partir do estado; o foco e o que está sendo
+// digitado no nome voltam para onde estavam.
+function desenharConfigProjeto(){
+  const c = configProjeto;
+  if(!c) return;
+  const p = state.projects.find(x=>x.id === c.pid);
+  if(!p){ fecharConfigProjeto(); return; }
+  const caixa = document.getElementById('config-projeto');
+  const ativo = document.activeElement;
+  const foco = ativo && caixa.contains(ativo) ? (ativo.dataset.foco || ativo.id) : null;
+  const campoNome = document.getElementById('cp-nome');
+  const rascunhoNome = campoNome && campoNome.dataset.mexido === '1' ? campoNome.value : null;
+  const meu = cargoValido(myRoleInProject(p.id));
+  document.getElementById('config-projeto-icone').innerHTML = projetoIconeHtml(p, 'm');
+  document.getElementById('config-projeto-sub').textContent = `${p.name} · você é ${CARGOS[meu].nome.toLowerCase()}`;
+  document.getElementById('config-projeto-nav').innerHTML = SECOES_CONFIG_PROJETO.map(([k, nome, icone])=>`
+    <button class="set-aba" role="tab" id="cp-aba-${k}" data-secao="${k}" aria-controls="cp-${k}" aria-selected="${c.secao === k}" tabindex="${c.secao === k ? 0 : -1}" onclick="abrirSecaoProjeto('${k}')">
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${icone}</svg>
+      ${nome}
+    </button>`).join('');
+  const corpo = c.secao === 'abas' ? painelAbasProjeto(p)
+    : c.secao === 'cargos' ? painelCargosProjeto(p)
+    : c.secao === 'membros' ? painelMembrosProjeto(p)
+    : painelGeralProjeto(p);
+  document.getElementById('config-projeto-paineis').innerHTML = `
+    <section class="set-painel cp-painel" role="tabpanel" id="cp-${c.secao}" aria-labelledby="cp-aba-${c.secao}">${corpo}</section>`;
+  if(rascunhoNome !== null){
+    const novo = document.getElementById('cp-nome');
+    if(novo){ novo.value = rascunhoNome; novo.dataset.mexido = '1'; }
+  }
+  if(foco){
+    const el = caixa.querySelector(`[data-foco="${foco}"]`) || document.getElementById(foco);
+    if(el) el.focus({preventScroll: true});
+  }
+}
+
+function painelGeralProjeto(p){
+  const pode = canEditProject(p.id);
+  const dono = p.myRole === 'owner';
+  const meu = cargoValido(myRoleInProject(p.id));
+  return `
+    <h3 class="set-painel-titulo">Geral</h3>
+    <div class="cp-identidade">
+      ${pode
+        ? `<button type="button" class="proj-icone-btn cp-icone-btn" data-foco="cp-icone" onclick="abrirIconeProjeto('${p.id}')" title="Mudar o ícone do projeto" aria-label="Mudar o ícone do projeto">${projetoIconeHtml(p, 'g')}<span class="proj-icone-lapis" aria-hidden="true">${ICONE_LAPIS}</span></button>`
+        : projetoIconeHtml(p, 'g')}
+      <div class="cp-nome-campos">
+        <label class="set-rotulo" for="cp-nome">Nome do projeto</label>
+        <div class="cp-nome-linha">
+          <input type="text" class="input" id="cp-nome" maxlength="80" autocomplete="off" value="${esc(p.name)}" ${pode ? '' : 'readonly aria-readonly="true"'} oninput="this.dataset.mexido='1';atualizarNomeConfig()" onkeydown="if(event.key==='Enter'){event.preventDefault();salvarNomeProjeto();}">
+          ${pode ? '<button type="button" class="btn-primary" id="cp-nome-salvar" onclick="salvarNomeProjeto()" disabled>Salvar</button>' : ''}
+        </div>
+        ${pode ? '' : '<p class="cp-nota">Só o dono e quem edita mudam o nome e o ícone.</p>'}
+      </div>
+    </div>
+    <div class="set-linha">
+      <div class="set-linha-texto">
+        <div class="set-linha-titulo">Seu cargo: ${esc(CARGOS[meu].nome)}</div>
+        <div class="set-linha-desc">${esc(CARGOS[meu].desc)}</div>
+      </div>
+      <button type="button" class="btn-secondary" data-foco="cp-ver-cargos" onclick="abrirSecaoProjeto('cargos')">Ver cargos</button>
+    </div>
+    <div class="set-linha">
+      <div class="set-linha-texto">
+        <div class="set-linha-titulo">${dono ? 'Excluir o projeto' : 'Sair do projeto'}</div>
+        <div class="set-linha-desc">${dono ? 'Some para todo mundo, com canais e mensagens. As tarefas voltam a ser privadas.' : 'Você perde o acesso às tarefas, aos canais e às salas dele.'}</div>
+      </div>
+      <button type="button" class="btn-danger" onclick="${dono ? `excluirProjetoDaConfig('${p.id}')` : `sairDoProjetoDaConfig('${p.id}')`}">${dono ? 'Excluir' : 'Sair'}</button>
+    </div>`;
+}
+
+function atualizarNomeConfig(){
+  const c = configProjeto;
+  const p = c && state.projects.find(x=>x.id === c.pid);
+  const campo = document.getElementById('cp-nome');
+  const ok = document.getElementById('cp-nome-salvar');
+  if(!p || !campo || !ok) return;
+  const nome = campo.value.trim();
+  ok.disabled = !nome || nome === p.name;
+}
+
+async function salvarNomeProjeto(){
+  const c = configProjeto;
+  const p = c && state.projects.find(x=>x.id === c.pid);
+  const campo = document.getElementById('cp-nome');
+  if(!p || !campo || !canEditProject(p.id)) return;
+  const nome = campo.value.trim().slice(0, 80);
+  if(!nome){ showToast('O projeto precisa de um nome.', 'erro'); campo.focus(); return; }
+  if(nome === p.name) return;
+  const ok = document.getElementById('cp-nome-salvar');
+  if(ok){ ok.disabled = true; ok.textContent = 'Salvando…'; }
+  const {data, error} = await sb.from('projects').update({name: nome}).eq('id', p.id).select('id, name').maybeSingle();
+  if(error || !data){
+    if(error) console.error(error);
+    if(ok){ ok.textContent = 'Salvar'; ok.disabled = false; }
+    showToast(error ? 'Não deu para salvar o nome. Confira a conexão e tente de novo.' : 'Só o dono e quem edita mudam o nome.', 'erro');
+    return;
+  }
+  p.name = data.name;
+  saveProjectsCache();
+  campo.dataset.mexido = '';
+  renderSidebarProjects();
+  safeRerender();
+  desenharConfigProjeto();
+  showToast('Nome salvo');
+}
+
+async function excluirProjetoDaConfig(pid){
+  fecharConfigProjeto();
+  await deleteProject(pid);
+}
+
+async function sairDoProjetoDaConfig(pid){
+  fecharConfigProjeto();
+  await leaveProject(pid);
+}
+
+function painelAbasProjeto(p){
+  const pode = canEditProject(p.id);
+  const ordem = ordemAbasDoProjeto(p);
+  const padrao = ordem.join() === VISOES_PROJETO.join();
+  const itens = ordem.map((k, i)=>`
+    <li class="cp-aba ${pode ? 'movel' : ''}" data-chave="${k}">
+      ${pode ? `<span class="cp-aba-pega" aria-hidden="true">${ICONE_PEGA}</span>` : ''}
+      <span class="cp-aba-num" aria-hidden="true">${i + 1}</span>
+      <span class="cp-aba-nome">${ABAS_PROJETO[k]}${i === 0 ? '<span class="cp-aba-primeira">abre primeiro</span>' : ''}</span>
+      ${pode ? `<span class="cp-aba-acoes">
+        <button type="button" class="cn-acao" data-foco="aba-sobe-${k}" onclick="moverAbaProjeto('${k}', -1)" ${i === 0 ? 'disabled' : ''} aria-label="Subir ${ABAS_PROJETO[k]}" title="Subir">${SETA_ACIMA}</button>
+        <button type="button" class="cn-acao" data-foco="aba-desce-${k}" onclick="moverAbaProjeto('${k}', 1)" ${i === ordem.length - 1 ? 'disabled' : ''} aria-label="Descer ${ABAS_PROJETO[k]}" title="Descer">${SETA_ABAIXO}</button>
+      </span>` : ''}
+    </li>`).join('');
+  return `
+    <h3 class="set-painel-titulo">Abas</h3>
+    <p class="set-painel-desc">A ordem da barra de abas do projeto. Vale para todo mundo dele, e a primeira é a que abre para quem entra pela primeira vez.${pode ? ' Arraste pela alça ou use as setas.' : ''}</p>
+    <ol class="cp-abas" id="cp-abas" ${pode ? 'onpointerdown="arrastarAbaProjeto(event)"' : ''} aria-label="Ordem das abas">${itens}</ol>
+    ${pode
+      ? (padrao ? '' : '<button type="button" class="cp-link" data-foco="cp-abas-padrao" onclick="salvarOrdemAbas(null)">Voltar para a ordem padrão</button>')
+      : '<p class="cp-nota">Só o dono e quem edita mudam a ordem.</p>'}`;
+}
+
+function moverAbaProjeto(k, delta){
+  const p = configProjeto && state.projects.find(x=>x.id === configProjeto.pid);
+  if(!p) return;
+  const ordem = ordemAbasDoProjeto(p);
+  const i = ordem.indexOf(k), j = i + delta;
+  if(i < 0 || j < 0 || j >= ordem.length) return;
+  ordem.splice(j, 0, ordem.splice(i, 1)[0]);
+  salvarOrdemAbas(ordem, `aba-${delta < 0 ? 'sobe' : 'desce'}-${k}`);
+  anunciarNoApp(`${ABAS_PROJETO[k]}: posição ${j + 1} de ${ordem.length}`);
+}
+
+// Na lista das abas o arrasto começa na hora, pela alça ou pela linha: ela
+// fica num modal, sem rolagem disputando o gesto. O botão de seta não arrasta.
+function arrastarAbaProjeto(e){
+  if(e.button > 0 || (e.target.closest && e.target.closest('button'))) return;
+  const item = e.target.closest && e.target.closest('.cp-aba[data-chave]');
+  if(!item) return;
+  e.preventDefault();
+  arrastarNaLista(item, e, (ordem)=>salvarOrdemAbas(ordem));
+}
+
+// Arrastar um item de uma lista vertical simples. Os outros abrem espaço
+// enquanto o item passa; aoSoltar recebe a ordem nova das chaves.
+function arrastarNaLista(item, e, aoSoltar){
+  const lista = item.parentElement;
+  const itens = [...lista.children].filter(el=>el.dataset.chave);
+  const rects = new Map(itens.map(el=>[el.dataset.chave, el.getBoundingClientRect()]));
+  const inicial = itens.map(el=>el.dataset.chave);
+  const chave = item.dataset.chave;
+  let ordem = inicial;
+  const y0 = e.clientY;
+  item.classList.add('arrastando');
+  lista.classList.add('reordenando');
+  try{ item.setPointerCapture(e.pointerId); }catch(err){}
+  const mover = (ev)=>{
+    if(ev.pointerId !== e.pointerId) return;
+    const dy = ev.clientY - y0;
+    item.style.transform = `translateY(${dy}px) scale(1.02)`;
+    const r = rects.get(chave);
+    const centro = r.top + r.height / 2 + dy;
+    let idx = 0, melhor = Infinity;
+    inicial.forEach((k, i)=>{ const q = rects.get(k); const d = Math.abs(q.top + q.height / 2 - centro); if(d < melhor){ melhor = d; idx = i; } });
+    const nova = inicial.filter(k=>k !== chave);
+    nova.splice(idx, 0, chave);
+    ordem = nova;
+    for(const el of itens){
+      if(el === item) continue;
+      const k = el.dataset.chave;
+      const desloca = rects.get(inicial[nova.indexOf(k)]).top - rects.get(k).top;
+      el.style.transform = desloca ? `translateY(${desloca}px)` : '';
+    }
+  };
+  const soltar = (ev)=>{
+    if(ev.pointerId !== e.pointerId) return;
+    document.removeEventListener('pointermove', mover);
+    document.removeEventListener('pointerup', soltar);
+    document.removeEventListener('pointercancel', soltar);
+    lista.classList.remove('reordenando');
+    for(const el of itens){ el.style.transform = ''; el.classList.remove('arrastando'); }
+    if(ev.type === 'pointerup' && ordem.join() !== inicial.join()) aoSoltar(ordem);
+  };
+  document.addEventListener('pointermove', mover);
+  document.addEventListener('pointerup', soltar);
+  document.addEventListener('pointercancel', soltar);
+}
+
+// null volta para a ordem padrão. Muda na hora na tela e desfaz se o banco
+// recusar.
+async function salvarOrdemAbas(ordem, foco){
+  const p = configProjeto && state.projects.find(x=>x.id === configProjeto.pid);
+  if(!p || !canEditProject(p.id)) return;
+  const antes = p.ordem_abas;
+  p.ordem_abas = ordem;
+  desenharConfigProjeto();
+  if(foco){ const b = document.querySelector(`#config-projeto [data-foco="${foco}"]`); if(b && !b.disabled) b.focus(); }
+  if(state.view === 'project' && state.currentProjectId === p.id){ skipEntranceOnce = true; safeRerender(); }
+  const {data, error} = await sb.from('projects').update({ordem_abas: ordem}).eq('id', p.id).select('id').maybeSingle();
+  if(error || !data){
+    if(error) console.error(error);
+    p.ordem_abas = antes;
+    desenharConfigProjeto();
+    if(state.view === 'project' && state.currentProjectId === p.id){ skipEntranceOnce = true; safeRerender(); }
+    showToast(faltaColuna(error) ? 'A ordem das abas precisa do supabase/configuracoes_projeto.sql. Rode ele no Supabase.'
+      : error ? 'Não deu para salvar a ordem. Confira a conexão e tente de novo.' : 'Só o dono e quem edita mudam a ordem.', 'erro');
+    return;
+  }
+  saveProjectsCache();
+}
+
+function painelCargosProjeto(p){
+  const dono = p.myRole === 'owner';
+  const regras = regrasDoProjeto(p);
+  const quantos = (cargo)=>projectPeople(p).filter(pe=>cargoNoProjeto(p, pe.id) === cargo).length;
+  const bloco = (cargo)=>{
+    const c = CARGOS[cargo];
+    const n = quantos(cargo);
+    const perms = Object.entries(PERMISSOES_VOZ).map(([k, perm])=>{
+      const ligado = cargo === 'owner' || regras[cargo].includes(k);
+      const travado = cargo === 'owner' || !dono;
+      return `
+        <div class="cp-perm">
+          <div class="cp-perm-texto">
+            <span class="cp-perm-nome" id="cp-perm-${cargo}-${k}">${esc(perm.nome)}</span>
+            <span class="cp-perm-desc">${esc(perm.desc)}</span>
+          </div>
+          <label class="sound-toggle">
+            <input type="checkbox" data-foco="perm-${cargo}-${k}" ${ligado ? 'checked' : ''} ${travado ? 'disabled' : ''} aria-labelledby="cp-cargo-nome-${cargo} cp-perm-${cargo}-${k}" onchange="alternarRegraCargo('${cargo}', '${k}', this.checked, this)">
+            <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
+          </label>
+        </div>`;
+    }).join('');
+    return `
+      <div class="cp-cargo nivel-${c.nivel}">
+        <div class="cp-cargo-cab">
+          <span class="cp-cargo-nome" id="cp-cargo-nome-${cargo}">${esc(c.nome)}</span>
+          <span class="cp-cargo-n">${n} ${n === 1 ? 'pessoa' : 'pessoas'}</span>
+        </div>
+        <p class="cp-cargo-desc">${esc(c.desc)}${cargo === 'owner' ? ' Tem todas as permissões, sempre.' : ''}</p>
+        ${perms}
+      </div>`;
+  };
+  return `
+    <h3 class="set-painel-titulo">Cargos</h3>
+    <p class="set-painel-desc">${dono ? 'O que cada cargo pode fazer. As permissões das salas de voz você liga e desliga aqui, e valem na hora para todo mundo daquele cargo.' : 'O que cada cargo pode fazer. Só o dono muda as permissões.'}</p>
+    <div class="cp-cargos">${['owner', ...CARGOS_DE_MEMBRO].map(bloco).join('')}</div>
+    <p class="cp-nota">Ninguém silencia nem move o dono, e cada pessoa só modera quem tem cargo igual ou abaixo do seu.</p>`;
+}
+
+async function alternarRegraCargo(cargo, perm, ligado, input){
+  const p = configProjeto && state.projects.find(x=>x.id === configProjeto.pid);
+  if(!p || p.myRole !== 'owner' || !CARGOS_DE_MEMBRO.includes(cargo) || !PERMISSOES_VOZ[perm]) return;
+  const regras = regrasDoProjeto(p);
+  const lista = new Set(regras[cargo]);
+  if(ligado) lista.add(perm); else lista.delete(perm);
+  regras[cargo] = Object.keys(PERMISSOES_VOZ).filter(k=>lista.has(k));
+  const antes = p.regras_cargos;
+  p.regras_cargos = regras;
+  if(input) input.disabled = true;
+  const {data, error} = await sb.from('projects').update({regras_cargos: regras}).eq('id', p.id).select('id').maybeSingle();
+  if(input) input.disabled = false;
+  if(error || !data){
+    if(error) console.error(error);
+    p.regras_cargos = antes;
+    if(input) input.checked = !ligado;
+    showToast(faltaColuna(error) ? 'As regras de cargo precisam do supabase/configuracoes_projeto.sql. Rode ele no Supabase.'
+      : error ? 'Não deu para salvar a regra. Confira a conexão e tente de novo.' : 'Só o dono muda as regras de cargo.', 'erro');
+    return;
+  }
+  saveProjectsCache();
+  anunciarNoApp(`${CARGOS[cargo].nome}: ${PERMISSOES_VOZ[perm].nome.toLowerCase()} ${ligado ? 'ligado' : 'desligado'}`);
+  if(chamada && chamada.pid === p.id) desenharChamada();
+  atualizarListaCanais();
+}
+
+function painelMembrosProjeto(p){
+  const dono = p.myRole === 'owner';
+  const eu = session.user.id;
+  const linhaDono = `
+    <li class="cp-membro">
+      ${avatarChip(p.owner_id === eu ? {avatar_url: state.myAvatarUrl} : p.ownerProfile, ((p.ownerProfile && p.ownerProfile.name) || p.owner_email || '?')[0])}
+      <span class="cp-membro-texto">
+        <span class="cp-membro-nome">${nomePessoaHtml(p.owner_id === eu ? meuPerfilDeNome() : p.ownerProfile, (p.ownerProfile && p.ownerProfile.name) || p.owner_email || 'Dono')}${p.owner_id === eu ? ' <span class="proj-pessoa-voce">(você)</span>' : ''}</span>
+      </span>
+      <span class="cp-cargo-pilula nivel-3">Dono</span>
+    </li>`;
+  const membros = (p.members || []).filter(m=>m.user_id !== p.owner_id)
+    .sort((a, b)=>(a.status === 'accepted' ? 0 : 1) - (b.status === 'accepted' ? 0 : 1)
+      || (CARGOS[cargoValido(b.role)].nivel - CARGOS[cargoValido(a.role)].nivel));
+  const linhas = membros.map(m=>{
+    const cargo = cargoValido(m.role);
+    const pendente = m.status !== 'accepted';
+    const nome = m.code && !m.user_id ? 'Convite por código' : ((m.profile && m.profile.name) || m.invited_email || 'Membro');
+    const sou = m.user_id === eu;
+    const detalhe = pendente ? (m.code && !m.user_id ? 'Ainda não usado' : 'Convite pendente') : (m.profile && m.profile.name && m.invited_email ? m.invited_email : '');
+    return `
+      <li class="cp-membro ${pendente ? 'pendente' : ''}">
+        ${avatarChip(m.profile, (nome || '?')[0])}
+        <span class="cp-membro-texto">
+          <span class="cp-membro-nome">${pendente ? esc(nome) : nomePessoaHtml(sou ? meuPerfilDeNome() : m.profile, nome)}${sou ? ' <span class="proj-pessoa-voce">(você)</span>' : ''}</span>
+          ${detalhe ? `<span class="cp-membro-detalhe">${esc(detalhe)}</span>` : ''}
+        </span>
+        ${dono
+          ? `<select class="select cp-membro-cargo" data-foco="cargo-${m.id}" aria-label="${esc(`Cargo de ${nome}`)}" onchange="mudarCargo('${m.id}', this.value, this)">${opcoesDeCargo(cargo)}</select>
+             <button type="button" class="cn-acao cp-membro-tirar" data-foco="tirar-${m.id}" onclick="removeMember('${m.id}')" title="${pendente ? 'Cancelar convite' : 'Remover do projeto'}" aria-label="${esc(`${pendente ? 'Cancelar o convite de' : 'Remover'} ${nome}`)}"><svg aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`
+          : `<span class="cp-cargo-pilula nivel-${CARGOS[cargo].nivel}">${CARGOS[cargo].nome}</span>`}
+      </li>`;
+  }).join('');
+  return `
+    <div class="set-sub-head">
+      <h3 class="set-painel-titulo">Membros</h3>
+      ${dono ? `<button type="button" class="btn-secondary btn-com-icone set-btn-pequeno" onclick="fecharConfigProjeto();convidarNoProjeto('${p.id}')">${ICONE_MAIS}Convidar</button>` : ''}
+    </div>
+    <p class="set-painel-desc">${dono ? 'Mude o cargo de cada pessoa. Vale na hora, inclusive para quem está com o projeto aberto.' : 'Quem está no projeto e o cargo de cada um. Só o dono muda cargos.'}</p>
+    <ul class="cp-membros" role="list">${linhaDono}${linhas}</ul>`;
 }
 
 function limparFiltrosProjeto(){
@@ -4045,7 +4806,7 @@ function renderProjectsList(){
         <div class="pending-invite-card">
           <div>
             <div style="font-weight:500;color:var(--text-strong);font-size:13.5px;">${esc(inv.projects ? inv.projects.name : 'Projeto')}</div>
-            <div style="font-size:11.5px;color:var(--text-muted);">Convite como ${inv.role === 'editor' ? 'editor' : 'visualizador'}</div>
+            <div style="font-size:11.5px;color:var(--text-muted);">Convite como ${nomeDoCargo(inv.role).toLowerCase()}</div>
           </div>
           <div style="display:flex;gap:6px;">
             <button class="btn-secondary" style="padding:7px 12px;font-size:12px;" onclick="declineInvite('${inv.id}')">Recusar</button>
@@ -4058,7 +4819,7 @@ function renderProjectsList(){
   const listHtml = state.projects.length === 0
     ? `<div class="empty"><strong>Nenhum projeto compartilhado ainda.</strong>Crie um ou entre com um código de convite em "Gerenciar".</div>`
     : `<div class="projects-list-grid">${state.projects.map(p=>{
-        const role = p.myRole === 'owner' ? 'Dono' : (myRoleInProject(p.id) === 'editor' ? 'Editor' : 'Visualizador');
+        const role = nomeDoCargo(myRoleInProject(p.id));
         const tasks = state.tasks.filter(t=>t.project_id===p.id);
         const active = tasks.filter(t=>taskColumnType(t)!=='done').length;
         return `
@@ -4095,28 +4856,22 @@ function renderProjectsList(){
 // pessoa estiver numa sala de voz, qual. Convidar e remover continuam no
 // "Gerenciar membros" (o modal dos projetos), só para o dono.
 function pessoasDoProjetoHtml(p, isOwner){
-  const papel = (uid)=>{
-    if(uid === p.owner_id) return 'Dono';
-    const m = (p.members || []).find(x=>x.user_id === uid);
-    return m && m.role === 'editor' ? 'Editor' : 'Visualizador';
-  };
   const naSalaDe = {};
   try{
     const porSala = pessoasNasSalas(p.id);
     for(const [sala, gente] of Object.entries(porSala)) for(const x of gente) naSalaDe[x.uid] = sala;
   }catch(e){}
-  const ordem = {Dono: 0, Editor: 1, Visualizador: 2};
   const pessoas = projectPeople(p)
-    .map(pe=>({...pe, papel: papel(pe.id)}))
-    .sort((a, b)=>(ordem[a.papel] - ordem[b.papel]) || a.label.localeCompare(b.label, 'pt-BR'));
+    .map(pe=>{ const cargo = cargoNoProjeto(p, pe.id) || 'viewer'; return {...pe, cargo, papel: nomeDoCargo(cargo)}; })
+    .sort((a, b)=>(CARGOS[b.cargo].nivel - CARGOS[a.cargo].nivel) || a.label.localeCompare(b.label, 'pt-BR'));
   const linhas = pessoas.map(pe=>{
     const eu = pe.id === session.user.id;
     const sala = naSalaDe[pe.id] && canalDoProjeto(p.id, naSalaDe[pe.id]);
     return `
       <li class="proj-pessoa">
-        ${avatarChip(pe.profile, pe.label[0])}
+        ${avatarChip(eu ? meuPerfilDeNome() : pe.profile, pe.label[0])}
         <span class="proj-pessoa-texto">
-          <span class="proj-pessoa-nome">${esc(pe.label)}${eu ? ' <span class="proj-pessoa-voce">(você)</span>' : ''}</span>
+          <span class="proj-pessoa-nome">${nomePessoaHtml(eu ? meuPerfilDeNome() : pe.profile, pe.label)}${eu ? ' <span class="proj-pessoa-voce">(você)</span>' : ''}</span>
           ${sala ? `<span class="proj-pessoa-sala">${ICONE_SALA}${esc(sala.nome)}</span>` : ''}
         </span>
         <span class="proj-pessoa-papel">${pe.papel}</span>
@@ -4125,7 +4880,7 @@ function pessoasDoProjetoHtml(p, isOwner){
   return `
     <p class="proj-pessoas-titulo">${pessoas.length} ${pessoas.length === 1 ? 'pessoa' : 'pessoas'} no projeto</p>
     <ul class="proj-pessoas-lista">${linhas}</ul>
-    ${isOwner ? '<button type="button" class="proj-pessoas-gerenciar" onclick="alternarPessoasDoProjeto(null, true);openProjectsModal()">Gerenciar membros</button>' : ''}`;
+    <button type="button" class="proj-pessoas-gerenciar" onclick="abrirConfigProjeto('${p.id}', 'membros')">${isOwner ? 'Gerenciar membros e cargos' : 'Ver cargos'}</button>`;
 }
 
 function alternarPessoasDoProjeto(btn, fechar){
@@ -4274,7 +5029,7 @@ function renderProjectsModal(){
       <div class="pending-invite-card">
         <div>
           <div style="font-weight:500;color:var(--text-strong);font-size:13.5px;">${esc(inv.projects ? inv.projects.name : 'Projeto')}</div>
-          <div style="font-size:11.5px;color:var(--text-muted);">Convite como ${inv.role === 'editor' ? 'editor' : 'visualizador'}</div>
+          <div style="font-size:11.5px;color:var(--text-muted);">Convite como ${nomeDoCargo(inv.role).toLowerCase()}</div>
         </div>
         <div style="display:flex;gap:6px;">
           <button class="btn-secondary" style="padding:7px 12px;font-size:12px;" onclick="declineInvite('${inv.id}')">Recusar</button>
@@ -4330,7 +5085,9 @@ function renderProjectsModal(){
             ${avatarChip(m.profile, (m.invited_email||'?')[0])}
             <div class="member-email">${label}</div>
             ${isOwner && codeSeguro ? `<button class="member-copy" onclick="copiarLinkConvite('${codeSeguro}')">Copiar link</button>` : ''}
-            <div class="member-status ${m.status}">${m.status === 'accepted' ? 'Ativo' : 'Pendente'} · ${m.role === 'editor' ? 'Editor' : 'Visualizador'}</div>
+            ${isOwner
+              ? `<select class="member-cargo" aria-label="${esc(`Cargo de ${(m.profile && m.profile.name) || m.invited_email || 'convite por código'}`)}" onchange="mudarCargo('${m.id}', this.value, this)">${opcoesDeCargo(cargoValido(m.role))}</select><div class="member-status ${m.status === 'accepted' ? 'accepted' : 'pending'}">${m.status === 'accepted' ? 'Ativo' : 'Pendente'}</div>`
+              : `<div class="member-status ${m.status === 'accepted' ? 'accepted' : 'pending'}">${m.status === 'accepted' ? 'Ativo' : 'Pendente'} · ${nomeDoCargo(m.role)}</div>`}
             ${isOwner ? `<button class="member-remove" onclick="removeMember('${m.id}')" title="Remover"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>` : ''}
           </div>`;
         }).join('');
@@ -4340,7 +5097,7 @@ function renderProjectsModal(){
           <div class="project-card-head">
             <div class="project-card-name">${projetoIconeHtml(p, 'm')}<span class="project-card-nome">${esc(p.name)}</span>${seloNaoLidas(p.id)}</div>
             <div style="display:flex;align-items:center;gap:8px;">
-              <div class="project-card-role">${isOwner ? 'Dono' : myRoleInProject(p.id) === 'editor' ? 'Editor' : 'Visualizador'}</div>
+              <div class="project-card-role">${nomeDoCargo(myRoleInProject(p.id))}</div>
               <button class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="closeProjectsModal();openProjectView('${p.id}');">Abrir quadro</button>
             </div>
           </div>
@@ -4350,8 +5107,7 @@ function renderProjectsModal(){
             <div class="invite-row">
               <input type="email" class="input" id="invite-email-${p.id}" placeholder="Email pra convidar">
               <select id="invite-role-${p.id}">
-                <option value="editor">Editor</option>
-                <option value="viewer">Visualizador</option>
+                ${opcoesDeCargo('editor')}
               </select>
               <button class="btn-secondary" style="flex-shrink:0;padding:0 14px;" onclick="inviteToProject('${p.id}')">Convidar</button>
             </div>
@@ -4362,8 +5118,7 @@ function renderProjectsModal(){
                 <div class="invite-code-hint">Pra quem já tem login no app.</div>
               </div>
               <select id="code-role-${p.id}" aria-label="Papel de quem entrar pelo código">
-                <option value="editor">Editor</option>
-                <option value="viewer">Visualizador</option>
+                ${opcoesDeCargo('editor')}
               </select>
               <button class="btn-secondary" style="flex-shrink:0;padding:0 14px;" onclick="generateInviteCode('${p.id}')">Gerar código</button>
             </div>
@@ -4747,6 +5502,8 @@ function render(){
   skipEntranceOnce = false;
   trocaDeAba = null;
   m.scrollLeft = keepScroll;
+  if(state.view === 'project') posicionarRealceDasAbas(realceAntes);
+  realceAntes = null;
   attachEvents();
   tornarClicaveisAcessiveis(m);
   if(state.view === 'project' && state.projectTasksView === 'chat') aposRenderChat();
@@ -6138,7 +6895,7 @@ function hideClientSuggestions(){
 }
 
 function populateProjectSelect(){
-  const editableProjects = state.projects.filter(p=>p.myRole === 'owner' || myRoleInProject(p.id) === 'editor');
+  const editableProjects = state.projects.filter(p=>mexeEmTarefas(p.id));
   const field = document.getElementById('m-project-field');
   const sel = document.getElementById('m-project');
   if(editableProjects.length === 0){
@@ -6309,6 +7066,7 @@ const FECHAR_MODAL = {
   'routine-modal': ()=>closeRoutineModal(),
   'status-modal': ()=>closeStatusModal(),
   'projects-modal': ()=>closeProjectsModal(),
+  'config-projeto': ()=>fecharConfigProjeto(),
   'meta-modal': ()=>fecharNovaMeta(),
   'metas-intro-modal': ()=>fecharApresentacaoMetas(),
   'metas-historico-modal': ()=>fecharHistoricoMetas(),
@@ -9340,7 +10098,7 @@ function rotuloDia(iso){
 // Ao abrir o projeto: o que vem nos próximos 7 dias (eventos e tarefas
 // juntos, por dia e hora), as notas mais recentes, o quadro em números e o
 // que está com quem está olhando.
-function renderProjectInicio(p, canEdit, itens, tarefas, cols){
+function renderProjectInicio(p, canEdit, itens, tarefas, cols, mexe){
   const hoje = todayIso();
   const limite = isoMaisDias(hoje, 6);
   const aberta = t=>ehEvento(t) || taskColumnType(t) !== 'done';
@@ -9368,7 +10126,7 @@ function renderProjectInicio(p, canEdit, itens, tarefas, cols){
   const agenda = (atrasadas.length || dias.length) ? `
     ${atrasadas.length ? `<div class="pi-dia atrasado"><h3 class="pi-dia-titulo">Atrasadas<span>${atrasadas.length}</span></h3>${atrasadas.slice(0, 5).map(linha).join('')}</div>` : ''}
     ${dias.map(g=>`<div class="pi-dia ${g.iso === hoje ? 'hoje' : ''}"><h3 class="pi-dia-titulo">${rotuloDia(g.iso)}<span>${g.itens.length}</span></h3>${g.itens.map(linha).join('')}</div>`).join('')}`
-    : `<div class="pi-vazio"><p>Nada marcado para os próximos 7 dias.</p>${canEdit ? `<div class="pi-vazio-acoes">${state.temTipoEvento !== false ? `<button class="btn-secondary" onclick="novoNoProjeto('evento')">Novo evento</button>` : ''}<button class="btn-secondary" onclick="novoNoProjeto('tarefa')">Nova tarefa</button></div>` : ''}</div>`;
+    : `<div class="pi-vazio"><p>Nada marcado para os próximos 7 dias.</p>${mexe ? `<div class="pi-vazio-acoes">${state.temTipoEvento !== false ? `<button class="btn-secondary" onclick="novoNoProjeto('evento')">Novo evento</button>` : ''}<button class="btn-secondary" onclick="novoNoProjeto('tarefa')">Nova tarefa</button></div>` : ''}</div>`;
 
   // Notas: as três mexidas por último.
   const n = state.notasProjeto[p.id];
@@ -9432,7 +10190,9 @@ function abrirNotaDoInicio(id){
 
 /* ---------- + Novo (tarefa, evento, nota) ---------- */
 
-function renderMenuNovo(){
+// comNota: a nota é estrutura do projeto, e o participante cria só tarefas e
+// eventos.
+function renderMenuNovo(comNota){
   const item = (k, nome, desc)=>`<button role="menuitem" class="novo-menu-item" onclick="novoNoProjeto('${k}')"><span class="novo-menu-nome">${nome}</span><span class="novo-menu-desc">${desc}</span></button>`;
   return `
     <div class="novo-menu">
@@ -9440,7 +10200,7 @@ function renderMenuNovo(){
       <div class="novo-menu-lista" role="menu" hidden>
         ${item('tarefa', 'Tarefa', 'Vai para o quadro')}
         ${state.temTipoEvento !== false ? item('evento', 'Evento', 'Reunião, call, entrega com hora') : ''}
-        ${item('nota', 'Nota', 'Anotações do time')}
+        ${comNota !== false ? item('nota', 'Nota', 'Anotações do time') : ''}
       </div>
     </div>`;
 }
@@ -9539,8 +10299,15 @@ function mensagemChatLinha(r){
   return {id: r.id, projectId: r.project_id, canalId: r.canal_id || null, authorId: r.author_id, autorNome, kind: r.kind, body: r.body || '', created: r.created_at, apagada: !!r.apagada_em, duracao: r.duracao_seg};
 }
 
+// privado, regraMic e criadoPor vêm do salas_projeto.sql (RFC 0005); sem ele,
+// todo canal é aberto e toda sala é livre.
 function canalLinha(r){
-  return {id: r.id, projectId: r.project_id, tipo: r.tipo, nome: r.nome || '', categoriaId: r.categoria_id || null, posicao: Number(r.posicao) || 0, created: r.created_at || ''};
+  return {
+    id: r.id, projectId: r.project_id, tipo: r.tipo, nome: r.nome || '', categoriaId: r.categoria_id || null, posicao: Number(r.posicao) || 0, created: r.created_at || '',
+    privado: r.privado === true && r.tipo !== 'categoria',
+    regraMic: r.tipo === 'voz' && ['fechado', 'silencio'].includes(r.regra_mic) ? r.regra_mic : 'livre',
+    criadoPor: typeof r.criado_por === 'string' ? r.criado_por : null
+  };
 }
 
 // O chat e a chamada de antes, para quando o canais_projeto.sql ainda não rodou.
@@ -9562,6 +10329,15 @@ function canaisDoProjeto(pid){
 
 function canalDoProjeto(pid, id){
   return id ? canaisDoProjeto(pid).find(c=>c.id === id) || null : null;
+}
+
+// Quem vê um canal privado: o dono, quem criou e a lista (SEC-088). A lista
+// vem com os canais; o banco confere de novo.
+let membrosDosCanais = {};
+function pessoaVeCanal(pid, canal, uid){
+  if(!canal || !canal.privado) return true;
+  const p = state.projects.find(x=>x.id === pid);
+  return !!p && (uid === p.owner_id || uid === canal.criadoPor || !!(membrosDosCanais[canal.id] && membrosDosCanais[canal.id].has(uid)));
 }
 
 // Como a lista mostra: os canais sem categoria no topo, como no Discord, e
@@ -9628,7 +10404,17 @@ async function carregarCanais(){
     const novo = {};
     ids.forEach(id=>{ novo[id] = []; });
     (data || []).forEach(r=>{ const c = canalLinha(r); if(novo[c.projectId]) novo[c.projectId].push(c); });
+    // Quem vê cada canal privado (só dos que eu vejo, pelo RLS), para o
+    // "Mover para" não oferecer sala em que a pessoa não pode entrar.
+    const privados = Object.values(novo).flat().filter(c=>c.privado).map(c=>c.id);
+    const listas = {};
+    if(privados.length){
+      const {data: membros, error: erroMembros} = await sb.from('project_channel_membros').select('canal_id, user_id').in('canal_id', privados);
+      if(erroMembros) console.warn('lista dos canais privados:', erroMembros.message);
+      for(const m of membros || []) (listas[m.canal_id] = listas[m.canal_id] || new Set()).add(m.user_id);
+    }
     canaisPorProjeto = novo;
+    membrosDosCanais = listas;
     canaisCarregados = true;
     canaisErro = '';
   })();
@@ -9658,6 +10444,11 @@ function aposMudarCanais(){
     if(c.projectId && !canalDoProjeto(c.projectId, chave)) delete state.chatProjeto[chave];
   }
   agendarContagemChat();
+  // Sala privada nova (ou que deixou de ser) muda os tópicos assinados, e a
+  // sala da chamada pode ter mudado de tópico ou sumido.
+  conferirSalaDaChamada();
+  if(!chamada) sincronizarCanaisChamada();
+  aplicarModeracaoNaChamada();
   atualizarFaixaChamada();
   if(state.view !== 'project' || state.projectTasksView !== 'chat') return;
   // Com o mesmo canal aberto troca só a lista, para não mexer no campo em que
@@ -9741,6 +10532,8 @@ function atualizarContadorAbaChat(){
   const velho = aba.querySelector('.chat-selo');
   if(velho) velho.remove();
   if(state.projectTasksView !== 'chat') aba.insertAdjacentHTML('beforeend', seloNaoLidas(state.currentProjectId));
+  // O selo muda a largura da aba; o realce acompanha sem andar.
+  posicionarRealceDasAbas(null);
 }
 
 // A conversa deste canal está montada na aba Canais do projeto aberto.
@@ -9986,7 +10779,7 @@ function nomeAutorChat(p, authorId, autorNome){
 }
 
 function perfilAutorChat(p, authorId){
-  if(authorId === session.user.id) return {avatar_url: state.myAvatarUrl};
+  if(authorId === session.user.id) return meuPerfilDeNome();
   const pessoa = authorId && projectPeople(p).find(pe=>pe.id === authorId);
   return pessoa ? pessoa.profile : null;
 }
@@ -10063,7 +10856,7 @@ function renderListaChat(p, c, canal){
       <div class="chat-msg ${minha ? 'minha' : ''} ${novoGrupo ? 'inicio' : ''}">
         ${novoGrupo ? `<div class="chat-msg-avatar">${avatarChip(perfilAutorChat(p, m.authorId), nome[0])}</div>` : ''}
         <div class="chat-msg-corpo">
-          ${novoGrupo ? `<div class="chat-msg-nome">${esc(nome)}</div>` : ''}
+          ${novoGrupo ? `<div class="chat-msg-nome">${nomePessoaHtml(minha ? meuPerfilDeNome() : perfilAutorChat(p, m.authorId), nome)}</div>` : ''}
           <div class="chat-msg-linha">
             ${m.apagada
               ? `<div class="chat-balao apagada">mensagem apagada${horaNoBalao}</div>`
@@ -10093,11 +10886,11 @@ function alternarCategoria(id){
   atualizarListaCanais();
 }
 
-// Quem está em cada sala, pela Presence do canal da chamada do projeto.
+// Quem está em cada sala, pela Presence dos tópicos do projeto (o dele e o de
+// cada sala privada que a pessoa vê).
 function pessoasNasSalas(pid){
-  const reg = canaisChamada[pid];
   const porSala = {};
-  for(const x of (reg ? reg.emChamada : [])) if(x.sala) (porSala[x.sala] = porSala[x.sala] || []).push(x);
+  for(const x of emChamadaDoProjeto(pid)) if(x.sala) (porSala[x.sala] = porSala[x.sala] || []).push(x);
   return porSala;
 }
 
@@ -10106,16 +10899,47 @@ function botaoEditarCanal(canal){
   return `<button class="cn-acao cn-editar" data-foco="editar:${canal.id}" onclick="editarCanal('${canal.id}')" title="${canal.tipo === 'categoria' ? 'Editar categoria' : canal.tipo === 'voz' ? 'Editar sala' : 'Editar canal'}" aria-label="${esc(rotulo)}">${ICONE_LAPIS}</button>`;
 }
 
+const ICONE_CADEADO = '<svg class="cn-cadeado" aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>';
+
+// Cadeado no canal privado e o microfone riscado na sala com regra (RFC 0005).
+function marcasDoCanal(canal){
+  let html = '';
+  if(canal.privado) html += `<span class="cn-marca" title="${canal.tipo === 'voz' ? 'Sala privada' : 'Canal privado'}">${ICONE_CADEADO}<span class="sr-only">, privado</span></span>`;
+  if(canal.tipo === 'voz' && canal.regraMic !== 'livre'){
+    const t = canal.regraMic === 'silencio' ? 'Sala de silêncio' : 'Entra com o microfone fechado';
+    html += `<span class="cn-marca ${canal.regraMic}" title="${t}">${iconeChamada('micOff', 12)}<span class="sr-only">, ${t.toLowerCase()}</span></span>`;
+  }
+  return html;
+}
+
 function linhaCanalTexto(canal, aberto, pode){
   const ativo = !!aberto && canal.id === aberto.id;
   const n = chatNaoLidasCanal[canal.id] || 0;
+  const movel = pode && !canal.virtual;
   return `
-    <li class="cn-linha ${pode && !canal.virtual ? 'editavel' : ''}">
-      <button class="cn-canal ${ativo ? 'ativo' : ''} ${n && !ativo ? 'nao-lido' : ''}" data-foco="canal:${canal.id}" onclick="abrirCanal('${canal.id}')"${ativo ? ' aria-current="true"' : ''}>
-        ${ICONE_CANAL_TEXTO}<span class="sr-only">Canal de texto </span><span class="cn-nome">${esc(canal.nome)}</span>${n && !ativo ? `<span class="chat-selo" aria-label="${n} não lida${n > 1 ? 's' : ''}">${rotuloNaoLidas(n)}</span>` : ''}
+    <li class="cn-linha ${movel ? 'editavel' : ''}" data-id="${canal.id}" data-cat="${canal.categoriaId || ''}"${movel ? ' data-movel="1"' : ''}>
+      <button class="cn-canal ${ativo ? 'ativo' : ''} ${n && !ativo ? 'nao-lido' : ''}" data-foco="canal:${canal.id}" onclick="abrirCanal('${canal.id}')"${ativo ? ' aria-current="true"' : ''}${movel ? ' aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"' : ''}>
+        ${ICONE_CANAL_TEXTO}<span class="sr-only">Canal de texto </span><span class="cn-nome">${esc(canal.nome)}</span>${marcasDoCanal(canal)}${n && !ativo ? `<span class="chat-selo" aria-label="${n} não lida${n > 1 ? 's' : ''}">${rotuloNaoLidas(n)}</span>` : ''}
       </button>
-      ${pode && !canal.virtual ? botaoEditarCanal(canal) : ''}
+      ${movel ? botaoEditarCanal(canal) : ''}
     </li>`;
+}
+
+// Itens do menu de moderação de alguém numa sala: o que o cargo de quem abre
+// permite (SEC-087). O banco confere de novo.
+function itensModeracao(pid, uid, salaAtual){
+  const item = (acao, nome, desc, perigo)=>`<button role="menuitem" class="novo-menu-item ${perigo ? 'perigo' : ''}" onclick="fecharMenuNovoAberto();${acao}"><span class="novo-menu-nome">${nome}</span>${desc ? `<span class="novo-menu-desc">${desc}</span>` : ''}</button>`;
+  const partes = [];
+  if(podeModerar(pid, uid, 'silenciar')){
+    const sil = silenciadoPeloModerador(pid, uid);
+    partes.push(item(`moderarVoz('${pid}','${uid}','${sil ? 'liberar' : 'silenciar'}')`, sil ? 'Liberar o microfone' : 'Silenciar nas salas', sil ? 'Volta a poder falar' : 'Fecha o microfone até alguém liberar'));
+  }
+  if(podeModerar(pid, uid, 'mover')){
+    const outras = salasDoProjeto(pid).filter(s=>s.id !== salaAtual && CHAMADA_UUID.test(s.id) && pessoaVeCanal(pid, s, uid));
+    if(outras.length) partes.push(`<div class="novo-menu-titulo" role="presentation">Mover para</div>${outras.map(s=>item(`moderarVoz('${pid}','${uid}','mover','${s.id}')`, `${ICONE_SALA}<span>${esc(s.nome)}</span>`, '')).join('')}`);
+    partes.push(item(`moderarVoz('${pid}','${uid}','desconectar')`, 'Desconectar da chamada', 'Tira da sala', true));
+  }
+  return partes.join('');
 }
 
 function linhaSala(p, sala, gente, pode){
@@ -10123,21 +10947,33 @@ function linhaSala(p, sala, gente, pode){
   const n = gente.length;
   const pessoas = gente.map(x=>{
     const nome = nomeNaChamada(p.id, x.uid);
-    const fechado = x.ensurdecido || !x.mic;
-    return `
-      <li class="cn-pessoa" data-fala="${x.uid}">
-        ${avatarChip(perfilNaChamada(p.id, x.uid), nome[0])}
-        <span class="cn-pessoa-nome">${esc(nome)}</span>
+    const perfil = perfilNaChamada(p.id, x.uid);
+    const moderado = silenciadoPeloModerador(p.id, x.uid);
+    const fechado = x.ensurdecido || !x.mic || moderado;
+    const tituloMudo = moderado ? 'Silenciado por um moderador' : x.ensurdecido ? 'Sem som' : 'Microfone fechado';
+    const conteudo = `
+        ${avatarChip(perfil, nome[0])}
+        <span class="cn-pessoa-nome">${nomePessoaHtml(perfil, nome)}</span>
         ${x.tela ? '<span class="cn-pessoa-tela">Tela</span>' : ''}
-        ${fechado ? `<span class="cn-pessoa-mudo" title="${x.ensurdecido ? 'Sem som' : 'Microfone fechado'}">${iconeChamada(x.ensurdecido ? 'foneOff' : 'micOff', 13)}<span class="sr-only">${x.ensurdecido ? 'sem som' : 'microfone fechado'}</span></span>` : ''}
+        ${fechado ? `<span class="cn-pessoa-mudo ${moderado ? 'moderado' : ''}" title="${tituloMudo}">${iconeChamada(x.ensurdecido && !moderado ? 'foneOff' : 'micOff', 13)}<span class="sr-only">${tituloMudo.toLowerCase()}</span></span>` : ''}`;
+    const menu = x.uid !== session.user.id && podeModerar(p.id, x.uid) ? itensModeracao(p.id, x.uid, sala.id) : '';
+    if(!menu) return `<li class="cn-pessoa" data-fala="${x.uid}">${conteudo}</li>`;
+    const movel = podeModerar(p.id, x.uid, 'mover');
+    return `
+      <li class="cn-pessoa moderavel" data-fala="${x.uid}" data-uid="${x.uid}" data-sala="${sala.id}"${movel ? ' data-movel="1"' : ''}>
+        <div class="novo-menu cn-pessoa-menu">
+          <button type="button" class="cn-pessoa-btn novo-menu-btn" data-foco="pessoa:${x.uid}" aria-haspopup="menu" aria-expanded="false" onclick="alternarMenuNovo(this)" aria-label="${esc(`${nome}: moderar`)}"${movel ? ' title="Clique para moderar, ou segure e arraste para outra sala"' : ''}>${conteudo}</button>
+          <div class="novo-menu-lista cn-pessoa-lista" role="menu" hidden>${menu}</div>
+        </div>
       </li>`;
   }).join('');
+  const movel = pode && !sala.virtual;
   return `
-    <li class="cn-linha ${pode && !sala.virtual ? 'editavel' : ''}">
-      <button class="cn-canal voz ${minha ? 'ativo' : ''} ${n ? 'com-gente' : ''}" data-foco="canal:${sala.id}" onclick="entrarNaSala('${p.id}','${sala.id}')" title="${minha ? 'Você está nesta sala' : 'Entrar na sala'}">
-        ${ICONE_SALA}<span class="sr-only">Sala de voz </span><span class="cn-nome">${esc(sala.nome)}</span>${n ? `<span class="cn-sala-n"><span class="sr-only">, </span>${n}<span class="sr-only"> na sala</span></span>` : ''}
+    <li class="cn-linha ${movel ? 'editavel' : ''}" data-id="${sala.id}" data-cat="${sala.categoriaId || ''}" data-sala="${sala.id}"${movel ? ' data-movel="1"' : ''}>
+      <button class="cn-canal voz ${minha ? 'ativo' : ''} ${n ? 'com-gente' : ''}" data-foco="canal:${sala.id}" onclick="entrarNaSala('${p.id}','${sala.id}')" title="${minha ? 'Você está nesta sala' : 'Entrar na sala'}"${movel ? ' aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"' : ''}>
+        ${ICONE_SALA}<span class="sr-only">Sala de voz </span><span class="cn-nome">${esc(sala.nome)}</span>${marcasDoCanal(sala)}${n ? `<span class="cn-sala-n"><span class="sr-only">, </span>${n}<span class="sr-only"> na sala</span></span>` : ''}
       </button>
-      ${pode && !sala.virtual ? botaoEditarCanal(sala) : ''}
+      ${movel ? botaoEditarCanal(sala) : ''}
       ${n ? `<ul class="cn-sala-gente" role="list" aria-label="Na sala ${esc(sala.nome)}">${pessoas}</ul>` : ''}
     </li>`;
 }
@@ -10171,9 +11007,9 @@ function renderNavCanais(p, aberto){
     const visiveis = !fechada ? canais : canais.filter(c=>(aberto && c.id === aberto.id)
       || (c.tipo === 'voz' && (salas[c.id] || []).length) || (c.tipo === 'texto' && chatNaoLidasCanal[c.id]));
     return `
-      <div class="cn-cat ${fechada ? 'fechada' : ''}">
-        <div class="cn-cat-cab ${pode ? 'editavel' : ''}">
-          <button class="cn-cat-nome" data-foco="cat:${cat.id}" aria-expanded="${!fechada}" onclick="alternarCategoria('${cat.id}')">
+      <div class="cn-cat ${fechada ? 'fechada' : ''}" data-cat-id="${cat.id}">
+        <div class="cn-cat-cab ${pode ? 'editavel' : ''}" data-cat-id="${cat.id}"${pode ? ' data-movel="1"' : ''}>
+          <button class="cn-cat-nome" data-foco="cat:${cat.id}" aria-expanded="${!fechada}" onclick="alternarCategoria('${cat.id}')"${pode ? ' aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"' : ''}>
             ${ICONE_SETA_CATEGORIA}<span>${esc(cat.nome)}</span>
           </button>
           ${pode ? `${botaoEditarCanal(cat)}<button class="cn-acao" data-foco="novo:${cat.id}" onclick="novoCanal('texto','${cat.id}')" title="Criar canal nesta categoria" aria-label="${esc(`Criar canal ou sala em ${cat.nome}`)}">${ICONE_MAIS}</button>` : ''}
@@ -10183,7 +11019,7 @@ function renderNavCanais(p, aberto){
   }).join('');
   const vazia = !e.soltos.length && !e.categorias.length;
   return `
-    <nav class="cn-lista" id="cn-lista" aria-label="${esc(`Canais de ${p.name}`)}">
+    <nav class="cn-lista" id="cn-lista" aria-label="${esc(`Canais de ${p.name}`)}" onpointerdown="iniciarArrastoCanais(event)" onkeydown="teclaCanais(event)">
       <div class="cn-topo">
         <h3 class="cn-topo-nome">Canais</h3>
         ${pode ? menuNovoCanal(p) : ''}
@@ -10200,6 +11036,9 @@ function renderNavCanais(p, aberto){
 // conversa nem no campo de texto. O foco e a rolagem voltam para onde estavam.
 function atualizarListaCanais(){
   if(state.view !== 'project' || state.projectTasksView !== 'chat') return;
+  // No meio de um arrasto, redesenhar tiraria o item da mão; ao soltar a lista
+  // é redesenhada.
+  if(arrastoCanais){ arrastoCanais.redesenhar = true; return; }
   const nav = document.getElementById('cn-lista');
   const p = state.projects.find(x=>x.id === state.currentProjectId);
   if(!nav || !p) return;
@@ -10477,8 +11316,17 @@ function abrirCanalRapido(o){
   const sel = document.getElementById('canal-rapido-categoria');
   sel.innerHTML = `<option value="">Sem categoria (no topo)</option>${cats.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join('')}`;
   sel.value = o.categoriaId && cats.some(c=>c.id === o.categoriaId) ? o.categoriaId : '';
+  // Microfone ao entrar (sala) e privado (canal ou sala), RFC 0005.
+  document.getElementById('canal-rapido-mic').value = canal ? canal.regraMic : 'livre';
+  document.getElementById('canal-rapido-privado').checked = !!(canal && canal.privado);
+  canalRapido.membros = new Set();
+  canalRapido.membrosAntes = new Set();
+  canalRapido.membrosCarregados = !(canal && canal.privado);
+  if(canal && canal.privado) carregarMembrosDoCanal(canal);
   textosCanalRapido();
   opcoesPosicaoCanal(true);
+  micCanalRapido();
+  privadoCanalRapido();
   erroCanalRapido('');
   atualizarOkCanalRapido();
   caixa.classList.add('open');
@@ -10502,6 +11350,9 @@ function textosCanalRapido(){
   document.getElementById('canal-rapido-prefixo').innerHTML = r.tipo === 'texto' ? ICONE_CANAL_TEXTO : r.tipo === 'voz' ? ICONE_SALA : '';
   document.getElementById('canal-rapido').dataset.tipo = r.tipo;
   document.getElementById('canal-rapido-grupo-categoria').hidden = r.tipo === 'categoria';
+  document.getElementById('canal-rapido-grupo-mic').hidden = r.tipo !== 'voz';
+  document.getElementById('canal-rapido-grupo-privado').hidden = r.tipo === 'categoria';
+  document.getElementById('canal-rapido-privado-titulo').textContent = r.tipo === 'voz' ? 'Sala privada' : 'Canal privado';
   document.getElementById('canal-rapido-ok').textContent = r.enviando ? (r.modo === 'editar' ? 'Salvando…' : 'Criando…') : (r.modo === 'editar' ? 'Salvar' : t.ok);
 }
 
@@ -10510,6 +11361,84 @@ function tipoCanalRapido(tipo){
   canalRapido.tipo = tipo;
   textosCanalRapido();
   opcoesPosicaoCanal(false);
+  micCanalRapido();
+}
+
+function micCanalRapido(){
+  const v = document.getElementById('canal-rapido-mic').value;
+  document.getElementById('canal-rapido-mic-dica').textContent = (REGRAS_MIC[v] || REGRAS_MIC.livre).desc;
+}
+
+// A lista de quem vê o canal privado: o dono e quem criou sempre veem; quem
+// salva entra marcado e travado, para não se trancar fora (a policy recusaria).
+function privadoCanalRapido(){
+  const r = canalRapido;
+  if(!r) return;
+  const ligado = document.getElementById('canal-rapido-privado').checked;
+  const caixa = document.getElementById('canal-rapido-pessoas');
+  caixa.hidden = !ligado;
+  if(!ligado) return;
+  const p = state.projects.find(x=>x.id === r.pid);
+  const canal = r.modo === 'editar' ? canalDoProjeto(r.pid, r.id) : null;
+  const eu = session.user.id;
+  const criador = canal ? canal.criadoPor : eu;
+  const lista = document.getElementById('canal-rapido-pessoas-lista');
+  if(!r.membrosCarregados){ lista.innerHTML = '<p class="cr-dica">Carregando quem vê…</p>'; return; }
+  const pessoas = projectPeople(p).sort((a, b)=>(CARGOS[cargoNoProjeto(p, b.id) || 'viewer'].nivel - CARGOS[cargoNoProjeto(p, a.id) || 'viewer'].nivel) || a.label.localeCompare(b.label, 'pt-BR'));
+  lista.innerHTML = pessoas.map(pe=>{
+    const sempre = pe.id === p.owner_id ? 'dono' : pe.id === criador ? 'criou' : pe.id === eu ? 'você' : '';
+    const marcado = !!sempre || r.membros.has(pe.id);
+    const perfil = pe.id === eu ? meuPerfilDeNome() : pe.profile;
+    return `<label class="cr-pessoa ${sempre ? 'travada' : ''}">
+      <input type="checkbox" value="${pe.id}" ${marcado ? 'checked' : ''} ${sempre ? 'disabled' : ''} onchange="marcarMembroCanal(this)">
+      ${avatarChip(perfil, (pe.label || '?')[0])}
+      <span class="cr-pessoa-nome">${nomePessoaHtml(perfil, pe.label)}</span>
+      <span class="cr-pessoa-papel">${sempre ? (sempre === 'você' ? 'você' : sempre === 'dono' ? 'dono, sempre vê' : 'criou, sempre vê') : nomeDoCargo(cargoNoProjeto(p, pe.id))}</span>
+    </label>`;
+  }).join('');
+}
+
+function marcarMembroCanal(input){
+  const r = canalRapido;
+  if(!r || !CHAMADA_UUID.test(input.value)) return;
+  if(input.checked) r.membros.add(input.value); else r.membros.delete(input.value);
+}
+
+async function carregarMembrosDoCanal(canal){
+  const r = canalRapido;
+  const {data, error} = await sb.from('project_channel_membros').select('user_id').eq('canal_id', canal.id);
+  if(canalRapido !== r) return;
+  if(error) console.error(error);
+  for(const x of data || []) if(CHAMADA_UUID.test(x.user_id || '')){ r.membros.add(x.user_id); r.membrosAntes.add(x.user_id); }
+  r.membrosCarregados = true;
+  privadoCanalRapido();
+}
+
+// Grava a lista do canal privado: quem salva entra junto (se não for o dono
+// nem quem criou), para continuar vendo o canal.
+async function salvarMembrosDoCanal(pid, canal, membros, antes){
+  const p = state.projects.find(x=>x.id === pid);
+  const eu = session.user.id;
+  const quer = new Set([...membros].filter(uid=>uid !== p.owner_id && projectPeople(p).some(pe=>pe.id === uid)));
+  if(eu !== p.owner_id && eu !== canal.criadoPor) quer.add(eu);
+  const entrar = [...quer].filter(uid=>!antes.has(uid));
+  const sair = [...antes].filter(uid=>!quer.has(uid) && uid !== eu);
+  const res = await Promise.all([
+    entrar.length ? sb.from('project_channel_membros').insert(entrar.map(uid=>({canal_id: canal.id, project_id: pid, user_id: uid}))) : Promise.resolve({}),
+    sair.length ? sb.from('project_channel_membros').delete().eq('canal_id', canal.id).in('user_id', sair) : Promise.resolve({})
+  ]);
+  const falhou = res.find(x=>x.error);
+  if(falhou){ console.error(falhou.error); return falhou.error; }
+  membrosDosCanais[canal.id] = quer;
+  return null;
+}
+
+// Quem perde a visão de um canal não recebe o UPDATE pelo realtime (o RLS o
+// esconde): um aviso no tópico do projeto faz cada um recarregar a lista. Um
+// aviso falso só causa uma recarga.
+function avisarMudancaCanais(pid){
+  const reg = canaisChamada[pid];
+  if(reg && reg.assinado) reg.canal.send({type: 'broadcast', event: 'canais', payload: {}}).catch(()=>{});
 }
 
 // "Lugar na lista": no topo do grupo ou depois de cada um dos outros. Ao
@@ -10559,6 +11488,8 @@ function digitarCanalRapido(){
 
 function mensagemErroCanal(error){
   const t = `${error.message || ''} ${error.code || ''}`;
+  if(faltaColuna(error) || /project_channel_membros|42P01|PGRST205/.test(t)) return 'Privado e microfone da sala precisam do supabase/salas_projeto.sql. Rode ele no Supabase.';
+  if(/canal_membro_fora/.test(t)) return 'Alguém marcado não está mais no projeto. Confira a lista.';
   if(/canal_limite/.test(t)) return 'O projeto já tem 100 canais e categorias. Apague algum para criar outro.';
   if(/canal_categoria/.test(t)) return 'Essa categoria não existe mais. Escolha outra.';
   if(/row-level security|42501/.test(t)) return 'Só o dono e quem edita o projeto mexem nos canais.';
@@ -10580,6 +11511,296 @@ async function reordenarGrupo(pid, canal, categoriaId, lugar){
   return true;
 }
 
+/* --- arrastar na lista de canais (RFC 0005) --- */
+// Segurar ~0,4 s e arrastar, como os projetos na barra lateral. Dono e
+// editores mudam a ordem de canais, salas e categorias, inclusive levando um
+// canal para outra categoria; quem pode mover outros arrasta uma pessoa até
+// outra sala. Antes de segurar, mexer mais que alguns pixels cancela, e a
+// lista rola normalmente. Alt + seta faz o mesmo pelo teclado.
+let arrastoCanais = null;
+let ignorarCliqueCanais = false;
+
+function iniciarArrastoCanais(e){
+  if(e.button > 0 || arrastoCanais || !e.target.closest) return;
+  if(e.target.closest('.cn-acao, .novo-menu-lista, .cn-topo')) return;
+  const pessoa = e.target.closest('.cn-pessoa[data-movel]');
+  const linha = !pessoa && e.target.closest('.cn-linha[data-movel]');
+  const cab = !pessoa && !linha && e.target.closest('.cn-cat-cab[data-movel]');
+  const el = pessoa || linha || cab;
+  if(!el || !state.currentProjectId) return;
+  // Numa linha de sala, segurar em cima de uma pessoa não arrasta a sala.
+  if(linha && e.target.closest('.cn-sala-gente')) return;
+  const a = arrastoCanais = {
+    tipo: pessoa ? 'pessoa' : linha ? 'canal' : 'categoria', el, pid: state.currentProjectId,
+    pointerId: e.pointerId, x: e.clientX, y: e.clientY, ativo: false, timer: null, alvo: null
+  };
+  a.timer = setTimeout(()=>levantarNaListaCanais(a), SEGURAR_PROJETO_MS);
+  document.addEventListener('pointermove', moverArrastoCanais);
+  document.addEventListener('pointerup', soltarArrastoCanais);
+  document.addEventListener('pointercancel', soltarArrastoCanais);
+}
+
+function levantarNaListaCanais(a){
+  if(arrastoCanais !== a) return;
+  const nav = document.getElementById('cn-lista');
+  const itens = nav && nav.querySelector('.cn-itens');
+  if(!itens || !a.el.isConnected){ cancelarArrastoCanais(); return; }
+  fecharMenuNovoAberto();
+  a.ativo = true;
+  a.itens = itens;
+  // No computador quem rola é a lista; no celular, a página.
+  a.rolador = elementoQueRola(itens);
+  a.rolagem0 = a.rolador.scrollTop;
+  a.el.classList.add('arrastando');
+  nav.classList.add('reordenando', `arrastando-${a.tipo}`);
+  a.marca = document.createElement('div');
+  a.marca.className = 'cn-solta-aqui';
+  a.marca.hidden = true;
+  itens.appendChild(a.marca);
+  try{ a.el.setPointerCapture(a.pointerId); }catch(err){}
+  if(navigator.vibrate) navigator.vibrate(12);
+  anunciarNoApp(a.tipo === 'pessoa' ? 'Arraste até a sala de destino e solte.' : 'Arraste até o lugar novo e solte.');
+}
+
+function moverArrastoCanais(e){
+  const a = arrastoCanais;
+  if(!a || e.pointerId !== a.pointerId) return;
+  const dx = e.clientX - a.x, dy = e.clientY - a.y;
+  if(!a.ativo){
+    if(Math.hypot(dx, dy) > 6) cancelarArrastoCanais();
+    return;
+  }
+  const rolou = a.rolador.scrollTop - a.rolagem0;
+  a.el.style.transform = `translate(${a.tipo === 'pessoa' ? dx : 0}px, ${dy + rolou}px)`;
+  a.alvo = alvoNaListaCanais(a, e.clientY);
+  desenharAlvoCanais(a);
+  // Perto da borda, a lista (ou a página) rola sozinha.
+  const ehPagina = a.rolador === document.scrollingElement;
+  const r = ehPagina ? {top: 0, bottom: window.innerHeight} : a.rolador.getBoundingClientRect();
+  const topo = Math.max(r.top, 0), fundo = Math.min(r.bottom, window.innerHeight);
+  if(e.clientY < topo + 40) a.rolador.scrollTop -= 10;
+  else if(e.clientY > fundo - 72) a.rolador.scrollTop += 10;
+}
+
+function elementoQueRola(el){
+  for(let x = el; x && x !== document.body; x = x.parentElement){
+    const o = getComputedStyle(x).overflowY;
+    if((o === 'auto' || o === 'scroll') && x.scrollHeight > x.clientHeight + 1) return x;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+
+// O que está debaixo do dedo: a sala (para uma pessoa) ou o lugar na lista
+// (para canal e categoria). O lugar é guardado como "antes ou depois de tal
+// canal", e o índice sai dos dados, não da tela: numa categoria recolhida a
+// tela mostra só parte dela.
+function alvoNaListaCanais(a, y){
+  const meio = (r)=>r.top + r.height / 2;
+  const maisPerto = (lista)=>{
+    let melhor = null, dist = Infinity;
+    for(const x of lista){
+      const d = y < x.r.top ? x.r.top - y : y > x.r.bottom ? y - x.r.bottom : 0;
+      if(d < dist){ dist = d; melhor = x; }
+    }
+    return melhor;
+  };
+  if(a.tipo === 'pessoa'){
+    const salaDe = a.el.dataset.sala;
+    const salas = [...a.itens.querySelectorAll('.cn-linha[data-sala]')]
+      .map(el=>({el, r: el.getBoundingClientRect()}))
+      .filter(x=>y >= x.r.top && y <= x.r.bottom);
+    const x = salas[0];
+    if(!x || x.el.dataset.sala === salaDe) return null;
+    // Sala privada em que a pessoa não pode entrar não acende como destino.
+    if(!pessoaVeCanal(a.pid, canalDoProjeto(a.pid, x.el.dataset.sala), a.el.dataset.uid)) return null;
+    return {sala: x.el.dataset.sala, el: x.el};
+  }
+  if(a.tipo === 'categoria'){
+    const meu = a.el.closest('.cn-cat');
+    const blocos = [...a.itens.querySelectorAll('.cn-cat[data-cat-id]')].filter(el=>el !== meu)
+      .map(el=>({el, r: el.getBoundingClientRect()}));
+    const x = maisPerto(blocos);
+    if(!x) return null;
+    const antes = y < meio(x.r);
+    return {vizinho: x.el.dataset.catId, antes, linhaY: antes ? x.r.top : x.r.bottom};
+  }
+  const linhas = [...a.itens.querySelectorAll('.cn-linha[data-id]')].filter(el=>el !== a.el)
+    .map(el=>{ const b = el.querySelector('.cn-canal'); return {el, tipo: 'linha', r: (b || el).getBoundingClientRect(), fim: el.getBoundingClientRect().bottom}; });
+  const cabs = [...a.itens.querySelectorAll('.cn-cat-cab[data-cat-id]')]
+    .map(el=>({el, tipo: 'cab', r: el.getBoundingClientRect()}));
+  const x = maisPerto([...linhas, ...cabs]);
+  if(!x) return null;
+  if(x.tipo === 'cab') return {categoriaId: x.el.dataset.catId, vizinho: null, antes: true, linhaY: x.r.bottom};
+  const bloco = x.el.closest('.cn-cat[data-cat-id]');
+  const antes = y < meio(x.r);
+  return {categoriaId: bloco ? bloco.dataset.catId : null, vizinho: x.el.dataset.id, antes, linhaY: antes ? x.r.top : x.fim};
+}
+
+function desenharAlvoCanais(a){
+  a.itens.querySelectorAll('.alvo-soltar').forEach(el=>el.classList.remove('alvo-soltar'));
+  if(a.tipo === 'pessoa'){
+    a.marca.hidden = true;
+    if(a.alvo) a.alvo.el.classList.add('alvo-soltar');
+    return;
+  }
+  if(!a.alvo){ a.marca.hidden = true; return; }
+  const base = a.itens.getBoundingClientRect();
+  a.marca.hidden = false;
+  a.marca.style.top = `${a.alvo.linhaY - base.top + a.itens.scrollTop - 1}px`;
+}
+
+function cancelarArrastoCanais(){
+  const a = arrastoCanais;
+  if(!a) return;
+  clearTimeout(a.timer);
+  document.removeEventListener('pointermove', moverArrastoCanais);
+  document.removeEventListener('pointerup', soltarArrastoCanais);
+  document.removeEventListener('pointercancel', soltarArrastoCanais);
+  arrastoCanais = null;
+  if(a.ativo){
+    const nav = document.getElementById('cn-lista');
+    if(nav) nav.classList.remove('reordenando', `arrastando-${a.tipo}`);
+    a.el.style.transform = '';
+    a.el.classList.remove('arrastando');
+    if(a.marca) a.marca.remove();
+    if(a.itens) a.itens.querySelectorAll('.alvo-soltar').forEach(el=>el.classList.remove('alvo-soltar'));
+  }
+}
+
+async function soltarArrastoCanais(e){
+  const a = arrastoCanais;
+  if(!a || (e && e.pointerId !== a.pointerId)) return;
+  const ativo = a.ativo;
+  const alvo = a.alvo;
+  cancelarArrastoCanais();
+  if(!ativo) return;
+  // O clique que sai de soltar o dedo não abre o canal nem a sala.
+  ignorarCliqueCanais = true;
+  setTimeout(()=>{ ignorarCliqueCanais = false; }, 0);
+  if(e && e.type === 'pointerup' && alvo) await aplicarArrastoCanais(a, alvo);
+  atualizarListaCanais();
+}
+
+async function aplicarArrastoCanais(a, alvo){
+  const pid = a.pid;
+  if(a.tipo === 'pessoa'){
+    const uid = a.el.dataset.uid;
+    if(alvo.sala && CHAMADA_UUID.test(uid || '')) await moderarVoz(pid, uid, 'mover', alvo.sala);
+    return;
+  }
+  if(a.tipo === 'categoria'){
+    const cat = canalDoProjeto(pid, a.el.dataset.catId);
+    if(!cat) return;
+    const irmaos = irmaosNoGrupo(pid, true, null, cat.id);
+    const i = irmaos.findIndex(c=>c.id === alvo.vizinho);
+    if(i < 0) return;
+    await moverCanalPara(pid, cat, null, alvo.antes ? i : i + 1);
+    return;
+  }
+  const canal = canalDoProjeto(pid, a.el.dataset.id);
+  if(!canal) return;
+  let lugar = 0;
+  if(alvo.vizinho){
+    const irmaos = irmaosNoGrupo(pid, false, alvo.categoriaId, canal.id);
+    const i = irmaos.findIndex(c=>c.id === alvo.vizinho);
+    lugar = i < 0 ? irmaos.length : (alvo.antes ? i : i + 1);
+  }
+  await moverCanalPara(pid, canal, alvo.categoriaId, lugar);
+}
+
+// Muda a categoria (se mudou) e o lugar no grupo, e avisa os outros.
+async function moverCanalPara(pid, canal, categoriaId, lugar){
+  const ehCategoria = canal.tipo === 'categoria';
+  const catNova = ehCategoria ? null : (categoriaId || null);
+  const antes = {categoriaId: canal.categoriaId};
+  if(!ehCategoria && catNova !== (canal.categoriaId || null)){
+    const {data, error} = await sb.from('project_channels').update({categoria_id: catNova}).eq('id', canal.id).select('id').maybeSingle();
+    if(error || !data){
+      if(error) console.error(error);
+      showToast(error ? mensagemErroCanal(error) : 'Só o dono e quem edita o projeto mexem nos canais.', 'erro');
+      return false;
+    }
+    canal.categoriaId = catNova;
+    // Recolhida, a categoria de destino abre para mostrar onde o canal ficou.
+    const fechadas = categoriasFechadas(pid);
+    if(catNova && fechadas.has(catNova)){
+      fechadas.delete(catNova);
+      try{ localStorage.setItem(`canaisFechados:${pid}`, JSON.stringify([...fechadas])); }catch(e){}
+    }
+  }
+  const ok = await reordenarGrupo(pid, canal, ehCategoria ? null : catNova, lugar);
+  if(!ok){
+    canal.categoriaId = antes.categoriaId;
+    showToast('A ordem não foi gravada toda. Confira a lista.', 'erro');
+  }
+  avisarMudancaCanais(pid);
+  aposMudarCanais();
+  const grupo = irmaosNoGrupo(pid, ehCategoria, ehCategoria ? null : catNova, null);
+  const onde = ehCategoria ? '' : ` em ${catNova ? (canalDoProjeto(pid, catNova) || {}).nome || 'categoria' : 'sem categoria'}`;
+  anunciarNoApp(`${canal.tipo === 'texto' ? '#' : ''}${canal.nome}: posição ${grupo.findIndex(c=>c.id === canal.id) + 1} de ${grupo.length}${onde}`);
+  return ok;
+}
+
+document.addEventListener('click', e=>{
+  if(ignorarCliqueCanais && e.target.closest && e.target.closest('#cn-lista')){
+    e.stopPropagation();
+    e.preventDefault();
+  }
+}, true);
+
+// No toque, depois de segurar, o dedo arrasta em vez de rolar a lista, e o
+// menu de toque longo do navegador não abre.
+document.addEventListener('touchmove', e=>{
+  if(arrastoCanais && arrastoCanais.ativo && e.cancelable) e.preventDefault();
+}, {passive: false});
+document.addEventListener('contextmenu', e=>{
+  if(arrastoCanais && e.target.closest && e.target.closest('#cn-lista')) e.preventDefault();
+});
+
+// Alt + seta: o canal (ou sala) sobe ou desce um lugar; no começo ou no fim do
+// grupo, passa para o grupo vizinho. A categoria troca de lugar com a vizinha.
+async function teclaCanais(e){
+  if(!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+  const pid = state.currentProjectId;
+  const sobe = e.key === 'ArrowUp';
+  const botaoCanal = e.target.closest('.cn-linha[data-movel] > .cn-canal');
+  const botaoCat = e.target.closest('.cn-cat-cab[data-movel] .cn-cat-nome');
+  if(!pid || (!botaoCanal && !botaoCat)) return;
+  e.preventDefault();
+  if(botaoCat){
+    const cat = canalDoProjeto(pid, botaoCat.closest('.cn-cat-cab').dataset.catId);
+    if(!cat) return;
+    const todas = irmaosNoGrupo(pid, true, null, null);
+    const i = todas.findIndex(c=>c.id === cat.id);
+    const j = i + (sobe ? -1 : 1);
+    if(i < 0 || j < 0 || j >= todas.length) return;
+    await moverCanalPara(pid, cat, null, j);
+    focarNaListaCanais(`cat:${cat.id}`);
+    return;
+  }
+  const canal = canalDoProjeto(pid, botaoCanal.closest('.cn-linha').dataset.id);
+  if(!canal) return;
+  const e2 = estruturaCanais(pid);
+  const grupos = [{cat: null, canais: e2.soltos}, ...e2.categorias.map(g=>({cat: g.cat.id, canais: g.canais}))];
+  const g = grupos.findIndex(x=>x.canais.some(c=>c.id === canal.id));
+  if(g < 0) return;
+  const i = grupos[g].canais.findIndex(c=>c.id === canal.id);
+  let destino = g, lugar;
+  if(sobe && i > 0) lugar = i - 1;
+  else if(!sobe && i < grupos[g].canais.length - 1) lugar = i + 1;
+  else if(sobe && g > 0){ destino = g - 1; lugar = grupos[destino].canais.length; }
+  else if(!sobe && g < grupos.length - 1){ destino = g + 1; lugar = 0; }
+  else return;
+  await moverCanalPara(pid, canal, grupos[destino].cat, lugar);
+  focarNaListaCanais(`canal:${canal.id}`);
+}
+
+function focarNaListaCanais(foco){
+  atualizarListaCanais();
+  const el = document.querySelector(`#cn-lista [data-foco="${foco}"]`);
+  if(el) el.focus();
+}
+
 async function salvarCanalRapido(){
   const r = canalRapido;
   if(!r || r.enviando) return;
@@ -10588,24 +11809,42 @@ async function salvarCanalRapido(){
   if(!nome) return;
   const categoriaId = r.tipo === 'categoria' ? null : (document.getElementById('canal-rapido-categoria').value || null);
   const lugar = Number(document.getElementById('canal-rapido-posicao').value) || 0;
+  // Privado e microfone só vão ao banco quando saem do padrão ou mudam: sem o
+  // salas_projeto.sql, o canal comum continua salvando como antes.
+  const privado = r.tipo !== 'categoria' && document.getElementById('canal-rapido-privado').checked;
+  const regraMic = r.tipo === 'voz' && REGRAS_MIC[document.getElementById('canal-rapido-mic').value] ? document.getElementById('canal-rapido-mic').value : 'livre';
+  if(privado && !r.membrosCarregados) return;
   r.enviando = true;
   textosCanalRapido();
   atualizarOkCanalRapido();
   let ordemOk = true;
+  let listaOk = true;
   let novo = null;
   try{
     if(r.modo === 'criar'){
-      const {data, error} = await sb.from('project_channels').insert({project_id: r.pid, tipo: r.tipo, nome, categoria_id: categoriaId, posicao: 0}).select().single();
+      const linha = {project_id: r.pid, tipo: r.tipo, nome, categoria_id: categoriaId, posicao: 0};
+      if(privado) linha.privado = true;
+      if(regraMic !== 'livre') linha.regra_mic = regraMic;
+      const {data, error} = await sb.from('project_channels').insert(linha).select().single();
       if(error){ console.error(error); erroCanalRapido(mensagemErroCanal(error)); campo.focus(); return; }
       novo = canalLinha(data);
       (canaisPorProjeto[r.pid] = canaisPorProjeto[r.pid] || []).push(novo);
       ordemOk = await reordenarGrupo(r.pid, novo, categoriaId, lugar);
+      if(privado) listaOk = !await salvarMembrosDoCanal(r.pid, novo, r.membros, new Set());
     }else{
       const canal = canalDoProjeto(r.pid, r.id);
       if(!canal){ erroCanalRapido('Este canal não existe mais.'); return; }
       const mudou = {};
       if(nome !== canal.nome) mudou.nome = nome;
       if(r.tipo !== 'categoria' && categoriaId !== canal.categoriaId) mudou.categoria_id = categoriaId;
+      if(r.tipo === 'voz' && regraMic !== canal.regraMic) mudou.regra_mic = regraMic;
+      if(r.tipo !== 'categoria' && privado !== canal.privado) mudou.privado = privado;
+      // A lista vai antes de o canal virar privado: a policy só deixa salvar o
+      // canal privado se quem salva continuar vendo.
+      if(privado){
+        const erroLista = await salvarMembrosDoCanal(r.pid, canal, r.membros, r.membrosAntes);
+        if(erroLista){ erroCanalRapido(mensagemErroCanal(erroLista)); return; }
+      }
       if(Object.keys(mudou).length){
         const {data, error} = await sb.from('project_channels').update(mudou).eq('id', canal.id).select().maybeSingle();
         if(error || !data){
@@ -10624,7 +11863,9 @@ async function salvarCanalRapido(){
   if(canalRapido !== r) return;
   const tipo = r.tipo;
   fecharCanalRapido();
+  avisarMudancaCanais(r.pid);
   if(!ordemOk) showToast('Salvo, mas a ordem não foi gravada toda. Confira a lista.', 'erro');
+  else if(!listaOk) showToast('Criado, mas a lista de quem vê não foi gravada. Edite o canal para conferir.', 'erro');
   else showToast(r.modo === 'criar' ? (tipo === 'categoria' ? 'Categoria criada' : tipo === 'voz' ? 'Sala criada' : 'Canal criado') : 'Salvo');
   if(novo && novo.tipo === 'texto'){ abrirCanal(novo.id); return; }
   aposMudarCanais();
@@ -10651,6 +11892,7 @@ async function apagarCanalRapido(){
   canaisPorProjeto[r.pid] = lista.filter(c=>c.id !== canal.id);
   if(canal.tipo === 'categoria') canaisPorProjeto[r.pid].forEach(c=>{ if(c.categoriaId === canal.id) c.categoriaId = null; });
   delete state.chatProjeto[canal.id];
+  avisarMudancaCanais(r.pid);
   showToast(canal.tipo === 'categoria' ? 'Categoria apagada' : canal.tipo === 'voz' ? 'Sala apagada' : 'Canal apagado');
   aposMudarCanais();
 }
@@ -10695,10 +11937,14 @@ async function usarModeloEquipe(){
         else novos.push({project_id: pid, tipo, nome: nome || (tipo === 'texto' ? 'geral' : 'Geral'), categoria_id: idCategoria(g.nome), posicao: i});
       });
     });
-    const res = await Promise.all([
-      sb.from('project_channels').insert(novos),
-      ...mover.map(m=>sb.from('project_channels').update({categoria_id: m.categoria_id, posicao: m.posicao}).eq('id', m.id))
-    ]);
+    // A sala Silêncio já nasce como sala de silêncio (RFC 0005). Sem o
+    // salas_projeto.sql a coluna não existe, e ela nasce como as outras.
+    const comSilencio = novos.map(n=>n.tipo === 'voz' && n.nome === 'Silêncio' ? {...n, regra_mic: 'silencio'} : n);
+    let inseridos = await sb.from('project_channels').insert(comSilencio);
+    if(inseridos.error && faltaColuna(inseridos.error)) inseridos = await sb.from('project_channels').insert(novos);
+    const res = [inseridos, ...await Promise.all(
+      mover.map(m=>sb.from('project_channels').update({categoria_id: m.categoria_id, posicao: m.posicao}).eq('id', m.id))
+    )];
     await carregarCanais();
     const falhou = res.find(x=>x.error);
     if(falhou){
@@ -10849,7 +12095,7 @@ function membroNovoNaChamada(pid, uid){
     try{ await loadProjects(); safeRerender(); }catch(e){}
     r.timer = null;
     // Reconfere: se a pessoa ainda não estiver na lista, tenta de novo depois.
-    if(projetoDaChamada(pid) && !permitidoNaChamada(pid, uid)) presencaChamada(pid);
+    if(projetoDaChamada(pid) && !permitidoNaChamada(pid, uid)) presencaDoProjeto(pid);
   }, Math.max(0, r.ultima + 8000 - Date.now()));
 }
 
@@ -10861,7 +12107,7 @@ function nomeNaChamada(pid, uid){
 }
 
 function perfilNaChamada(pid, uid){
-  if(uid === session.user.id) return {avatar_url: state.myAvatarUrl};
+  if(uid === session.user.id) return meuPerfilDeNome();
   const p = projetoDaChamada(pid);
   const pessoa = p && projectPeople(p).find(pe=>pe.id === uid);
   return pessoa ? pessoa.profile : null;
@@ -10881,54 +12127,94 @@ function formatarDuracaoChamada(ms){
 
 /* --- canal do Realtime (sinalização e presença) --- */
 
-function canalChamada(pid){
-  if(canaisChamada[pid]) return canaisChamada[pid];
-  const reg = {pid, assinado: false, erro: false, emChamada: []};
+// Salas privadas (RFC 0005): cada uma tem o próprio tópico,
+// chamada:<projeto>:<sala>, que o banco só abre para quem a vê (SEC-088). As
+// salas abertas continuam todas no tópico do projeto. canaisChamada guarda um
+// registro por tópico, com a chave "<projeto>" ou "<projeto>:<sala>".
+function salaPrivada(pid, sala){
+  const s = canalDoProjeto(pid, sala);
+  return !!(s && s.tipo === 'voz' && s.privado && CHAMADA_UUID.test(s.id));
+}
+
+function chaveTopico(pid, sala){
+  return salaPrivada(pid, sala) ? `${pid}:${sala}` : pid;
+}
+
+function regDaChamada(c){
+  return c ? canaisChamada[c.topico || c.pid] || null : null;
+}
+
+// Todos os registros de um projeto: o tópico dele e os das salas privadas.
+function regsDoProjeto(pid){
+  return Object.values(canaisChamada).filter(r=>r.pid === pid);
+}
+
+// Quem está em alguma sala do projeto, juntando os tópicos.
+function emChamadaDoProjeto(pid){
+  return regsDoProjeto(pid).flatMap(r=>r.emChamada);
+}
+
+function canalChamada(chave){
+  if(canaisChamada[chave]) return canaisChamada[chave];
+  const [pid, salaFixa] = chave.split(':');
+  const reg = {chave, pid, salaFixa: salaFixa || null, assinado: false, erro: false, emChamada: []};
   reg.pronto = new Promise(ok=>{ reg.resolver = ok; });
-  reg.canal = sb.channel(`chamada:${pid}`, {config: {private: true, presence: {key: session.user.id}, broadcast: {self: false}}})
-    .on('presence', {event: 'sync'}, ()=>presencaChamada(pid))
-    .on('broadcast', {event: 'sinal'}, (msg)=>receberSinalChamada(pid, msg && msg.payload))
+  reg.canal = sb.channel(`chamada:${chave}`, {config: {private: true, presence: {key: session.user.id}, broadcast: {self: false}}})
+    .on('presence', {event: 'sync'}, ()=>presencaChamada(chave))
+    .on('broadcast', {event: 'sinal'}, (msg)=>receberSinalChamada(chave, msg && msg.payload))
+    .on('broadcast', {event: 'canais'}, ()=>{ if(!salaFixa) agendarCanais(); })
     .subscribe((status)=>{
       if(status === 'SUBSCRIBED'){
         reg.assinado = true;
         reg.erro = false;
         reg.resolver(true);
-        presencaChamada(pid);
+        presencaChamada(chave);
         // Voltando de uma queda de conexão: a Presence some do servidor e
         // precisa ser marcada de novo.
-        if(chamada && chamada.pid === pid && chamada.presente) atualizarPresencaChamada();
+        if(chamada && regDaChamada(chamada) === reg && chamada.presente) atualizarPresencaChamada();
       }else if(status === 'CHANNEL_ERROR' || status === 'TIMED_OUT'){
         if(!reg.assinado){ reg.erro = true; reg.resolver(false); }
       }else if(status === 'CLOSED'){
         reg.assinado = false;
       }
     });
-  canaisChamada[pid] = reg;
+  canaisChamada[chave] = reg;
   return reg;
 }
 
-// Fica assinado só o canal do projeto aberto (para a faixa "Chamada em
-// andamento"), o da prévia e o da chamada em que a pessoa está.
+// Fica assinado o canal do projeto aberto (para a faixa "Chamada em
+// andamento" e para quem está em cada sala), o da prévia e o da chamada em que
+// a pessoa está. Cada um leva junto os tópicos das salas privadas que a
+// pessoa vê no projeto.
 function sincronizarCanaisChamada(){
   if(!session || !chamadaSuportada()) return;
   const quer = new Set();
-  if(state.view === 'project' && state.currentProjectId){
-    const p = projetoDaChamada(state.currentProjectId);
-    if(p) quer.add(p.id);
-  }
-  if(previaChamada) quer.add(previaChamada.pid);
-  if(chamada) quer.add(chamada.pid);
-  for(const pid of quer) canalChamada(pid);
-  for(const pid of Object.keys(canaisChamada)){
-    if(quer.has(pid)) continue;
-    try{ sb.removeChannel(canaisChamada[pid].canal); }catch(e){}
-    delete canaisChamada[pid];
+  const projeto = (pid)=>{
+    if(!projetoDaChamada(pid)) return;
+    quer.add(pid);
+    for(const s of salasDoProjeto(pid)) if(salaPrivada(pid, s.id)) quer.add(`${pid}:${s.id}`);
+  };
+  if(state.view === 'project' && state.currentProjectId) projeto(state.currentProjectId);
+  if(previaChamada){ projeto(previaChamada.pid); quer.add(chaveTopico(previaChamada.pid, previaChamada.sala)); }
+  if(chamada){ projeto(chamada.pid); if(chamada.topico) quer.add(chamada.topico); }
+  for(const chave of quer) canalChamada(chave);
+  for(const chave of Object.keys(canaisChamada)){
+    if(quer.has(chave)) continue;
+    try{ sb.removeChannel(canaisChamada[chave].canal); }catch(e){}
+    delete canaisChamada[chave];
   }
 }
 
-function presencaChamada(pid){
-  const reg = canaisChamada[pid];
+// Presence de todos os tópicos de um projeto (quem entrou no projeto agora
+// pode estar em qualquer um).
+function presencaDoProjeto(pid){
+  for(const r of regsDoProjeto(pid)) presencaChamada(r.chave);
+}
+
+function presencaChamada(chave){
+  const reg = canaisChamada[chave];
   if(!reg) return;
+  const pid = reg.pid;
   const estado = reg.canal.presenceState();
   const lista = [];
   for(const [uid, metas] of Object.entries(estado || {})){
@@ -10938,7 +12224,10 @@ function presencaChamada(pid){
     if(!ativas.length) continue;
     const m = ativas.reduce((a, b)=>(Number(b.desde) || 0) > (Number(a.desde) || 0) ? b : a);
     lista.push({
-      uid, sessao: m.sessao.slice(0, 64), desde: Number(m.desde) || Date.now(), sala: salaDaPresenca(pid, m.sala),
+      uid, sessao: m.sessao.slice(0, 64), desde: Number(m.desde) || Date.now(),
+      // No tópico de uma sala privada, a sala é a dele, diga a pessoa o que
+      // disser.
+      sala: reg.salaFixa || salaDaPresenca(pid, m.sala), topico: chave,
       mic: m.mic !== false, ensurdecido: !!m.ensurdecido, camera: !!m.camera, tela: !!m.tela, telaSom: !!(m.tela && m.telaSom)
     });
   }
@@ -10949,7 +12238,7 @@ function presencaChamada(pid){
   atualizarFaixaChamada();
   if(state.currentProjectId === pid) atualizarListaCanais();
   if(previaChamada && previaChamada.pid === pid) desenharQuemEstaNaPrevia();
-  if(chamada && chamada.pid === pid) reconciliarChamada();
+  if(chamada && regDaChamada(chamada) === reg) reconciliarChamada();
   // A lista de salas aberta na chamada mostra quem está em cada uma.
   if(chamada && chamada.pid === pid && chamada.painelSalas) desenharChamada();
 }
@@ -10982,7 +12271,7 @@ function nomeDaChamada(pid, sala){
 
 function atualizarPresencaChamada(){
   const c = chamada;
-  const reg = c && canaisChamada[c.pid];
+  const reg = regDaChamada(c);
   if(!reg || !reg.assinado) return Promise.resolve();
   return reg.canal.track({
     sessao: c.sessao, em_chamada: true, desde: c.entrouEm, sala: CHAMADA_UUID.test(c.sala || '') ? c.sala : null,
@@ -10992,7 +12281,7 @@ function atualizarPresencaChamada(){
 
 function enviarSinalChamada(para, paraSessao, tipo, dados){
   const c = chamada;
-  const reg = c && canaisChamada[c.pid];
+  const reg = regDaChamada(c);
   if(!reg || !reg.assinado) return;
   reg.canal.send({type: 'broadcast', event: 'sinal', payload: {de: session.user.id, deSessao: c.sessao, para, paraSessao, tipo, dados}})
     .catch(e=>console.warn('chamada: sinal', e));
@@ -11026,17 +12315,21 @@ function candidatoIce(d){
     usernameFragment: typeof d.usernameFragment === 'string' ? d.usernameFragment : undefined};
 }
 
-function receberSinalChamada(pid, s){
+function receberSinalChamada(chave, s){
   const c = chamada;
-  if(!c || c.pid !== pid || !sinalChamadaValido(s)) return;
+  const reg = canaisChamada[chave];
+  // Só vale o sinal que chega pelo tópico da sala em que estou.
+  if(!c || !reg || regDaChamada(c) !== reg || !sinalChamadaValido(s)) return;
+  const pid = c.pid;
   if(s.para !== session.user.id || s.paraSessao !== c.sessao || s.de === session.user.id) return;
   // SEC-076: sinal de quem não é (mais) do projeto é ignorado.
   if(!permitidoNaChamada(pid, s.de)){ membroNovoNaChamada(pid, s.de); return; }
   // Sinal de quem a Presence diz estar em outra sala também. Quem ainda não
   // apareceu na Presence passa: a oferta às vezes chega antes dela.
-  const reg = canaisChamada[pid];
-  const quem = reg && reg.emChamada.find(x=>x.uid === s.de);
+  const quem = reg.emChamada.find(x=>x.uid === s.de);
   if(quem && quem.sala !== c.sala) return;
+  // SEC-087: a sessão que recebeu ordem de mover ou desconectar fica sozinha.
+  if(quem && sessaoBarradaNaSala(pid, quem)) return;
   let par = c.pares.get(s.de);
   if(s.tipo === 'oferta'){
     if(par && par.sessao !== s.deSessao){ fecharParChamada(par); par = null; }
@@ -11323,7 +12616,10 @@ function aplicarVolumePar(par){
   if(!par.reforcos) par.reforcos = {};
   for(const [tipo, el] of Object.entries(par.audio)){
     const a = ajusteDeVolume(tipo === 'telaAudio' ? `${par.uid}:tela` : par.uid);
-    const calado = !!(c && c.ensurdecido) || a.mudo;
+    // SEC-087: a voz de quem foi silenciado, ou está numa sala de silêncio
+    // sem poder falar, não toca aqui, mesmo que o app dele mande.
+    const semVoz = tipo === 'voz' && !!c && !podeFalarNaSala(c.pid, c.sala, par.uid);
+    const calado = !!(c && c.ensurdecido) || a.mudo || semVoz;
     const r = a.v > 1 && volumeAcimaDe100() ? reforcoDoAudio(par, tipo, el) : null;
     if(r){
       el.volume = 1;
@@ -11458,12 +12754,13 @@ function fecharParChamada(par){
 // as 4 primeiras ficavam, Q19); a qualidade se ajusta pelo tetoDaChamada.
 function reconciliarChamada(){
   const c = chamada;
-  const reg = c && canaisChamada[c.pid];
+  const reg = regDaChamada(c);
   if(!c || !reg || !c.presente) return;
   const eu = session.user.id;
   // Só quem está na mesma sala: quem vai para outra sala sai das conexões
-  // como quem sai da chamada.
-  const dentro = naSala(reg, c.sala);
+  // como quem sai da chamada. Quem recebeu ordem de mover ou desconectar e
+  // ficou (app alterado) também sai, pela moderação (SEC-087).
+  const dentro = naSala(reg, c.sala).filter(p=>p.uid === eu || !sessaoBarradaNaSala(c.pid, p));
   const estouNaPresenca = dentro.some(p=>p.uid === eu && p.sessao === c.sessao);
   c.inicio = Math.min(c.entrouEm, ...dentro.map(p=>p.desde));
   // "Chamada iniciada" sai de quem não viu ninguém ao entrar, mas só depois
@@ -11794,8 +13091,11 @@ async function abrirPreviaChamada(pid, salaPedida){
   }
   fecharAvisoChamada();
   if(previaChamada) fecharPreviaChamada();
-  previaChamada = {pid, sala, mic: true, camera: false, voz: null, cam: null, erro: '', entrando: false, dispositivos: {mic: '', cam: '', saida: ''}};
-  canalChamada(pid);
+  // A regra da sala decide o microfone da prévia: "entra mudo" e "silêncio"
+  // começam fechados.
+  const micLivre = regraMicDaSala(pid, sala) === 'livre' && !micTravadoNaSala(pid, sala);
+  previaChamada = {pid, sala, mic: micLivre, camera: false, voz: null, cam: null, erro: '', entrando: false, dispositivos: {mic: '', cam: '', saida: ''}};
+  sincronizarCanaisChamada();
   // textContent: o nome da sala e do projeto entram como texto puro.
   const varias = salasDoProjeto(pid).length >= 2;
   document.getElementById('chamada-previa-titulo').textContent = varias ? `Entrar em ${nomeDaSala(pid, sala)} · ${p.name}` : `Entrar na chamada · ${p.name}`;
@@ -11831,6 +13131,10 @@ async function previaLigarMicrofone(){
 function previaAlternarMic(){
   const pr = previaChamada;
   if(!pr) return;
+  if(!pr.mic && micTravadoNaSala(pr.pid, pr.sala)){
+    showToast(silenciadoPeloModerador(pr.pid, session.user.id) ? 'Um moderador silenciou você neste projeto.' : 'Sala de silêncio: aqui ninguém abre o microfone.');
+    return;
+  }
   if(!pr.voz){ pr.mic = true; previaLigarMicrofone().then(desenharPreviaChamada); return; }
   pr.mic = !pr.mic;
   pr.voz.enabled = pr.mic;
@@ -11928,14 +13232,23 @@ function desenharQuemEstaNaPrevia(){
   const pr = previaChamada;
   const el = document.getElementById('ch-previa-quem');
   if(!pr || !el) return;
-  const reg = canaisChamada[pr.pid];
+  const reg = canaisChamada[chaveTopico(pr.pid, pr.sala)];
   const na = naSala(reg, pr.sala);
   const varias = salasDoProjeto(pr.pid).length > 1;
   const onde = varias ? `em ${nomeDaSala(pr.pid, pr.sala)}` : 'na chamada';
-  if(reg && reg.erro){ el.textContent = 'O canal da chamada não abriu. Se é a primeira chamada do app, falta rodar o supabase/chamadas.sql no Supabase.'; return; }
-  if(!na.length){ el.textContent = `Ninguém ${onde} ainda. Quem estiver com o app aberto recebe um aviso quando você entrar.`; return; }
+  if(reg && reg.erro){
+    el.textContent = reg.salaFixa ? 'A sala privada não abriu. Se é a primeira sala privada do app, falta rodar o supabase/salas_projeto.sql no Supabase.'
+      : 'O canal da chamada não abriu. Se é a primeira chamada do app, falta rodar o supabase/chamadas.sql no Supabase.';
+    return;
+  }
+  // A regra do microfone da sala vem junto, para ninguém estranhar entrar mudo.
+  const regra = regraMicDaSala(pr.pid, pr.sala);
+  const nota = silenciadoPeloModerador(pr.pid, session.user.id) ? ' Um moderador silenciou você: você entra só ouvindo.'
+    : regra === 'silencio' ? (micTravadoNaSala(pr.pid, pr.sala) ? ' Sala de silêncio: você entra só ouvindo.' : ' Sala de silêncio: só quem modera abre o microfone.')
+    : regra === 'fechado' ? ' Nesta sala todo mundo entra com o microfone fechado.' : '';
+  if(!na.length){ el.textContent = `Ninguém ${onde} ainda. Quem estiver com o app aberto recebe um aviso quando você entrar.${nota}`; return; }
   const nomes = na.map(p=>nomeNaChamada(pr.pid, p.uid));
-  el.textContent = `${listaDeNomes(nomes)} ${na.length === 1 ? 'está' : 'estão'} ${onde}.`;
+  el.textContent = `${listaDeNomes(nomes)} ${na.length === 1 ? 'está' : 'estão'} ${onde}.${nota}`;
 }
 
 function fecharPreviaChamada(){
@@ -12001,23 +13314,30 @@ async function entrarNaChamada(){
   if(!pr || pr.entrando) return;
   pr.entrando = true;
   desenharPreviaChamada();
-  const reg = canalChamada(pr.pid);
+  const topico = chaveTopico(pr.pid, pr.sala);
+  const reg = canalChamada(topico);
   const pronto = await Promise.race([reg.pronto, new Promise(ok=>setTimeout(()=>ok(false), 10000))]);
   if(previaChamada !== pr) return;
   const falhar = (msg)=>{ pr.entrando = false; pr.erro = msg; desenharPreviaChamada(); };
-  if(!pronto) return falhar('O canal da chamada não abriu. Confira a conexão. Se é a primeira chamada do app, falta rodar o supabase/chamadas.sql no Supabase.');
+  if(!pronto) return falhar(topico !== pr.pid
+    ? 'A sala privada não abriu. Confira a conexão. Se é a primeira sala privada do app, falta rodar o supabase/salas_projeto.sql no Supabase.'
+    : 'O canal da chamada não abriu. Confira a conexão. Se é a primeira chamada do app, falta rodar o supabase/chamadas.sql no Supabase.');
   const eu = session.user.id;
   // Uma conta fica em uma sala por vez no projeto: a Presence tem uma chave
   // por pessoa.
-  if(reg.emChamada.some(p=>p.uid === eu)) return falhar('Você já está numa chamada deste projeto em outra aba ou aparelho.');
+  if(emChamadaDoProjeto(pr.pid).some(p=>p.uid === eu)) return falhar('Você já está numa chamada deste projeto em outra aba ou aparelho.');
   const ice = await buscarTurnChamada(pr.pid);
   if(previaChamada !== pr) return;
 
   const agora = Date.now();
+  // Silenciado por um moderador ou sala de silêncio sem poder falar: entra
+  // com o microfone fechado e travado. Na sala "entra mudo" a prévia já
+  // começou fechada; quem abriu ali entra falando.
+  const micPermitido = !micTravadoNaSala(pr.pid, pr.sala);
   chamada = {
-    pid: pr.pid, sala: pr.sala, sessao: novaSessaoChamada(), entrouEm: agora, inicio: agora, presente: false,
+    pid: pr.pid, sala: pr.sala, topico, sessao: novaSessaoChamada(), entrouEm: agora, inicio: agora, presente: false,
     local: {voz: pr.voz, cam: pr.camera ? pr.cam : null, tela: null, telaAudio: null},
-    mic: !!(pr.mic && pr.voz), ensurdecido: false, micAntes: true, camera: !!(pr.camera && pr.cam), tela: false,
+    mic: !!(pr.mic && pr.voz && micPermitido), ensurdecido: false, micAntes: true, camera: !!(pr.camera && pr.cam), tela: false,
     dispositivos: Object.assign({}, pr.dispositivos),
     pares: new Map(), participantes: new Map(), iceAdiantado: {}, esperas: {}, vigias: {},
     iceServers: ice.servidores, semTurn: ice.semTurn, turnAdiado: !!ice.adiado, turnTimer: null,
@@ -12045,7 +13365,8 @@ async function entrarNaChamada(){
     const c = chamada;
     c.timerInicio = setTimeout(()=>{ if(chamada === c) reconciliarChamada(); }, 2500);
   }
-  presencaChamada(chamada.pid);
+  presencaDoProjeto(chamada.pid);
+  aplicarModeracaoNaChamada();
   safeRerender();
 }
 
@@ -12110,7 +13431,7 @@ async function sairDaChamada(opts){
   }
   const audios = document.getElementById('chamada-audios');
   if(audios) audios.remove();
-  const reg = canaisChamada[c.pid];
+  const reg = regDaChamada(c);
   const restantes = naSala(reg, c.sala).filter(p=>!(p.uid === session.user.id && p.sessao === c.sessao));
   if(reg && reg.assinado){ try{ await reg.canal.untrack(); }catch(e){} }
   if(c.presente && !restantes.length) registrarLinhaChamada(c.pid, c.sala, 'chamada_fim', Math.round((Date.now() - c.inicio) / 1000));
@@ -12125,15 +13446,34 @@ async function sairDaChamada(opts){
 // sala antiga, grava "Chamada encerrada" nela se a pessoa era a última e
 // entra na nova com uma sessão nova, para um sinal atrasado da sala antiga
 // não se misturar. Microfone, câmera e tela seguem como estavam.
-async function trocarDeSalaChamada(sala){
+// Entre sala aberta e sala privada o tópico muda (RFC 0005): sai da Presence
+// do tópico antigo e entra na do novo. o.forcar refaz a entrada na mesma sala,
+// quando ela vira privada ou aberta com a pessoa dentro; o.aviso diz por quê
+// (movido por alguém).
+async function trocarDeSalaChamada(sala, opts){
+  const o = opts || {};
   const c = chamada;
-  if(!c || c.sala === sala || c.trocando) return;
+  if(!c || (c.sala === sala && !o.forcar) || c.trocando) return;
   if((canalDoProjeto(c.pid, sala) || {}).tipo !== 'voz') return;
   c.trocando = true;
-  const reg = canaisChamada[c.pid];
+  const reg = regDaChamada(c);
   const eu = session.user.id;
+  const topicoNovo = chaveTopico(c.pid, sala);
+  if(topicoNovo !== c.topico){
+    const regNovo = canalChamada(topicoNovo);
+    const pronto = await Promise.race([regNovo.pronto, new Promise(ok=>setTimeout(()=>ok(false), 10000))]);
+    if(chamada !== c){ return; }
+    if(!pronto){
+      c.trocando = false;
+      showToast(salaPrivada(c.pid, sala) ? 'A sala privada não abriu. Confira a conexão ou se o supabase/salas_projeto.sql já rodou.' : 'Não deu para trocar de sala. Confira a conexão.', 'erro');
+      sincronizarCanaisChamada();
+      return;
+    }
+  }
   const restantes = naSala(reg, c.sala).filter(p=>!(p.uid === eu && p.sessao === c.sessao));
-  if(c.presente && !restantes.length) registrarLinhaChamada(c.pid, c.sala, 'chamada_fim', Math.round((Date.now() - c.inicio) / 1000));
+  if(c.presente && !restantes.length && c.sala !== sala) registrarLinhaChamada(c.pid, c.sala, 'chamada_fim', Math.round((Date.now() - c.inicio) / 1000));
+  if(topicoNovo !== c.topico && reg && reg.assinado){ try{ await reg.canal.untrack(); }catch(e){} }
+  c.topico = topicoNovo;
   clearTimeout(c.timerInicio);
   Object.values(c.esperas).forEach(clearTimeout);
   c.esperas = {};
@@ -12148,14 +13488,23 @@ async function trocarDeSalaChamada(sala){
   c.sessao = novaSessaoChamada();
   c.entrouEm = agora;
   c.inicio = agora;
-  c.registrarInicio = naSala(reg, sala).length === 0;
+  c.registrarInicio = naSala(regDaChamada(c), sala).length === 0;
+  // A regra de microfone da sala nova vale ao chegar: sala de silêncio (ou
+  // silenciado pelo moderador) fecha; sala "fechado" também começa fechada.
+  if(c.mic && (micTravadoNaSala(c.pid, sala) || regraMicDaSala(c.pid, sala) !== 'livre')){
+    c.mic = false;
+    if(c.local.voz) c.local.voz.enabled = false;
+  }
   tocarSomChamada('entrar');
-  anunciarNaChamada(`Você entrou em ${nomeDaSala(c.pid, sala)}`);
+  anunciarNaChamada(o.aviso || `Você entrou em ${nomeDaSala(c.pid, sala)}`);
+  if(o.aviso) showToast(o.aviso);
+  sincronizarCanaisChamada();
   await atualizarPresencaChamada();
   c.trocando = false;
   if(chamada !== c) return;
   if(c.registrarInicio) c.timerInicio = setTimeout(()=>{ if(chamada === c) reconciliarChamada(); }, 2500);
-  presencaChamada(c.pid);
+  presencaDoProjeto(c.pid);
+  aplicarModeracaoNaChamada();
   desenharChamada();
   safeRerender();
 }
@@ -12173,7 +13522,205 @@ function conferirAcessoChamada(){
   for(const par of [...chamada.pares.values()]){
     if(!permitidoNaChamada(chamada.pid, par.uid)) fecharParChamada(par);
   }
-  presencaChamada(chamada.pid);
+  presencaDoProjeto(chamada.pid);
+}
+
+// Depois de recarregar os canais: a sala da chamada sumiu (apagada, ou
+// privada e a pessoa saiu da lista) e a chamada acaba; virou privada ou aberta
+// e a chamada passa para o tópico certo.
+function conferirSalaDaChamada(){
+  const c = chamada;
+  if(!c || c.trocando || canaisSemTabela || !canaisCarregados) return;
+  if(!canalDoProjeto(c.pid, c.sala)){
+    sairDaChamada({aviso: 'A sala em que você estava não existe mais para você.'});
+    return;
+  }
+  if(chaveTopico(c.pid, c.sala) !== c.topico) trocarDeSalaChamada(c.sala, {forcar: true});
+  else sincronizarCanaisChamada();
+}
+
+/* --- microfone das salas e moderação de voz (RFC 0005) --- */
+// Cada sala tem uma regra de microfone (project_channels.regra_mic). Silenciar,
+// mover e desconectar outra pessoa é uma linha em project_voz_moderacao, que
+// só aceita quem tem a permissão do cargo (SEC-087), e chega a todos pelo
+// Postgres Changes. Quem é alvo obedece; os outros aplicam por conta própria:
+// não tocam a voz de quem não pode falar e não conectam com a sessão que
+// recebeu ordem de mover ou desconectar.
+
+const REGRAS_MIC = {
+  livre: {nome: 'Livre', desc: 'Cada um entra com o microfone como escolheu na prévia.'},
+  fechado: {nome: 'Entra mudo', desc: 'Todo mundo chega com o microfone fechado e abre quando quiser.'},
+  silencio: {nome: 'Silêncio', desc: 'Ninguém abre o microfone, só quem pode silenciar outros.'}
+};
+
+function regraMicDaSala(pid, sala){
+  const s = canalDoProjeto(pid, sala);
+  return s && Object.prototype.hasOwnProperty.call(REGRAS_MIC, s.regraMic) ? s.regraMic : 'livre';
+}
+
+// moderacao[projeto][pessoa] = a linha de project_voz_moderacao dela.
+let moderacao = {};
+let moderacaoSemTabela = false;
+let canalModeracao = null;
+const comandosAtendidos = new Set();
+
+function moderacaoDe(pid, uid){
+  return (moderacao[pid] || {})[uid] || null;
+}
+
+function silenciadoPeloModerador(pid, uid){
+  const m = moderacaoDe(pid, uid);
+  return !!(m && m.silenciado);
+}
+
+// Pode falar na sala: ninguém silenciou a pessoa e, na sala de silêncio, ela
+// tem a permissão de silenciar outros.
+function podeFalarNaSala(pid, sala, uid){
+  if(silenciadoPeloModerador(pid, uid)) return false;
+  if(regraMicDaSala(pid, sala) === 'silencio') return temPermissaoVoz(pid, 'silenciar', uid);
+  return true;
+}
+
+function micTravadoNaSala(pid, sala){
+  return !podeFalarNaSala(pid, sala, session.user.id);
+}
+
+// A sessão de alguém que recebeu ordem de ir para outra sala, ou de sair, e
+// continua aqui.
+function sessaoBarradaNaSala(pid, p){
+  const m = moderacaoDe(pid, p.uid);
+  if(!m || !m.comando || !m.comandoSessao || m.comandoSessao !== p.sessao) return false;
+  return m.comando === 'desconectar' || m.comandoSala !== p.sala;
+}
+
+function moderacaoLinha(r){
+  return {
+    projectId: r.project_id, uid: r.user_id, silenciado: !!r.silenciado,
+    comando: r.comando === 'mover' || r.comando === 'desconectar' ? r.comando : null,
+    comandoSala: CHAMADA_UUID.test(r.comando_sala || '') ? r.comando_sala : null,
+    comandoSessao: typeof r.comando_sessao === 'string' ? r.comando_sessao.slice(0, 64) : null,
+    comandoEm: typeof r.comando_em === 'string' ? r.comando_em : null,
+    por: CHAMADA_UUID.test(r.atualizado_por || '') ? r.atualizado_por : null
+  };
+}
+
+async function carregarModeracao(){
+  if(!session || moderacaoSemTabela) return;
+  const ids = state.projects.map(p=>p.id);
+  if(!ids.length){ moderacao = {}; return; }
+  const {data, error} = await sb.from('project_voz_moderacao').select('*').in('project_id', ids);
+  if(error){
+    if(chatErroSemTabela(error)){
+      moderacaoSemTabela = true;
+      console.warn('Moderação de voz: rode supabase/salas_projeto.sql para ativar.');
+    }else console.error(error);
+    return;
+  }
+  const novo = {};
+  for(const r of data || []){
+    const m = moderacaoLinha(r);
+    if(CHAMADA_UUID.test(m.projectId || '') && CHAMADA_UUID.test(m.uid || '')) (novo[m.projectId] = novo[m.projectId] || {})[m.uid] = m;
+  }
+  moderacao = novo;
+  ligarRealtimeModeracao();
+  aposMudarModeracao();
+}
+
+function ligarRealtimeModeracao(){
+  if(canalModeracao || moderacaoSemTabela) return;
+  canalModeracao = sb.channel('moderacao-voz')
+    .on('postgres_changes', {event: '*', schema: 'public', table: 'project_voz_moderacao'}, (payload)=>{
+      if(payload.eventType === 'DELETE'){
+        const o = payload.old || {};
+        if(moderacao[o.project_id]) delete moderacao[o.project_id][o.user_id];
+      }else if(payload.new){
+        const m = moderacaoLinha(payload.new);
+        if(!CHAMADA_UUID.test(m.projectId || '') || !CHAMADA_UUID.test(m.uid || '')) return;
+        const antes = moderacaoDe(m.projectId, m.uid);
+        (moderacao[m.projectId] = moderacao[m.projectId] || {})[m.uid] = m;
+        avisarModeracao(antes, m);
+      }
+      aposMudarModeracao();
+    })
+    .subscribe();
+}
+
+// Quem foi silenciado ou liberado fica sabendo, com o nome de quem fez.
+function avisarModeracao(antes, m){
+  if(m.uid !== session.user.id || !!(antes && antes.silenciado) === m.silenciado) return;
+  const p = projetoDaChamada(m.projectId);
+  if(!p) return;
+  const quem = m.por && m.por !== session.user.id ? nomeNaChamada(p.id, m.por) : null;
+  if(m.silenciado) showToast(`${quem || 'Um moderador'} silenciou você nas salas de ${p.name}.`);
+  else showToast(`${quem || 'Um moderador'} liberou o seu microfone em ${p.name}.`);
+}
+
+function aposMudarModeracao(){
+  aplicarModeracaoNaChamada();
+  atualizarListaCanais();
+  if(previaChamada) desenharPreviaChamada();
+}
+
+// O que a moderação muda na chamada em que estou: ordem para esta sessão
+// (mover ou sair), microfone travado e a voz de quem não pode falar.
+function aplicarModeracaoNaChamada(){
+  const c = chamada;
+  if(!c || c.trocando) return;
+  const eu = session.user.id;
+  const m = moderacaoDe(c.pid, eu);
+  if(m && m.comando && m.comandoSessao === c.sessao && m.comandoEm){
+    const chave = `${c.sessao}:${m.comandoEm}`;
+    if(!comandosAtendidos.has(chave)){
+      comandosAtendidos.add(chave);
+      const quem = m.por && m.por !== eu ? nomeNaChamada(c.pid, m.por) : 'Um moderador';
+      if(m.comando === 'desconectar'){
+        sairDaChamada({aviso: `${quem} tirou você da chamada.`});
+        return;
+      }
+      if(m.comandoSala && m.comandoSala !== c.sala && canalDoProjeto(c.pid, m.comandoSala)){
+        trocarDeSalaChamada(m.comandoSala, {aviso: `${quem} levou você para ${nomeDaSala(c.pid, m.comandoSala)}.`});
+        return;
+      }
+    }
+  }
+  const travado = micTravadoNaSala(c.pid, c.sala);
+  if(travado && c.mic){
+    c.mic = false;
+    if(c.local.voz) c.local.voz.enabled = false;
+    tocarSomChamada('mutar');
+    anunciarNaChamada(silenciadoPeloModerador(c.pid, eu) ? 'Seu microfone foi fechado por um moderador' : 'Sala de silêncio: seu microfone foi fechado');
+    atualizarPresencaChamada();
+  }
+  c.micTravado = travado;
+  for(const par of c.pares.values()) aplicarVolumePar(par);
+  reconciliarChamada();
+}
+
+// Pede ao banco; o resultado volta pelo realtime para todos, inclusive aqui.
+async function moderarVoz(pid, alvo, acao, sala){
+  if(!CHAMADA_UUID.test(pid || '') || !CHAMADA_UUID.test(alvo || '')) return false;
+  const perm = acao === 'silenciar' || acao === 'liberar' ? 'silenciar' : 'mover';
+  if(!podeModerar(pid, alvo, perm)){ showToast('Seu cargo não pode fazer isso com essa pessoa.', 'erro'); return false; }
+  const p = emChamadaDoProjeto(pid).find(x=>x.uid === alvo);
+  const sessao = p && /^[0-9a-f]{1,64}$/.test(p.sessao) ? p.sessao : null;
+  const {error} = await sb.rpc('moderar_voz', {
+    p_projeto: pid, p_alvo: alvo, p_acao: acao,
+    p_sala: acao === 'mover' && CHAMADA_UUID.test(sala || '') ? sala : null,
+    p_sessao: acao === 'mover' || acao === 'desconectar' ? sessao : null
+  });
+  if(error){
+    console.error(error);
+    const t = `${error.message || ''} ${error.code || ''}`;
+    showToast(/PGRST202|42883|42P01/.test(t) ? 'A moderação precisa do supabase/salas_projeto.sql. Rode ele no Supabase.'
+      : /moderar_sala/.test(t) ? 'Essa pessoa não pode entrar nessa sala.'
+      : /moderar_sem_permissao|row-level security|42501/.test(t) ? 'Seu cargo não pode fazer isso com essa pessoa.'
+      : 'Não deu para fazer isso agora. Confira a conexão e tente de novo.', 'erro');
+    return false;
+  }
+  const nome = nomeNaChamada(pid, alvo);
+  const textos = {silenciar: `Microfone de ${nome} fechado nas salas`, liberar: `${nome} pode falar de novo`, desconectar: `${nome} saiu da chamada`, mover: `${nome} foi para ${nomeDaSala(pid, sala)}`};
+  showToast(textos[acao] || 'Feito');
+  return true;
 }
 
 window.addEventListener('pagehide', ()=>{
@@ -12181,7 +13728,7 @@ window.addEventListener('pagehide', ()=>{
   if(!c) return;
   for(const t of Object.values(c.local)) if(t) t.stop();
   for(const par of c.pares.values()){ try{ par.pc.close(); }catch(e){} }
-  const reg = canaisChamada[c.pid];
+  const reg = regDaChamada(c);
   if(reg && reg.assinado){ try{ reg.canal.untrack(); }catch(e){} }
 });
 
@@ -12210,6 +13757,10 @@ async function trocarFaixaLocal(tipo, track){
 async function chamadaAlternarMic(){
   const c = chamada;
   if(!c) return;
+  if(!c.mic && micTravadoNaSala(c.pid, c.sala)){
+    showToast(silenciadoPeloModerador(c.pid, session.user.id) ? 'Um moderador silenciou você. Peça para liberar.' : 'Sala de silêncio: aqui ninguém abre o microfone.');
+    return;
+  }
   if(!c.local.voz){
     try{
       const s = await navigator.mediaDevices.getUserMedia(restricoesMicrofone(c.dispositivos.mic));
@@ -12234,7 +13785,7 @@ function chamadaAlternarEnsurdecer(){
   if(!c) return;
   c.ensurdecido = !c.ensurdecido;
   if(c.ensurdecido){ c.micAntes = c.mic; c.mic = false; }
-  else c.mic = c.micAntes !== false;
+  else c.mic = c.micAntes !== false && !micTravadoNaSala(c.pid, c.sala);
   if(c.local.voz) c.local.voz.enabled = c.mic;
   for(const par of c.pares.values()) aplicarVolumePar(par);
   tocarSomChamada(c.ensurdecido ? 'ensurdecer' : 'ouvir');
@@ -13362,7 +14913,11 @@ function ladrilhoChamadaHtml(l, opts){
   const chaveVol = eu || o.mini ? null : tela ? (l.p.telaSom ? `${l.uid}:tela` : null) : l.uid;
   const aVol = chaveVol ? ajusteDeVolume(chaveVol) : null;
   const silenciado = chaveVol && aVol.mudo ? `<span class="ch-rotulo-icone" title="Silenciado para você">${iconeChamada('volumeOff', 14)}</span>` : '';
-  const icones = (!tela ? `${l.p.ensurdecido ? `<span class="ch-rotulo-icone" title="Ensurdecido">${iconeChamada('foneOff', 14)}</span>` : (!l.p.mic ? `<span class="ch-rotulo-icone" title="Microfone fechado">${iconeChamada('micOff', 14)}</span>` : '')}` : '') + silenciado;
+  // Silenciado por um moderador (ou sem poder falar na sala de silêncio):
+  // aparece assim mesmo que o app da pessoa diga que o microfone está aberto.
+  const semVoz = !tela && !podeFalarNaSala(c.pid, c.sala, l.uid);
+  const icones = (!tela ? `${semVoz ? `<span class="ch-rotulo-icone moderado" title="${silenciadoPeloModerador(c.pid, l.uid) ? 'Silenciado por um moderador' : 'Sala de silêncio'}">${iconeChamada('micOff', 14)}</span>`
+    : l.p.ensurdecido ? `<span class="ch-rotulo-icone" title="Ensurdecido">${iconeChamada('foneOff', 14)}</span>` : (!l.p.mic ? `<span class="ch-rotulo-icone" title="Microfone fechado">${iconeChamada('micOff', 14)}</span>` : '')}` : '') + silenciado;
   const volAberto = !!chaveVol && c.volumeAberto === chaveVol;
   const rotuloVol = tela ? 'Som da tela' : 'Volume';
   const volume = chaveVol ? `
@@ -13390,6 +14945,7 @@ function ladrilhoChamadaHtml(l, opts){
           <span>Só para você</span>
           <button type="button" class="ch-volume-redefinir" id="ch-vol-redefinir-${id}" onclick="chamadaRedefinirVolume('${chaveVol}')"${pct === 100 ? ' hidden' : ''}>Voltar a 100%</button>
         </div>
+        ${tela ? '' : moderacaoNaChamadaHtml(c, l.uid, nome)}
       </div>`;
   }
   // O ladrilho inteiro é um botão (transparente, por baixo do nome e das
@@ -13403,7 +14959,7 @@ function ladrilhoChamadaHtml(l, opts){
       <div class="ch-ladrilho-avatar">${tela ? iconeChamada('tela', 40) : avatarChip(perfilNaChamada(c.pid, l.uid), nome[0])}${o.voz && icones ? `<span class="ch-voz-selos">${icones}</span>` : ''}</div>
       <div class="ch-ladrilho-video" data-slot="${l.chave}"></div>
       ${o.mini || o.voz || o.semDestaque ? '' : `<button type="button" class="ch-alvo" id="ch-destacar-${l.chave.replace(':', '-')}" onclick="chamadaDestacar('${l.chave}')" aria-pressed="${destacado}" aria-label="${destacado ? 'Tirar do destaque' : 'Pôr em destaque'}: ${esc(rotulo)}"></button>`}
-      ${o.semRotulo ? '' : `<div class="ch-rotulo">${o.voz ? '' : icones}<span class="ch-rotulo-nome">${esc(rotulo)}</span></div>`}
+      ${o.semRotulo ? '' : `<div class="ch-rotulo">${o.voz ? '' : icones}<span class="ch-rotulo-nome">${tela ? esc(rotulo) : `${nomePessoaHtml(perfilNaChamada(c.pid, l.uid), nome)}${eu ? ' (você)' : ''}`}</span></div>`}
       ${estado ? `<div class="ch-estado">${esc(estado)}</div>` : ''}
       ${o.mini ? '' : `<div class="ch-ladrilho-acoes">
         ${volume}
@@ -13411,6 +14967,24 @@ function ladrilhoChamadaHtml(l, opts){
       </div>`}
       ${painelVolume}
     </div>`;
+}
+
+// Moderação no quadro da pessoa, junto do volume: vale para todos, e só
+// aparece com a permissão do cargo (SEC-087).
+function moderacaoNaChamadaHtml(c, uid, nome){
+  if(uid === session.user.id || !podeModerar(c.pid, uid)) return '';
+  const partes = [];
+  const sufixo = uid.slice(0, 8);
+  if(podeModerar(c.pid, uid, 'silenciar')){
+    const sil = silenciadoPeloModerador(c.pid, uid);
+    partes.push(`<button type="button" class="ch-moderar-btn ${sil ? 'ativo' : ''}" id="ch-mod-sil-${sufixo}" onclick="moderarVoz('${c.pid}','${uid}','${sil ? 'liberar' : 'silenciar'}')">${iconeChamada(sil ? 'mic' : 'micOff', 15)}<span>${sil ? 'Liberar o microfone' : 'Silenciar nas salas'}</span></button>`);
+  }
+  if(podeModerar(c.pid, uid, 'mover')){
+    const outras = salasDoProjeto(c.pid).filter(s=>s.id !== c.sala && CHAMADA_UUID.test(s.id) && pessoaVeCanal(c.pid, s, uid));
+    if(outras.length) partes.push(`<select class="ch-moderar-mover" id="ch-mod-mover-${sufixo}" aria-label="${esc(`Mover ${nome} para outra sala`)}" onchange="if(this.value)moderarVoz('${c.pid}','${uid}','mover',this.value)"><option value="">Mover para…</option>${outras.map(s=>`<option value="${s.id}">${esc(s.nome)}</option>`).join('')}</select>`);
+    partes.push(`<button type="button" class="ch-moderar-btn perigo" id="ch-mod-sair-${sufixo}" onclick="moderarVoz('${c.pid}','${uid}','desconectar')">${iconeChamada('sair', 15)}<span>Desconectar</span></button>`);
+  }
+  return `<div class="ch-moderar" role="group" aria-label="${esc(`Moderar ${nome}, para todos`)}"><span class="ch-moderar-titulo">Para todos</span>${partes.join('')}</div>`;
 }
 
 // Troca de estado dos botões (microfone, fone, câmera, tela, dispositivos). A
@@ -13440,8 +15014,13 @@ function botaoChamada(id, acao, icone, rotulo, classe, pressionado){
 function controlesChamadaHtml(mini){
   const c = chamada;
   const micAberto = c.mic && !!c.local.voz;
+  // Silenciado por um moderador ou na sala de silêncio: o botão fica fechado
+  // e diz por quê (RFC 0005).
+  const travado = !micAberto && micTravadoNaSala(c.pid, c.sala);
+  const rotuloMic = travado ? (silenciadoPeloModerador(c.pid, session.user.id) ? 'Silenciado por um moderador' : 'Sala de silêncio: microfone fechado')
+    : micAberto ? 'Fechar o microfone' : 'Abrir o microfone';
   const partes = [
-    botaoChamada(mini ? 'ch-btn-mic-mini' : 'ch-btn-mic', 'chamadaAlternarMic()', micAberto ? 'mic' : 'micOff', micAberto ? 'Fechar o microfone' : 'Abrir o microfone', micAberto ? '' : 'desligado', !micAberto),
+    botaoChamada(mini ? 'ch-btn-mic-mini' : 'ch-btn-mic', 'chamadaAlternarMic()', micAberto ? 'mic' : 'micOff', rotuloMic, micAberto ? '' : (travado ? 'desligado travado' : 'desligado'), !micAberto),
     botaoChamada(mini ? 'ch-btn-fone-mini' : 'ch-btn-fone', 'chamadaAlternarEnsurdecer()', c.ensurdecido ? 'foneOff' : 'fone', c.ensurdecido ? 'Voltar a ouvir' : 'Ensurdecer', c.ensurdecido ? 'desligado' : '', c.ensurdecido)
   ];
   // Na chamada aberta, três grupos separados por um fio: o que eu falo e
@@ -13453,14 +15032,13 @@ function controlesChamadaHtml(mini){
     if(telaSuportada()) partes.push(botaoChamada('ch-btn-tela', 'chamadaAlternarTela()', 'tela', c.tela ? 'Parar de transmitir a tela' : 'Transmitir a tela', c.tela ? 'ativo' : '', c.tela));
     partes.push(botaoChamada('ch-btn-disp', 'chamadaAlternarDispositivos()', 'ajustes', 'Microfone, câmera e alto-falante', c.painelDisp ? 'ativo' : '', c.painelDisp));
     partes.push(divisor);
-  }else if(janelaFlutuante){
-    // Na janela flutuante, a câmera no lugar de flutuar e abrir. A volta para
-    // a aba já está no ⇱ que o Chrome põe na barra da janela, e o clique no
-    // vídeo faz o mesmo.
-    partes.push(botaoChamada('ch-btn-cam-mini', 'chamadaAlternarCamera()', c.camera ? 'cam' : 'camOff', c.camera ? 'Desligar a câmera' : 'Ligar a câmera', c.camera ? '' : 'desligado', !c.camera));
   }else{
-    if(janelaFlutuanteSuportada()) partes.push(botaoChamada('ch-btn-flutuar-mini', 'abrirJanelaFlutuante()', 'flutuar', 'Janela flutuante, por cima dos outros programas', ''));
-    partes.push(botaoChamada('ch-btn-expandir', 'chamadaExpandir()', 'expandir', 'Abrir a chamada', ''));
+    // Minimizada, a câmera fica à mão, no lugar do botão da janela flutuante
+    // (que foi para o topo da chamada aberta). Na flutuante não há "abrir": a
+    // volta para a aba já está no ⇱ que o Chrome põe na barra da janela, e o
+    // clique no vídeo faz o mesmo.
+    partes.push(botaoChamada('ch-btn-cam-mini', 'chamadaAlternarCamera()', c.camera ? 'cam' : 'camOff', c.camera ? 'Desligar a câmera' : 'Ligar a câmera', c.camera ? '' : 'desligado', !c.camera));
+    if(!janelaFlutuante) partes.push(botaoChamada('ch-btn-expandir', 'chamadaExpandir()', 'expandir', 'Abrir a chamada', ''));
   }
   partes.push(`<button type="button" id="${mini ? 'ch-btn-sair-mini' : 'ch-btn-sair'}" class="ch-sair" onclick="chamadaSair()" aria-label="Sair da chamada" title="Sair da chamada">${iconeChamada('sair')}${mini ? '' : '<span>Sair</span>'}</button>`);
   return partes.join('');
@@ -13521,13 +15099,17 @@ function lugarNoApp(){
   return [state.view, state.currentProjectId || '', state.metas && state.metas.atual || ''].join('|');
 }
 
+// Clicar no lugar em que já se está (o projeto da chamada, por exemplo) também
+// minimiza: a pessoa quer ver a tela que ficou atrás da chamada, na aba e no
+// canal em que ela estava. Antes esse clique não fazia nada (RFC 0005, Q16).
 document.addEventListener('click', (e)=>{
   const c = chamada;
   if(!c || c.modo !== 'expandida' || janelaFlutuante) return;
   if(!e.target.closest || !e.target.closest('#app aside')) return;
   const antes = lugarNoApp();
+  const navegou = !!e.target.closest('.sidebar-project-item, .nav-item');
   setTimeout(()=>{
-    if(chamada === c && c.modo === 'expandida' && lugarNoApp() !== antes) minimizarNaPagina(c);
+    if(chamada === c && c.modo === 'expandida' && (navegou || lugarNoApp() !== antes)) minimizarNaPagina(c);
   }, 0);
 }, true);
 
@@ -13639,6 +15221,7 @@ function desenharChamada(){
         <div class="ch-topo-acoes">
           ${salas.length > 1 ? `<button type="button" id="ch-btn-salas" class="ch-salas-btn" onclick="chamadaAlternarSalas()" aria-expanded="${!!c.painelSalas}" aria-label="Salas de voz: trocar de sala">${iconeChamada('volume', 16)}<span>Salas</span><span class="ch-salas-seta">${iconeChamada('seta', 14)}</span></button>` : ''}
           ${doc === document ? `<button type="button" id="ch-btn-chat" class="ch-salas-btn ch-chat-btn ${c.chatAberto ? 'ativo' : ''}" onclick="chamadaAlternarChat()" aria-expanded="${!!c.chatAberto}" aria-label="${!c.chatAberto && chatNaoLidas[c.pid] ? `Chat do projeto, ${chatNaoLidas[c.pid]} não lida${chatNaoLidas[c.pid] > 1 ? 's' : ''}` : 'Chat do projeto'}" title="Chat do projeto">${iconeChamada('chat', 16)}<span>Chat</span>${seloChatHtml(c)}</button>` : ''}
+          ${doc === document && janelaFlutuanteSuportada() ? `<button type="button" id="ch-btn-flutuar" class="ch-botao ch-botao-leve" onclick="abrirJanelaFlutuante()" aria-label="Janela flutuante, por cima dos outros programas" title="Janela flutuante, por cima dos outros programas">${iconeChamada('flutuar', 18)}</button>` : ''}
           <button type="button" id="ch-btn-minimizar" class="ch-botao ch-botao-leve" onclick="chamadaMinimizar()" aria-label="${minimizar}" title="${minimizar}">${iconeChamada('minimizar', 18)}</button>
         </div>
         ${c.painelSalas && salas.length > 1 ? painelSalasHtml(c) : ''}
@@ -13729,14 +15312,12 @@ function pararRelogioChamada(){
 function botaoIniciarChamadaHtml(p){
   if(!chamadaSuportada()) return '';
   if(canaisCarregados && !salasDoProjeto(p.id).length) return '';
-  const reg = canaisChamada[p.id];
-  const ativa = (reg && reg.emChamada.length) || (chamada && chamada.pid === p.id);
+  const ativa = emChamadaDoProjeto(p.id).length || (chamada && chamada.pid === p.id);
   return `<span id="chamada-botao-projeto">${ativa ? '' : `<button class="btn-secondary btn-com-icone" onclick="abrirPreviaChamada('${p.id}')">${iconeChamada('ligar', 14)}Iniciar chamada</button>`}</span>`;
 }
 
 function faixaChamadaHtml(p){
-  const reg = canaisChamada[p.id];
-  const na = reg ? reg.emChamada : [];
+  const na = emChamadaDoProjeto(p.id);
   const euDentro = chamada && chamada.pid === p.id;
   if(!na.length && !euDentro) return '<div id="chamada-faixa"></div>';
   // O nome da sala só aparece quando o projeto tem mais de uma.

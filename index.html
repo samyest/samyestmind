@@ -243,9 +243,14 @@
             <div id="settings-avatar-preview" class="settings-avatar-preview">?</div>
             <div class="set-perfil-campos">
               <label class="set-rotulo" for="s-name">Seu nome</label>
-              <input type="text" class="input" id="s-name" name="name" autocomplete="name" placeholder="Como você quer ser chamado">
+              <input type="text" class="input" id="s-name" name="name" autocomplete="name" placeholder="Como você quer ser chamado" oninput="desenharEscolhaDeFonte()">
             </div>
           </div>
+          <div class="set-sub-head"><h4 class="set-sub-titulo" id="fonte-nome-titulo">Seu nome nos projetos</h4></div>
+          <p class="set-painel-desc">A fonte e a cor com que o seu nome aparece para todo mundo dos projetos: no chat, nas salas e na chamada.</p>
+          <div class="fonte-nome-grade" id="fonte-nome-grade" role="radiogroup" aria-labelledby="fonte-nome-titulo"></div>
+          <div class="set-rotulo cor-nome-titulo" id="cor-nome-titulo">Cor do nome</div>
+          <div class="cor-nome-grade" id="cor-nome-grade" role="radiogroup" aria-labelledby="cor-nome-titulo"></div>
           <div class="set-linha">
             <div class="set-linha-texto">
               <div class="set-linha-titulo">Foto de perfil</div>
@@ -380,6 +385,29 @@
     <div class="modal-foot">
       <div></div>
       <button class="btn-secondary" onclick="closeProjectsModal()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Configurações do projeto (RFC 0005): a engrenagem ao lado do Convidar.
+     O conteúdo é montado por desenharConfigProjeto(), no script.js. -->
+<div class="modal-bg" id="config-projeto" role="dialog" aria-modal="true" aria-labelledby="config-projeto-titulo">
+  <div class="modal set-modal cp-modal">
+    <div class="modal-head">
+      <div class="cp-cabeca">
+        <span class="cp-icone" id="config-projeto-icone" aria-hidden="true"></span>
+        <div class="cp-cabeca-texto">
+          <h2 class="set-titulo" id="config-projeto-titulo">Configurações do projeto</h2>
+          <p class="cp-subtitulo" id="config-projeto-sub"></p>
+        </div>
+      </div>
+      <button class="modal-close" onclick="fecharConfigProjeto()" aria-label="Fechar configurações do projeto">
+        <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="set-corpo">
+      <div class="set-nav" id="config-projeto-nav" role="tablist" aria-label="Seções das configurações do projeto" aria-orientation="vertical"></div>
+      <div class="set-paineis" id="config-projeto-paineis"></div>
     </div>
   </div>
 </div>
@@ -806,6 +834,31 @@
           <label class="cr-rotulo" for="canal-rapido-posicao">Lugar na lista</label>
           <select class="select" id="canal-rapido-posicao"></select>
         </div>
+      </div>
+      <div class="cr-grupo cr-mic" id="canal-rapido-grupo-mic" hidden>
+        <label class="cr-rotulo" for="canal-rapido-mic">Microfone ao entrar</label>
+        <select class="select" id="canal-rapido-mic" onchange="micCanalRapido()" aria-describedby="canal-rapido-mic-dica">
+          <option value="livre">Livre</option>
+          <option value="fechado">Entra mudo</option>
+          <option value="silencio">Silêncio</option>
+        </select>
+        <p class="cr-dica" id="canal-rapido-mic-dica"></p>
+      </div>
+      <div class="cr-privado" id="canal-rapido-grupo-privado">
+        <div class="cr-privado-linha">
+          <div class="cr-privado-texto">
+            <span class="cr-privado-titulo" id="canal-rapido-privado-titulo">Privado</span>
+            <span class="cr-dica" id="canal-rapido-privado-dica">Só o dono, quem criou e as pessoas marcadas veem e entram.</span>
+          </div>
+          <label class="sound-toggle">
+            <input type="checkbox" id="canal-rapido-privado" onchange="privadoCanalRapido()" aria-labelledby="canal-rapido-privado-titulo" aria-describedby="canal-rapido-privado-dica">
+            <span class="sound-toggle-track"><span class="sound-toggle-thumb"></span></span>
+          </label>
+        </div>
+        <fieldset class="cr-pessoas" id="canal-rapido-pessoas" hidden>
+          <legend class="cr-rotulo">Quem vê</legend>
+          <div class="cr-pessoas-lista" id="canal-rapido-pessoas-lista"></div>
+        </fieldset>
       </div>
     </div>
     <div class="modal-rapido-acoes">
