@@ -732,7 +732,7 @@ function openStatusDetail(filterKey, label){
       const rowStyle = isDone ? `--col-color:${taskColumnColor(t)};` : '';
       const dot = taskDotStyle(t);
       return `
-        <div class="task-row ${cls}" style="${rowStyle}" onclick="closeStatusModal();openModal('${t.id}')">
+        <div class="task-row ${cls}" style="${rowStyle}" role="button" tabindex="0" onclick="closeStatusModal();openModal('${t.id}')">
           <div class="task-check ${dot.cls}" style="${dot.style}"></div>
           <div class="task-title">${esc(t.title)}</div>
           <div class="task-date ${taskDateStatus(t)}">${dateWithTime(t)}</div>
@@ -3441,7 +3441,7 @@ function renderProjectPage(){
           const collapsed = col.hidden && !state.expandedCols.has(col.key);
           if(collapsed){
             return `
-              <div class="glass kb-col kb-col-collapsed" data-status="${col.key}" onclick="toggleColExpanded('${col.key}')" title="Coluna oculta — toque para abrir">
+              <div class="glass kb-col kb-col-collapsed" data-status="${col.key}" role="button" tabindex="0" onclick="toggleColExpanded('${col.key}')" title="Coluna oculta — toque para abrir">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
                 <div class="kb-col-collapsed-label"><span class="kb-col-dot" style="background:${corSegura(col.color)}"></span>${esc(col.name)}</div>
                 <div class="kb-col-count">${list.length}</div>
@@ -3559,7 +3559,7 @@ function renderProjectsList(){
         const tasks = state.tasks.filter(t=>t.project_id===p.id);
         const active = tasks.filter(t=>taskColumnType(t)!=='done').length;
         return `
-          <div class="glass project-list-card" onclick="openProjectView('${p.id}')">
+          <div class="glass project-list-card" role="button" tabindex="0" onclick="openProjectView('${p.id}')">
             <div class="project-card-head" style="margin-bottom:6px;">
               <div class="project-card-name">${esc(p.name)}${seloNaoLidas(p.id)}</div>
               <div class="project-card-role">${role}</div>
@@ -3902,6 +3902,20 @@ function focusablesIn(root){
   return Array.from(root.querySelectorAll(FOCUSABLE_SEL)).filter(el=>el.offsetParent !== null);
 }
 
+// QUA-020: linha de tarefa, cartão do kanban, cartão de projeto, contador do
+// painel e dia do mini calendário são <div onclick> com role="button" e
+// tabindex="0" (virar <button> quebraria o layout deles, que tem blocos
+// dentro). Enter e Espaço neles fazem o mesmo que o clique, como num botão.
+document.addEventListener('keydown', (e)=>{
+  if(e.key !== 'Enter' && e.key !== ' ') return;
+  if(e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.repeat) return;
+  const el = e.target;
+  if(!el || el.getAttribute('role') !== 'button' || !el.hasAttribute('onclick')) return;
+  if(/^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(el.tagName) || el.isContentEditable) return;
+  e.preventDefault();
+  el.click();
+});
+
 function topOpenModal(){
   const abertos = Array.from(document.querySelectorAll('.modal-bg.open'));
   return abertos.length ? abertos[abertos.length - 1] : null;
@@ -4220,7 +4234,7 @@ function renderDashboard(){
     const pName = t.project_id ? projectName(t.project_id) : null;
     const projBadge = pName ? `<span class="project-badge">${esc(pName)}</span>` : '';
     return `
-      <div class="task-row ${cls}" onclick="openModal('${t.id}')">
+      <div class="task-row ${cls}" role="button" tabindex="0" onclick="openModal('${t.id}')">
         <div class="task-check ${dot.cls}" style="${dot.style}"></div>
         <div class="task-title">${esc(t.title)}</div>
         <div class="task-date ${taskDateStatus(t)}">${dateWithTime(t)}</div>
@@ -4237,7 +4251,7 @@ function renderDashboard(){
         <div class="eyebrow">${dataStr}</div>
         <h1>${saudacao}, ${esc(getUserName())}</h1>
       </div>
-      <div class="header-cta" onclick="openModal()" style="cursor:pointer;">
+      <div class="header-cta" role="button" tabindex="0" onclick="openModal()" style="cursor:pointer;">
         <div class="header-cta-info">
           <div class="header-cta-title">Precisa lançar algo?</div>
           <div class="header-cta-sub">Atalho: tecla N</div>
@@ -4249,8 +4263,8 @@ function renderDashboard(){
       </div>
     </div>
     <div class="status-row">
-      ${colCounts.map(c=>`<div class="status-item" onclick="openStatusDetail('col:${c.key}')"><div class="lbl">${esc(c.name)}</div><div class="val" data-chave="${esc('col:' + c.key)}" data-count="${c.count}">0</div></div>`).join('')}
-      <div class="status-item overdue" onclick="openStatusDetail('overdue', 'Atrasadas')"><div class="lbl">Atrasadas</div><div class="val" data-chave="overdue" data-count="${overdue}">0</div></div>
+      ${colCounts.map(c=>`<div class="status-item" role="button" tabindex="0" onclick="openStatusDetail('col:${c.key}')"><div class="lbl">${esc(c.name)}</div><div class="val" data-chave="${esc('col:' + c.key)}" data-count="${c.count}">0</div></div>`).join('')}
+      <div class="status-item overdue" role="button" tabindex="0" onclick="openStatusDetail('overdue', 'Atrasadas')"><div class="lbl">Atrasadas</div><div class="val" data-chave="overdue" data-count="${overdue}">0</div></div>
     </div>
     <div class="dash-grid">
       <section class="glass panel dash-acoes" aria-labelledby="dash-acoes-titulo">
@@ -4371,7 +4385,7 @@ function openMiniCalDay(iso){
       const rowStyle = isDone ? `--col-color:${taskColumnColor(t)};` : '';
       const dot = taskDotStyle(t);
       return `
-        <div class="task-row ${cls}" style="${rowStyle}" onclick="closeStatusModal();openModal('${t.id}')">
+        <div class="task-row ${cls}" style="${rowStyle}" role="button" tabindex="0" onclick="closeStatusModal();openModal('${t.id}')">
           <div class="task-check ${dot.cls}" style="${dot.style}"></div>
           <div class="task-title">${esc(t.title)}</div>
           <div class="task-date ${taskDateStatus(t)}">${dateWithTime(t)}</div>
@@ -4403,7 +4417,8 @@ function renderMiniCal(){
     const iso = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const isToday = today.getDate()===day && today.getMonth()===month && today.getFullYear()===year;
     const hasTask = tasksWithDate.has(iso);
-    cells += `<div class="mini-cal-day ${isToday?'today':''} ${hasTask?'has-task':''}" onclick="openMiniCalDay('${iso}')">${day}</div>`;
+    const rotuloDia = `${day} de ${meses[month].toLowerCase()}${isToday ? ', hoje' : ''}${hasTask ? ', com tarefas' : ''}`;
+    cells += `<div class="mini-cal-day ${isToday?'today':''} ${hasTask?'has-task':''}" role="button" tabindex="0" aria-label="${rotuloDia}" onclick="openMiniCalDay('${iso}')">${day}</div>`;
   }
   const filled = startDow + daysInMonth;
   const trailing = (7 - filled % 7) % 7;
@@ -4465,7 +4480,7 @@ function renderKbCard(t, col, opts){
   const draggable = opts.draggable === false ? false : (!state.selecting && canEditTask(t));
   const dragAttrs = draggable ? `ondragstart="dragStart(event,'${t.id}')" ondragend="dragEnd(event)"` : '';
   return `
-    <div class="kb-card ${doneCls} ${state.selected.has(t.id)?'is-selected':''}" style="--col-color:${taskColor(t)}" draggable="${draggable}" ${dragAttrs} onclick="cardClick(event,'${t.id}')">
+    <div class="kb-card ${doneCls} ${state.selected.has(t.id)?'is-selected':''}" style="--col-color:${taskColor(t)}" draggable="${draggable}" ${dragAttrs} role="button" tabindex="0" onclick="cardClick(event,'${t.id}')">
       ${state.selecting ? `<span class="kb-card-check">${state.selected.has(t.id)?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><polyline points="20 6 9 17 4 12"/></svg>':''}</span>` : ''}
       ${t.client && !opts.clientInMeta ? `<div class="kb-card-client">${esc(t.client)}</div>` : ''}
       <div class="kb-card-title">${esc(t.title)}</div>
@@ -4510,7 +4525,7 @@ function renderKanban(){
     const collapsed = col.hidden && !state.expandedCols.has(col.key);
     if(collapsed){
       return `
-        <div class="glass kb-col kb-col-collapsed" data-status="${col.key}" onclick="toggleColExpanded('${col.key}')" title="Coluna oculta — toque para abrir">
+        <div class="glass kb-col kb-col-collapsed" data-status="${col.key}" role="button" tabindex="0" onclick="toggleColExpanded('${col.key}')" title="Coluna oculta — toque para abrir">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
           <div class="kb-col-collapsed-label"><span class="kb-col-dot" style="background:${corSegura(col.color)}"></span>${esc(col.name)}</div>
           <div class="kb-col-count">${list.length}</div>
@@ -4951,7 +4966,7 @@ function renderDayPanel(iso, tasks, opts){
               const priorityBadge = t.priority === 'urgent' ? '<span class="priority-badge urgent">Urgente</span>' : t.priority === 'high' ? '<span class="priority-badge high">Alta</span>' : '';
               const assignee = o.projectId ? getAssigneeLabel(t) : null;
               return `
-                <div class="day-task ${taskColumnType(t)==='done'?'done':''}" style="--col-color:${taskColumnColor(t)}" onclick="openModal('${t.id}')">
+                <div class="day-task ${taskColumnType(t)==='done'?'done':''}" style="--col-color:${taskColumnColor(t)}" role="button" tabindex="0" onclick="openModal('${t.id}')">
                   <div class="day-task-head">
                     <div class="day-task-title">${esc(t.title)}</div>
                     ${priorityBadge}
