@@ -291,3 +291,21 @@ do SQL (canal de outro projeto e tipo errado recusados).
 a pessoa é dona ou membro aceito, para ler e para escrever, e o canal é do mesmo
 projeto (chave composta). `contar_nao_lidas_canais()` é `security invoker`. **Por
 quê:** o mesmo do SEC-074, agora por canal. **Verificação:** revisão.
+
+## Ícone do projeto
+
+### SEC-083 — Ícone do projeto só de lista fechada, cor validada e imagem do próprio bucket *(atendido em `supabase/icone_projeto.sql` e `script.js`; falta aplicar no Supabase)*
+`projects.icone` só aceita uma chave de `ICONES_PROJETO` (a mesma lista no `check` do
+banco e no `script.js`), e o SVG sai do `script.js`, nunca do banco. `icone_cor` é
+`#rrggbb` no banco e passa por `corSegura()` no app. `icone_imagem` guarda só o
+caminho no bucket `avatars`, no formato
+`<id de quem enviou>/projeto-<id do projeto>-<número>.<png|jpg|webp>`. Um gatilho
+`security invoker` confere que a pasta é de quem salva e que o id é o do próprio
+projeto, e o app só monta a URL com `getPublicUrl()` depois de conferir o mesmo
+formato. Mudam o ícone só o dono e os editores (`projects_update`), pelo
+`grant update` das três colunas. **Por quê:** o ícone aparece para todo mundo do
+projeto. Uma URL qualquer no banco faria o navegador de cada membro buscar um
+endereço de fora, que veria o IP e a hora de quem abriu o projeto. Um SVG ou uma
+cor vindos do banco entrariam crus no HTML. **Verificação:** revisão + teste do SQL
+(chave fora da lista, cor inválida, URL externa, pasta de outra pessoa e imagem de
+outro projeto recusadas; visualizador não muda).

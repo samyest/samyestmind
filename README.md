@@ -76,6 +76,12 @@ mensagem o nome de quem escreveu, preenchido pelo banco. Assim quem sai do proje
 continua assinando as próprias mensagens, em vez de virar "Ex-membro". Ele também
 preenche as mensagens que já existem. Sem ele, o app segue mostrando "Ex-membro".
 
+`supabase/icone_projeto.sql` dá a cada projeto um ícone: a inicial do nome, um dos
+ícones prontos ou uma imagem quadrada, numa cor escolhida. Dono e editores mudam
+clicando no ícone do topo do projeto. A imagem vai para o bucket `avatars`, na pasta
+de quem enviou (SEC-083). Sem o arquivo, o app mostra a inicial e avisa, ao salvar,
+que falta rodar o SQL.
+
 Falta o reforço do SEC-075, que depende do passo 6 da RFC: conferir se uma conta de
 fora do projeto, assinando um canal **público** chamado `chamada:<id do projeto>`,
 recebe os sinais do privado. Se receber, a saída é desligar **Allow public access**
