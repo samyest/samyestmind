@@ -2253,8 +2253,10 @@
     color:var(--text);
     box-shadow:var(--ch-sombra);
     overflow:hidden;
-    animation:chChatEntra .22s var(--mov-curva) both;
   }
+  /* Só quando o chat abre: o painel sai e volta a cada redesenho da chamada,
+     e uma animação no próprio .ch-chat recomeçava a cada vez (piscava). */
+  .ch-chat.abrindo{animation:chChatEntra .22s var(--mov-curva) both;}
   @keyframes chChatEntra{from{opacity:0;transform:translateX(12px);}}
   .ch-chat-topo{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:56px;padding:8px 8px 8px 14px;border-bottom:1px solid color-mix(in srgb, var(--ch-texto) 9%, transparent);}
   .ch-chat-canal{display:flex;align-items:center;gap:7px;min-width:0;margin:0;font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:500;color:var(--ch-texto);}
