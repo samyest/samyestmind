@@ -10413,7 +10413,7 @@ function sincronizarCanaisChamada(){
   const quer = new Set();
   if(state.view === 'project' && state.currentProjectId){
     const p = projetoDaChamada(state.currentProjectId);
-    if(p && projectPeople(p).length >= 2) quer.add(p.id);
+    if(p) quer.add(p.id);
   }
   if(previaChamada) quer.add(previaChamada.pid);
   if(chamada) quer.add(chamada.pid);
@@ -10987,6 +10987,8 @@ function reconciliarChamada(){
     c.participantes.set(p.uid, p);
     let par = c.pares.get(p.uid);
     if(par && par.sessao !== p.sessao){ fecharParChamada(par); par = null; }
+    // Entrou sozinho num projeto que agora tem mais gente: pede o TURN.
+    if(c.turnAdiado){ c.turnAdiado = false; renovarTurnChamada(c); }
     if(!antes || antes.sessao !== p.sessao){
       tocarSomChamada('entrar');
       anunciarNaChamada(`${nomeNaChamada(c.pid, p.uid)} entrou na chamada`);
@@ -11277,11 +11279,8 @@ async function abrirPreviaChamada(pid, salaPedida){
     showToast('Este projeto não tem sala de voz. Quem edita o projeto cria uma na aba Canais.');
     return;
   }
-  // A credencial TURN e a própria chamada pedem alguém do outro lado.
-  if(projectPeople(p).length < 2){
-    showToast('As salas de voz precisam de pelo menos duas pessoas no projeto. Chame alguém pelo Convidar.');
-    return;
-  }
+  // Dá para entrar sozinho, mesmo num projeto só seu: a sala fica esperando
+  // quem chegar. O TURN espera alguém entrar (buscarTurnChamada).
   if(chamada){
     if(chamada.pid === pid){
       // Outra sala do mesmo projeto: troca direto, como no Discord.
@@ -11455,7 +11454,12 @@ function fecharPreviaChamada(){
 
 /* --- entrar e sair --- */
 
-async function buscarTurnChamada(pid){
+// Sozinho no projeto não há com quem conectar, e a rota recusa o TURN para
+// projeto de uma pessoa só (SEC-077). A chamada nasce só com STUN e marcada
+// com turnAdiado; o TURN vem quando alguém entra (renovarTurnChamada).
+async function buscarTurnChamada(pid, forcar){
+  const p = projetoDaChamada(pid);
+  if(!forcar && p && projectPeople(p).length < 2) return {servidores: CHAMADA_STUN, semTurn: true, adiado: true};
   try{
     const res = await fetch('/api/chamada/turn', {method: 'POST', headers: apiHeaders(), body: JSON.stringify({project_id: pid})});
     if(res.ok){
@@ -11472,17 +11476,21 @@ function agendarRenovacaoTurn(){
   clearTimeout(c.turnTimer);
   c.turnTimer = setTimeout(async ()=>{
     if(chamada !== c) return;
-    const r = await buscarTurnChamada(c.pid);
+    await renovarTurnChamada(c);
     if(chamada !== c) return;
-    if(!r.semTurn){
-      c.iceServers = r.servidores;
-      c.semTurn = false;
-      for(const par of c.pares.values()){
-        try{ par.pc.setConfiguration(Object.assign(par.pc.getConfiguration(), {iceServers: r.servidores})); }catch(e){}
-      }
-    }
     agendarRenovacaoTurn();
   }, CHAMADA_RENOVA_TURN_MS);
+}
+
+async function renovarTurnChamada(c){
+  const r = await buscarTurnChamada(c.pid, true);
+  if(chamada !== c || r.semTurn) return;
+  c.iceServers = r.servidores;
+  c.semTurn = false;
+  c.turnAdiado = false;
+  for(const par of c.pares.values()){
+    try{ par.pc.setConfiguration(Object.assign(par.pc.getConfiguration(), {iceServers: r.servidores})); }catch(e){}
+  }
 }
 
 // Entrar abre a chamada na página inteira; a janela flutuante fica para o
@@ -11511,7 +11519,7 @@ async function entrarNaChamada(){
     mic: !!(pr.mic && pr.voz), ensurdecido: false, micAntes: true, camera: !!(pr.camera && pr.cam), tela: false,
     dispositivos: Object.assign({}, pr.dispositivos),
     pares: new Map(), participantes: new Map(), iceAdiantado: {}, esperas: {}, vigias: {},
-    iceServers: ice.servidores, semTurn: ice.semTurn, turnTimer: null,
+    iceServers: ice.servidores, semTurn: ice.semTurn, turnAdiado: !!ice.adiado, turnTimer: null,
     destaque: null, modo: 'expandida', painelDisp: false, volumeAberto: null,
     registrarInicio: naSala(reg, pr.sala).length === 0
   };
@@ -13218,7 +13226,7 @@ function pararRelogioChamada(){
 // "Iniciar chamada" entra na primeira sala de voz do projeto (Q14 da RFC
 // 0004). Some com alguém já numa sala: a faixa leva até ela.
 function botaoIniciarChamadaHtml(p){
-  if(!chamadaSuportada() || projectPeople(p).length < 2) return '';
+  if(!chamadaSuportada()) return '';
   if(canaisCarregados && !salasDoProjeto(p.id).length) return '';
   const reg = canaisChamada[p.id];
   const ativa = (reg && reg.emChamada.length) || (chamada && chamada.pid === p.id);

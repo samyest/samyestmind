@@ -235,6 +235,11 @@ renovada chamando a rota de novo, que repete todas as checagens. A rota:
   `anon`/`authenticated`;
 - responde só com `iceServers` e a validade.
 
+Entrar sozinho numa sala é permitido, mesmo em projeto de uma pessoa só: o app não
+pede a credencial nesse caso, e a chamada fica só com STUN até alguém entrar na sala
+(`buscarTurnChamada` e `renovarTurnChamada` em `script.js`). A regra das 2 pessoas
+continua na rota.
+
 `TURN_KEY_ID` e `TURN_KEY_API_TOKEN` ficam só nas variáveis da Vercel, com as regras
 do SEC-001. **Por quê:** com o token da API, dá para gerar credenciais à vontade. Com
 credencial longa ou sem limite, uma conta recém-criada usa o TURN como intermediário
