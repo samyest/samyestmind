@@ -192,6 +192,17 @@ for(const f of deTipo(/^(script\.js|api\/.*\.mjs|scripts\/.*\.mjs)$/)){
   catch(e){ falha('QUA-001', f, 0, String(e.stderr || e.message).split('\n').find(Boolean)); }
 }
 
+/* ---------- QUA-008: rede das funções sempre com prazo ---------- */
+// Toda chamada de rede em api/ passa pelo buscar() do _lib.mjs, que corta em
+// 8 s; o fetch( só pode aparecer dentro dele.
+for(const f of deTipo(/^api\/.*\.mjs$/)){
+  cadaLinha(f, (l, n)=>{
+    if(/\bfetch\(/.test(l) && !(f === 'api/_lib.mjs' && /return fetch\(url, Object\.assign/.test(l))){
+      falha('QUA-008', f, n, 'fetch( direto, sem prazo: use buscar() do _lib.mjs');
+    }
+  });
+}
+
 /* ---------- QUA-020 / QUA-021: marcação ---------- */
 for(const f of [...deTipo(/\.html$/), 'script.js']){
   cadaLinha(f, (l, n)=>{

@@ -599,7 +599,7 @@
         <div class="tk-prop">
           <label class="tk-prop-nome" for="m-tag-input"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0L3 13V3h10l7.6 7.6a2 2 0 010 2.8z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg>Tags</label>
           <div class="tk-prop-valor">
-            <div class="tag-input" id="m-tags" onclick="document.getElementById('m-tag-input').focus()">
+            <div class="tag-input" id="m-tags" role="group" aria-label="Tags" onclick="document.getElementById('m-tag-input').focus()">
               <span id="m-tags-chips" class="tag-chips"></span>
               <input type="text" id="m-tag-input" class="tag-input-field" placeholder="Digite e tecle Enter" autocomplete="off" maxlength="24" oninput="filterTagSuggestions()" onfocus="filterTagSuggestions()" onkeydown="tagInputKeydown(event)" onblur="setTimeout(()=>{commitTagInput();hideTagSuggestions();}, 150)">
             </div>

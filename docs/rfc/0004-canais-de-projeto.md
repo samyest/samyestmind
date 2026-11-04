@@ -59,6 +59,9 @@ decididas na implementação, seguindo o padrão do app.
 | Q13 | "Chamada iniciada" e "Chamada encerrada" continuam gravadas, agora no canal da sala, e continuam disparando o aviso, que passa a dizer a sala ("Ana iniciou uma chamada em Sala 1"). Saem das conversas de texto: com cinco salas, seriam ruído no `#geral`, e a lista já mostra quem está em cada sala. |
 | Q14 | "Iniciar chamada", no topo do projeto, abre a prévia da primeira sala de voz. A faixa "Chamada em andamento" diz a sala; com mais de uma sala ocupada, leva para a aba Canais. |
 | Q15 | Sem o `canais_projeto.sql`, o app segue como antes: um chat e uma chamada por projeto, mostrados como `#geral` e a sala Geral, sem o + da lista. |
+| Q16 | Na chamada aberta, o botão **Salas** (só com mais de uma sala) abre a lista das salas do projeto com quem está em cada uma, e um toque troca de sala como na Q11. Fechada com o usuário em 2026-11-04. |
+| Q17 | A tela da chamada segue o tema escolhido: fundo do tema com as manchas da página, vidro do tema nos quadros, na barra de controles e nos painéis; vídeo e tela continuam sobre preto. Substitui o palco escuro em todos os temas que a chamada tinha desde a fase 2 da RFC 0002. Pedido do usuário em 2026-11-04. |
+| Q18 | Sala só de voz (ninguém com câmera nem tela): cada pessoa aparece como a foto grande, com o nome embaixo e o selo de microfone fechado no canto da foto; a foto é o botão do volume dela. Com câmera ou tela, volta a grade de quadros. Comparado com a grade de quadros para todos (fotos dos dois em 2026-11-04); dois revisores independentes escolheram as fotos. A troca fica em `layoutSoVoz`, no `script.js`. |
 
 ### Fora do escopo
 
@@ -222,3 +225,7 @@ testada).
    arquivo. Pode ser antes ou depois de publicar o código (Q15).
 6. Teste com duas contas em salas diferentes e trocando de sala no meio da chamada.
 7. `privacidade.html`: as mensagens agora dizem em que canal estão.
+8. Tela da chamada nova (Q16 a Q18): lista de salas, tema, sala só de voz em fotos.
+   Testada no Chromium com o Supabase simulado nos temas Vidro, Rosa, Menta e
+   Grafite, no celular a 390px e na janela flutuante (o tema vai junto, inclusive
+   trocado com ela aberta).

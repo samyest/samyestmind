@@ -30,6 +30,12 @@ salvou. **Verificação:** revisão.
 ### QUA-007 — Mudança de schema tem `.sql` em `supabase/`
 **Verificação:** revisão.
 
+### QUA-008 — Toda chamada de rede das funções em `api/` tem prazo
+Supabase, Google e Cloudflare são chamados por `buscar()` do `_lib.mjs`, que corta
+em 8 s. **Por quê:** sem prazo, um serviço que trava segura a função até a Vercel
+matá-la, e o app recebe um erro genérico em vez do 503 de "tente de novo".
+**Verificação:** auto (falha) — `fetch(` direto em `api/` fora do `buscar()`.
+
 ## Interface e acessibilidade
 
 ### QUA-020 — Elementos clicáveis são `<button>` ou `<a>`
