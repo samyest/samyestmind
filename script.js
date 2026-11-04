@@ -1214,6 +1214,7 @@ async function checkAuth(){
     state.myName = myProfile.name;
     state.myAvatarUrl = myProfile.avatar_url || null;
     state.savedTheme = myProfile.theme || 'vidro';
+    state.ordemProjetosPerfil = myProfile.ordem_projetos || null;
     state.soundEnabled = myProfile.sound_enabled !== false;
     state.novidadesVistas = Array.isArray(myProfile.novidades_vistas) ? myProfile.novidades_vistas : [];
     applyTheme(state.savedTheme);
@@ -2716,7 +2717,12 @@ async function loadProjects(){
     }
   }
 
-  state.projects = Object.values(projectMap);
+  // A ordem do banco vale em outro aparelho: vira a deste navegador.
+  if(Array.isArray(state.ordemProjetosPerfil) && state.ordemProjetosPerfil.length){
+    guardarOrdemProjetos(state.ordemProjetosPerfil.filter(x=>typeof x === 'string'));
+    state.ordemProjetosPerfil = null;
+  }
+  state.projects = ordenarProjetos(Object.values(projectMap));
   state.pendingInvites = pending || [];
   saveProjectsCache();
   updatePendingInvitesBadge();
@@ -3045,9 +3051,198 @@ async function salvarIconeProjeto(){
   showToast('Ícone do projeto atualizado');
 }
 
+/* --- ordem dos projetos na barra lateral --- */
+
+// A ordem é de cada pessoa: fica no navegador (vale na hora e sem o banco) e
+// em profiles.ordem_projetos (vale em outro aparelho; supabase/ordem_projetos.sql).
+// Projeto que não está na lista (novo, ou aceito agora) entra no fim.
+function ordemProjetosKey(){
+  return session && session.user ? `ordemProjetos:${session.user.id}` : null;
+}
+
+function lerOrdemProjetos(){
+  const key = ordemProjetosKey();
+  if(!key) return [];
+  try{
+    const o = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(o) ? o.filter(x=>typeof x === 'string') : [];
+  }catch(e){ return []; }
+}
+
+function guardarOrdemProjetos(ids){
+  const key = ordemProjetosKey();
+  if(!key) return;
+  try{ localStorage.setItem(key, JSON.stringify(ids)); }catch(e){}
+}
+
+function ordenarProjetos(lista){
+  const ordem = lerOrdemProjetos();
+  const pos = id=>{ const i = ordem.indexOf(id); return i === -1 ? Infinity : i; };
+  return lista.map((p, i)=>({p, i})).sort((a, b)=>(pos(a.p.id) - pos(b.p.id)) || (a.i - b.i)).map(x=>x.p);
+}
+
+let salvarOrdemTimer = null;
+async function salvarOrdemProjetos(ids){
+  guardarOrdemProjetos(ids);
+  // Vários movimentos seguidos viram uma gravação só. Se o banco ainda não tem
+  // a coluna, a ordem segue valendo neste navegador.
+  clearTimeout(salvarOrdemTimer);
+  salvarOrdemTimer = setTimeout(async ()=>{
+    const {error} = await sb.from('profiles').update({ordem_projetos: ids}).eq('id', session.user.id);
+    if(error) console.warn('ordem dos projetos só neste navegador:', error.message);
+  }, 600);
+}
+
+function moverProjeto(id, novoIndice){
+  const ids = state.projects.map(p=>p.id);
+  const de = ids.indexOf(id);
+  if(de === -1 || novoIndice < 0 || novoIndice >= ids.length || novoIndice === de) return false;
+  ids.splice(novoIndice, 0, ids.splice(de, 1)[0]);
+  state.projects = ids.map(i=>state.projects.find(p=>p.id === i));
+  salvarOrdemProjetos(ids);
+  saveProjectsCache();
+  return true;
+}
+
+// Segurar o projeto (~0,4 s) e arrastar para cima ou para baixo. Antes de
+// segurar, mexer mais que alguns pixels cancela, e a barra rola normalmente no
+// toque. Alt + seta faz o mesmo pelo teclado.
+const SEGURAR_PROJETO_MS = 400;
+let arrastoProjeto = null;
+let ignorarCliqueProjeto = false;
+
+function iniciarArrastoProjeto(e){
+  if(e.button > 0 || arrastoProjeto) return;
+  const item = e.target.closest('.sidebar-project-item[data-pid]');
+  if(!item || state.projects.length < 2) return;
+  const a = arrastoProjeto = {
+    item, id: item.dataset.pid, pointerId: e.pointerId, x: e.clientX, y: e.clientY,
+    ativo: false, timer: null, itens: [], rects: null, ordem: null, ordemInicial: null
+  };
+  a.timer = setTimeout(()=>levantarProjeto(a), SEGURAR_PROJETO_MS);
+  document.addEventListener('pointermove', moverArrastoProjeto);
+  document.addEventListener('pointerup', terminarArrastoProjeto, {once: true});
+  document.addEventListener('pointercancel', terminarArrastoProjeto, {once: true});
+}
+
+function levantarProjeto(a){
+  if(arrastoProjeto !== a) return;
+  a.ativo = true;
+  a.itens = [...document.querySelectorAll('#sidebar-projects .sidebar-project-item[data-pid]')];
+  a.ordemInicial = a.itens.map(el=>el.dataset.pid);
+  a.ordem = [...a.ordemInicial];
+  a.rects = new Map(a.itens.map(el=>[el.dataset.pid, el.getBoundingClientRect()]));
+  a.item.classList.add('arrastando');
+  document.getElementById('sidebar-projects').classList.add('reordenando');
+  try{ a.item.setPointerCapture(a.pointerId); }catch(err){}
+  if(navigator.vibrate) navigator.vibrate(12);
+}
+
+function moverArrastoProjeto(e){
+  const a = arrastoProjeto;
+  if(!a || e.pointerId !== a.pointerId) return;
+  const dx = e.clientX - a.x, dy = e.clientY - a.y;
+  if(!a.ativo){
+    if(Math.hypot(dx, dy) > 6) cancelarArrastoProjeto();
+    return;
+  }
+  a.item.style.transform = `translateY(${dy}px) scale(1.02)`;
+  const meu = a.rects.get(a.id);
+  const centro = meu.top + meu.height / 2 + dy;
+  const centros = a.ordemInicial.map(k=>{ const r = a.rects.get(k); return r.top + r.height / 2; });
+  let idx = 0, melhor = Infinity;
+  centros.forEach((c, i)=>{ const d = Math.abs(c - centro); if(d < melhor){ melhor = d; idx = i; } });
+  const nova = a.ordemInicial.filter(k=>k !== a.id);
+  nova.splice(idx, 0, a.id);
+  if(nova.join() === a.ordem.join()) return;
+  a.ordem = nova;
+  for(const el of a.itens){
+    if(el === a.item) continue;
+    const k = el.dataset.pid;
+    const slot = a.rects.get(a.ordemInicial[nova.indexOf(k)]);
+    const orig = a.rects.get(k);
+    const mover = slot.top - orig.top;
+    el.style.transform = mover ? `translateY(${mover}px)` : '';
+  }
+}
+
+function cancelarArrastoProjeto(){
+  const a = arrastoProjeto;
+  if(!a) return;
+  clearTimeout(a.timer);
+  document.removeEventListener('pointermove', moverArrastoProjeto);
+  document.removeEventListener('pointerup', terminarArrastoProjeto);
+  document.removeEventListener('pointercancel', terminarArrastoProjeto);
+  arrastoProjeto = null;
+}
+
+function terminarArrastoProjeto(e){
+  const a = arrastoProjeto;
+  if(!a) return;
+  cancelarArrastoProjeto();
+  if(!a.ativo) return;
+  // O clique que sai de soltar o dedo não abre o projeto.
+  ignorarCliqueProjeto = true;
+  setTimeout(()=>{ ignorarCliqueProjeto = false; }, 0);
+  const wrap = document.getElementById('sidebar-projects');
+  if(wrap) wrap.classList.remove('reordenando');
+  for(const el of a.itens){ el.style.transform = ''; el.classList.remove('arrastando'); }
+  const mudou = e && e.type === 'pointerup' && a.ordem.join() !== a.ordemInicial.join();
+  if(mudou){
+    moverProjeto(a.id, a.ordem.indexOf(a.id));
+    renderSidebarProjects();
+  }
+}
+
+document.addEventListener('click', e=>{
+  if(ignorarCliqueProjeto && e.target.closest && e.target.closest('.sidebar-project-item')){
+    e.stopPropagation();
+    e.preventDefault();
+  }
+}, true);
+
+// No toque, depois de segurar, o dedo arrasta o projeto em vez de rolar a barra.
+document.addEventListener('touchmove', e=>{
+  if(arrastoProjeto && arrastoProjeto.ativo && e.cancelable) e.preventDefault();
+}, {passive: false});
+
+// Aviso só para leitor de tela, sem toast na vista.
+function anunciarNoApp(texto){
+  let el = document.getElementById('anuncio-app');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'anuncio-app';
+    el.className = 'sr-only';
+    el.setAttribute('aria-live', 'polite');
+    document.body.appendChild(el);
+  }
+  el.textContent = '';
+  setTimeout(()=>{ el.textContent = texto; }, 30);
+}
+
+function teclaProjeto(e){
+  if(!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+  const item = e.target.closest('.sidebar-project-item[data-pid]');
+  if(!item) return;
+  e.preventDefault();
+  const id = item.dataset.pid;
+  const i = state.projects.findIndex(p=>p.id === id);
+  if(!moverProjeto(id, i + (e.key === 'ArrowUp' ? -1 : 1))) return;
+  renderSidebarProjects();
+  const novo = document.querySelector(`#sidebar-projects .sidebar-project-item[data-pid="${id}"]`);
+  if(novo) novo.focus();
+  anunciarNoApp(`${state.projects.find(p=>p.id === id).name}: posição ${state.projects.findIndex(p=>p.id === id) + 1} de ${state.projects.length}`);
+}
+
 function renderSidebarProjects(){
   const wrap = document.getElementById('sidebar-projects');
   if(!wrap) return;
+  if(!wrap.dataset.arrasto){
+    wrap.dataset.arrasto = '1';
+    wrap.addEventListener('pointerdown', iniciarArrastoProjeto);
+    wrap.addEventListener('keydown', teclaProjeto);
+    wrap.addEventListener('contextmenu', e=>{ if(arrastoProjeto && arrastoProjeto.ativo) e.preventDefault(); });
+  }
 
   let html = '';
 
@@ -3077,7 +3272,7 @@ function renderSidebarProjects(){
       const role = p.myRole === 'owner' ? 'Dono' : (myRoleInProject(p.id) === 'editor' ? 'Editor' : 'Vendo');
       const isActive = state.view === 'project' && state.currentProjectId === p.id;
       return `
-        <button class="sidebar-project-item ${isActive?'active':''}" onclick="openProjectView('${p.id}')" title="${esc(p.name)}">
+        <button class="sidebar-project-item ${isActive?'active':''}" data-pid="${p.id}" onclick="openProjectView('${p.id}')" title="${esc(p.name)} · segure e arraste para mudar a ordem" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown">
           ${projetoIconeHtml(p, 'p')}
           <span class="sidebar-project-name">${esc(p.name)}</span>
           ${seloNaoLidas(p.id)}

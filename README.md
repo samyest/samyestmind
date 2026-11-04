@@ -76,6 +76,10 @@ mensagem o nome de quem escreveu, preenchido pelo banco. Assim quem sai do proje
 continua assinando as próprias mensagens, em vez de virar "Ex-membro". Ele também
 preenche as mensagens que já existem. Sem ele, o app segue mostrando "Ex-membro".
 
+`supabase/ordem_projetos.sql` guarda a ordem dos projetos que cada pessoa escolhe na
+barra lateral (segurar o projeto e arrastar, ou Alt + seta). Sem ele, a ordem vale só
+no navegador em que a pessoa mexeu; com ele, vale em todos os aparelhos da conta.
+
 `supabase/icone_projeto.sql` dá a cada projeto um ícone: a inicial do nome, um dos
 ícones prontos ou uma imagem quadrada, numa cor escolhida. Dono e editores mudam
 clicando no ícone do topo do projeto. A imagem vai para o bucket `avatars`, na pasta

@@ -520,7 +520,21 @@
   .proj-icone-m{--icone-tam:30px;}
   .proj-icone-g{--icone-tam:56px;}
   .proj-icone-xg{--icone-tam:80px;}
-  .sidebar-project-item{padding-left:9px;}
+  .sidebar-project-item{padding-left:9px;-webkit-touch-callout:none;}
+  /* Segurar e arrastar muda a ordem: o item levantado segue o dedo e os outros
+     deslizam para abrir o lugar. */
+  #sidebar-projects.reordenando{user-select:none;-webkit-user-select:none;cursor:grabbing;}
+  #sidebar-projects.reordenando .sidebar-project-item{transition:transform .16s ease;}
+  #sidebar-projects.reordenando .sidebar-project-item.arrastando{
+    transition:none;
+    z-index:2;
+    background:var(--nav-ativo);
+    box-shadow:0 10px 26px rgba(30,40,60,0.22), inset 0 1px 0 var(--glass-border);
+  }
+  #sidebar-projects.reordenando .sidebar-project-item:not(.arrastando) .sidebar-project-role{opacity:.6;}
+  @media (prefers-reduced-motion:reduce){
+    #sidebar-projects.reordenando .sidebar-project-item{transition:none;}
+  }
   .sidebar-project-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .sidebar-project-role{
     font-family:'JetBrains Mono',monospace;
