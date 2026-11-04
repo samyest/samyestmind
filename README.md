@@ -86,6 +86,23 @@ clicando no ícone do topo do projeto. A imagem vai para o bucket `avatars`, na 
 de quem enviou (SEC-083). Sem o arquivo, o app mostra a inicial e avisa, ao salvar,
 que falta rodar o SQL.
 
+Para os cargos, as salas privadas e as configurações do projeto (RFC 0005), rode na
+ordem, depois dos arquivos de cima:
+
+1. `supabase/configuracoes_projeto.sql` — o cargo **Participante** (mexe nas tarefas,
+   não na estrutura), a função com que o dono muda o cargo de alguém, as **regras de
+   cargo** (quem silencia e quem move outros nas salas) e a **ordem das abas** do
+   projeto. Sem ele, o app mostra os cargos e a ordem de antes e avisa ao salvar.
+2. `supabase/salas_projeto.sql` — **canais e salas privadas** (com tópico próprio no
+   Realtime), o **microfone ao entrar** de cada sala (livre, entra mudo ou silêncio) e
+   a **moderação de voz** (silenciar, mover e desconectar), autorizada pelo banco. Na
+   primeira vez, as salas chamadas "Silêncio" viram sala de silêncio.
+3. `supabase/fonte_do_nome.sql` — a **fonte e a cor do nome** de cada pessoa. Sem
+   ele, todo nome aparece na fonte do app.
+
+Os três podem rodar antes ou depois de publicar o código, e mais de uma vez. A última
+linha de cada um confere tudo e deve vir toda `true`.
+
 Falta o reforço do SEC-075, que depende do passo 6 da RFC: conferir se uma conta de
 fora do projeto, assinando um canal **público** chamado `chamada:<id do projeto>`,
 recebe os sinais do privado. Se receber, a saída é desligar **Allow public access**

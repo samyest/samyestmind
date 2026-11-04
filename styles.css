@@ -195,29 +195,117 @@
   .no-entrance .panel, .no-entrance .pi-painel, .no-entrance .kb-col, .no-entrance .cal-view,
   .no-entrance .table-view{animation:none;}
 
-  /* Troca de aba no projeto (Início, Quadro, Calendário, Notas). O cabeçalho
-     e as abas ficam parados e só o conteúdo desliza, vindo do lado da aba
-     escolhida, como os passos da criação de meta. Era um corte seco. Os
-     filtros, que só existem no Quadro e no Calendário, aparecem sem deslizar. */
+  /* Troca de aba no projeto (RFC 0005, Q18). O momento de movimento do
+     projeto: o realce da aba desliza até a escolhida, com um leve passo além
+     do lugar; o conteúdo velho recua para o lado oposto e desfoca (View
+     Transition, onde o navegador tem); o novo chega do lado da aba, saindo do
+     desfoque, com os blocos em cascata. O cabeçalho e a barra de abas não se
+     mexem. Sem View Transition, fica a chegada em cascata, que já explica a
+     troca. Os filtros, que só existem no Quadro e no Calendário, só esmaecem. */
   @keyframes abaEntra{
-    from{opacity:0;transform:translateX(var(--aba-dx));}
+    from{opacity:0;transform:translateX(var(--aba-dx)) scale(.985);filter:blur(6px);}
   }
-  main.troca-aba{--aba-dx:14px;}
-  main.troca-aba.aba-volta{--aba-dx:-14px;}
-  main.troca-aba > :not(.proj-head):not(.proj-toolbar){
-    animation:abaEntra var(--mov-aba) var(--mov-curva) backwards;
+  main.troca-aba{--aba-dx:30px;}
+  main.troca-aba.aba-volta{--aba-dx:-30px;}
+  main.troca-aba > :not(.proj-head):not(.proj-toolbar):not(.kanban):not(.pi-grade):not(#chamada-faixa),
+  main.troca-aba > .kanban > .kb-col,
+  main.troca-aba > .pi-grade > .pi-painel{
+    animation:abaEntra .46s var(--mov-curva) backwards;
   }
+  main.troca-aba > .kanban > .kb-col:nth-child(2), main.troca-aba > .pi-grade > .pi-painel:nth-child(2){animation-delay:.04s;}
+  main.troca-aba > .kanban > .kb-col:nth-child(3), main.troca-aba > .pi-grade > .pi-painel:nth-child(3){animation-delay:.08s;}
+  main.troca-aba > .kanban > .kb-col:nth-child(4), main.troca-aba > .pi-grade > .pi-painel:nth-child(4){animation-delay:.11s;}
+  main.troca-aba > .kanban > .kb-col:nth-child(n+5){animation-delay:.14s;}
   main.troca-aba.filtros-entram .proj-filtros{
     animation:fadeIn .18s ease-out backwards;
   }
+
+  /* O realce da aba ativa é uma peça só, que anda (posicionarRealceDasAbas,
+     no script.js). O leve passo além do lugar, na mesma família de curva dos
+     botões que já saltam no app, marca o gesto principal do projeto. Só o
+     realce passa do ponto; o conteúdo chega na curva de sempre. */
+  .proj-view-abas{position:relative;isolation:isolate;}
+  .proj-aba-realce{
+    position:absolute;
+    z-index:0;
+    top:3px;
+    bottom:3px;
+    left:0;
+    width:var(--realce-w, 0px);
+    transform:translateX(var(--realce-x, 0px));
+    border-radius:9px;
+    background:var(--glass-hover);
+    box-shadow:var(--shadow-soft), inset 0 0 0 1px var(--glass-border-soft);
+    pointer-events:none;
+    transition:transform .44s cubic-bezier(.3, 1.3, .5, 1), width .44s cubic-bezier(.3, 1.3, .5, 1);
+  }
+  .proj-aba-realce.sem-animar{transition:none;}
+  .proj-view-abas.com-realce .proj-view-aba{z-index:1;}
+  .proj-view-abas.com-realce .proj-view-aba.ativa{background:transparent;box-shadow:none;}
+  .proj-view-aba.ativa{transition-delay:.06s;}
+
+  /* A troca pela View Transition. Durante ela, o #main vira uma camada só
+     (o cabeçalho e as abas, camadas próprias, ficam onde estão). A camada
+     nova não anima: quem entra são os blocos de dentro, com as regras de
+     cima. --vt-dir diz de que lado veio a aba. */
+  html{--vt-dir:1;}
+  html[data-troca-volta]{--vt-dir:-1;}
+  html[data-troca] #main{view-transition-name:tela;}
+  html[data-troca="aba"] #main .proj-head{view-transition-name:proj-cabeca;}
+  html[data-troca="aba"] #main .proj-toolbar{view-transition-name:proj-barra;}
+  ::view-transition-group(tela), ::view-transition-group(proj-cabeca), ::view-transition-group(proj-barra){animation:none;}
+  ::view-transition-new(tela), ::view-transition-old(proj-cabeca), ::view-transition-new(proj-cabeca),
+  ::view-transition-old(proj-barra), ::view-transition-new(proj-barra){animation:none;}
+  ::view-transition-old(proj-cabeca), ::view-transition-old(proj-barra){display:none;}
+  ::view-transition-old(tela){animation:abaSai .22s cubic-bezier(.4, 0, 1, 1) both;}
+  html[data-troca="projeto"]::view-transition-old(tela){animation:telaAfunda .26s cubic-bezier(.4, 0, 1, 1) both;}
+  @keyframes abaSai{
+    to{opacity:0;transform:translateX(calc(var(--vt-dir) * -26px)) scale(.985);filter:blur(6px);}
+  }
+  @keyframes telaAfunda{
+    to{opacity:0;transform:translateY(-8px) scale(.965);filter:blur(8px);}
+  }
+
+  /* Chegar num projeto (pela barra lateral, pela lista ou de outro projeto):
+     o cabeçalho entra primeiro, em partes. O ícone gira para o lugar, o nome
+     sobe saindo do desfoque, e só então as abas e os blocos, que chegam com
+     profundidade. */
+  @keyframes iconeProjetoEntra{
+    from{opacity:0;transform:scale(.5) rotate(-14deg);}
+    60%{opacity:1;}
+  }
+  @keyframes nomeProjetoEntra{
+    from{opacity:0;transform:translateY(10px);filter:blur(5px);}
+  }
+  @keyframes entraProfundo{
+    from{opacity:0;transform:translateY(16px) scale(.98);filter:blur(6px);}
+  }
+  main:not(.no-entrance) > .proj-head{animation:none;}
+  main:not(.no-entrance) > .proj-head .proj-head-main > :first-child{animation:iconeProjetoEntra .52s var(--mov-curva) backwards;}
+  main:not(.no-entrance) > .proj-head .proj-title{animation:nomeProjetoEntra .46s var(--mov-curva) .05s backwards;}
+  main:not(.no-entrance) > .proj-head .proj-meta{animation:fadeSlideUp .4s var(--mov-curva) .1s backwards;}
+  main:not(.no-entrance) > .proj-head .proj-head-actions{animation:fadeIn .4s ease-out .12s backwards;}
+  main:not(.no-entrance) > .proj-toolbar{animation:fadeSlideUp .4s var(--mov-curva) .13s backwards;}
+  main:not(.no-entrance) > .proj-head ~ :is(.proj-surface, .glass),
+  main:not(.no-entrance) > .proj-head ~ .kanban > .kb-col,
+  main:not(.no-entrance) > .proj-head ~ .pi-grade > .pi-painel{animation:entraProfundo .5s var(--mov-curva) .16s backwards;}
+  main:not(.no-entrance) > .proj-head ~ .kanban > .kb-col:nth-child(2), main:not(.no-entrance) > .proj-head ~ .pi-grade > .pi-painel:nth-child(2){animation-delay:.2s;}
+  main:not(.no-entrance) > .proj-head ~ .kanban > .kb-col:nth-child(3), main:not(.no-entrance) > .proj-head ~ .pi-grade > .pi-painel:nth-child(3){animation-delay:.24s;}
+  main:not(.no-entrance) > .proj-head ~ .kanban > .kb-col:nth-child(n+4), main:not(.no-entrance) > .proj-head ~ .pi-grade > .pi-painel:nth-child(n+4){animation-delay:.28s;}
+
   /* Com menos movimento pedido, a regra geral lá em cima zera as durações.
      Chegar numa tela e trocar de aba ainda merece um sinal de que o conteúdo
-     mudou: fica só o esmaecer curto, sem deslocamento e sem escalonamento. */
+     mudou: fica só o esmaecer curto, sem deslocamento, desfoque nem
+     escalonamento, e o realce da aba muda de lugar sem andar. */
   @media (prefers-reduced-motion: reduce){
     main:not(.no-entrance) :is(.view-header, .proj-head, .proj-toolbar, .proj-surface, .status-row, .date-filter, .panel, .pi-painel, .kb-col, .cal-view, .table-view),
-    main.troca-aba > :not(.proj-head):not(.proj-toolbar){
+    main:not(.no-entrance) > .proj-head :is(.proj-head-main > :first-child, .proj-title, .proj-meta, .proj-head-actions),
+    main.troca-aba > :not(.proj-head):not(.proj-toolbar),
+    main.troca-aba > :is(.kanban, .pi-grade) > *{
       animation:fadeIn .15s ease-out backwards !important;
+      animation-delay:0s !important;
     }
+    .proj-aba-realce{transition:none;}
   }
 
   .priority-badge.urgent{animation:urgentPulse 2.2s ease-in-out infinite;}
@@ -6517,4 +6605,346 @@
       --glass:rgba(250,251,252,0.97);
       --glass-strong:rgba(255,255,255,0.98);
     }
+  }
+
+  /* ======================================================================
+     Cargos, salas privadas e configurações do projeto (RFC 0005)
+     ====================================================================== */
+
+  /* Engrenagem do topo do projeto, ao lado do Convidar. Gira um oitavo de
+     volta no hover, em vez do passo para a esquerda do botão de voltar. */
+  .proj-config-btn:hover{transform:none;}
+  .proj-config-btn svg{transition:transform .5s var(--mov-curva);}
+  .proj-config-btn:hover svg, .proj-config-btn:focus-visible svg{transform:rotate(60deg);}
+  @media (max-width:900px){
+    .proj-head-actions > .proj-config-btn{flex:0 0 auto;}
+  }
+
+  /* --- modal das configurações do projeto --------------------------------- */
+  .cp-cabeca{display:flex;align-items:center;gap:12px;min-width:0;}
+  .cp-icone{display:grid;flex-shrink:0;}
+  .cp-cabeca-texto{min-width:0;}
+  .cp-subtitulo{margin-top:1px;font-size:12.5px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cp-painel{animation:cpPainelEntra .26s var(--mov-curva) both;}
+  @keyframes cpPainelEntra{from{opacity:0;transform:translateY(6px);}}
+  .cp-nota{margin-top:10px;font-size:12.5px;line-height:1.5;color:var(--text-muted);}
+  .cp-link{margin-top:14px;padding:0;font-size:12.5px;font-weight:500;color:var(--accent);text-decoration:underline;text-underline-offset:3px;}
+  .cp-link:hover{color:var(--accent-hover);}
+
+  .cp-identidade{display:flex;align-items:center;gap:18px;padding:6px 0 22px;}
+  .cp-identidade > .proj-icone, .cp-icone-btn{flex-shrink:0;}
+  .cp-nome-campos{flex:1;min-width:0;}
+  .cp-nome-linha{display:flex;gap:8px;}
+  .cp-nome-linha .input{flex:1;min-width:0;}
+  .cp-nome-linha .input[readonly]{background:transparent;border-color:var(--line);color:var(--text-strong);}
+  .cp-nome-linha .btn-primary{flex-shrink:0;padding:0 18px;}
+
+  /* Abas: uma lista curta que se arrasta pela alça (ou pela linha). */
+  .cp-abas{list-style:none;display:flex;flex-direction:column;gap:6px;max-width:440px;}
+  .cp-aba{
+    position:relative;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    min-height:48px;
+    padding:6px 8px 6px 12px;
+    border-radius:12px;
+    background:var(--glass);
+    border:1px solid var(--glass-border-soft);
+    transition:transform .24s var(--mov-curva), box-shadow .2s ease, background-color .15s ease;
+  }
+  .cp-aba.movel{cursor:grab;touch-action:none;user-select:none;}
+  .cp-aba.movel:hover{background:var(--glass-strong);}
+  .cp-aba-pega{display:grid;place-items:center;flex-shrink:0;color:var(--text-soft);}
+  .cp-aba.movel:hover .cp-aba-pega{color:var(--text-muted);}
+  .cp-aba-num{
+    width:22px;height:22px;
+    display:grid;place-items:center;
+    flex-shrink:0;
+    border-radius:7px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    font-variant-numeric:tabular-nums;
+    color:var(--text-muted);
+    background:color-mix(in srgb, var(--text-strong) 6%, transparent);
+  }
+  .cp-aba:first-child .cp-aba-num{color:var(--accent-text);background:var(--accent);}
+  .cp-aba-nome{flex:1;min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px;font-weight:500;color:var(--text-strong);}
+  .cp-aba-primeira{font-size:11.5px;font-weight:500;color:var(--accent);}
+  .cp-aba-acoes{display:flex;gap:2px;}
+  .cp-aba-acoes .cn-acao{width:32px;height:32px;}
+  .cp-aba-acoes .cn-acao:disabled{opacity:.3;pointer-events:none;}
+  .cp-abas.reordenando .cp-aba{transition:transform .2s var(--mov-curva);}
+  .cp-aba.arrastando{
+    z-index:2;
+    cursor:grabbing;
+    background:var(--glass-hover);
+    box-shadow:0 14px 30px color-mix(in srgb, var(--text-strong) 18%, transparent);
+    transition:box-shadow .2s ease;
+  }
+
+  /* Cargos: um bloco por cargo, do dono ao visualizador, com as duas
+     permissões de voz em interruptores. A cor do cargo vem só no nome. */
+  .cp-cargos{display:flex;flex-direction:column;gap:10px;}
+  .cp-cargo{padding:14px 16px 6px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-border-soft);}
+  .cp-cargo-cab{display:flex;align-items:baseline;justify-content:space-between;gap:12px;}
+  .cp-cargo-nome{font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:600;letter-spacing:-0.01em;color:var(--cargo-cor, var(--text-strong));}
+  .cp-cargo-n{font-size:12px;font-variant-numeric:tabular-nums;color:var(--text-muted);}
+  .cp-cargo-desc{margin:3px 0 6px;font-size:12.5px;line-height:1.45;color:var(--text-muted);}
+  .cp-perm{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 0;border-top:1px solid var(--line);}
+  .cp-perm-texto{display:flex;flex-direction:column;gap:2px;min-width:0;}
+  .cp-perm-nome{font-size:13.5px;font-weight:500;color:var(--text-strong);}
+  .cp-perm-desc{font-size:12px;line-height:1.4;color:var(--text-muted);}
+  .nivel-3{--cargo-cor:var(--accent);}
+  .nivel-2{--cargo-cor:color-mix(in srgb, var(--done) 70%, var(--text-strong));}
+  .nivel-1{--cargo-cor:color-mix(in srgb, var(--waiting) 75%, var(--text-strong));}
+  .nivel-0{--cargo-cor:var(--text-muted);}
+
+  /* Membros */
+  .cp-membros{list-style:none;border-top:1px solid var(--line);}
+  .cp-membro{display:flex;align-items:center;gap:12px;min-height:58px;padding:9px 2px;border-bottom:1px solid var(--line);}
+  .cp-membro .member-avatar{width:34px;height:34px;font-size:13px;flex-shrink:0;}
+  .cp-membro.pendente .member-avatar{opacity:.55;}
+  .cp-membro-texto{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
+  .cp-membro-nome{font-size:14px;font-weight:500;color:var(--text-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cp-membro.pendente .cp-membro-nome{color:var(--text-muted);font-weight:400;}
+  .cp-membro-detalhe{font-size:12px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cp-membro-cargo{width:auto;min-width:0;max-width:150px;padding-top:7px;padding-bottom:7px;font-size:12.5px;border-radius:9px;}
+  .cp-membro-tirar{width:32px;height:32px;}
+  .cp-membro-tirar:hover{color:var(--danger);background:color-mix(in srgb, var(--danger) 12%, transparent);}
+  .cp-cargo-pilula{
+    flex-shrink:0;
+    padding:3px 10px;
+    border-radius:999px;
+    font-size:11.5px;
+    font-weight:600;
+    color:var(--cargo-cor);
+    background:color-mix(in srgb, var(--cargo-cor) 13%, transparent);
+  }
+  .member-cargo{
+    padding:4px 8px;
+    border-radius:8px;
+    border:1px solid var(--line);
+    background:var(--glass-strong);
+    font-size:12px;
+    color:var(--text);
+  }
+  @media (max-width:900px){
+    .cp-identidade{align-items:flex-start;gap:14px;}
+    .cp-aba-acoes .cn-acao{width:40px;height:40px;}
+    .cp-membro:has(.cp-membro-cargo){flex-wrap:wrap;}
+    .cp-membro:has(.cp-membro-cargo) .cp-membro-texto{flex-basis:calc(100% - 50px);}
+    .cp-membro-cargo{margin-left:46px;flex:1;max-width:none;}
+  }
+
+  /* --- fonte e cor do nome (SEC-089) --------------------------------------- */
+  /* A família sai daqui, por chave de lista fechada; o banco não manda CSS. */
+  .nome-fonte{color:var(--nome-cor-final, inherit);}
+  .nome-fonte[style*="--nome-cor"]{--nome-cor-final:color-mix(in oklab, var(--nome-cor) 84%, var(--text-strong));}
+  body.theme-escuro .nome-fonte[style*="--nome-cor"]{--nome-cor-final:color-mix(in oklab, var(--nome-cor) 70%, #ffffff);}
+  .nome-fonte[data-fonte="grotesca"]{font-family:'Space Grotesk',sans-serif;font-weight:600;letter-spacing:-0.01em;}
+  .nome-fonte[data-fonte="serifada"]{font-family:'Young Serif',Georgia,serif;letter-spacing:-0.005em;}
+  .nome-fonte[data-fonte="mono"]{font-family:'JetBrains Mono',monospace;font-size:.93em;letter-spacing:-0.01em;}
+  .nome-fonte[data-fonte="manuscrita"]{font-family:'Caveat',cursive;font-size:1.24em;font-weight:600;line-height:1;}
+  .nome-fonte[data-fonte="arredondada"]{font-family:'Nunito',sans-serif;font-weight:800;}
+  .nome-fonte[data-fonte="pixel"]{font-family:'Pixelify Sans',monospace;font-weight:500;}
+  .nome-fonte[data-fonte="marcante"]{font-family:'Bebas Neue',sans-serif;font-size:1.16em;letter-spacing:.035em;line-height:1;}
+  .nome-fonte[data-fonte="elegante"]{font-family:'Playfair Display',Georgia,serif;font-style:italic;font-weight:600;}
+  .nome-fonte[data-fonte="retro"]{font-family:'Righteous',sans-serif;}
+
+  /* Escolha nas Configurações: o próprio nome em cada fonte. */
+  .fonte-nome-grade{display:grid;grid-template-columns:repeat(auto-fill, minmax(132px, 1fr));gap:8px;margin-bottom:18px;}
+  .fonte-nome-opcao{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+    gap:6px;
+    min-height:72px;
+    padding:12px 12px 10px;
+    border-radius:12px;
+    background:var(--glass);
+    border:1px solid var(--glass-border-soft);
+    text-align:left;
+    transition:background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+  }
+  .fonte-nome-opcao:hover{background:var(--glass-strong);}
+  .fonte-nome-opcao:active{transform:scale(.98);}
+  .fonte-nome-opcao.selected{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:var(--glass-strong);}
+  .fonte-nome-amostra{max-width:100%;font-size:17px;line-height:1.2;color:var(--text-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .fonte-nome-rotulo{font-size:11.5px;font-weight:500;color:var(--text-muted);}
+  .fonte-nome-opcao.selected .fonte-nome-rotulo{color:var(--accent);}
+  .cor-nome-titulo{margin-bottom:8px;}
+  .cor-nome-grade{display:flex;flex-wrap:wrap;gap:8px;padding-bottom:20px;}
+  .cor-nome-opcao{
+    width:30px;height:30px;
+    border-radius:50%;
+    background:var(--cor);
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,0.08);
+    transition:transform .15s var(--mov-curva), box-shadow .15s ease;
+  }
+  .cor-nome-opcao:hover{transform:scale(1.08);}
+  .cor-nome-opcao.selected{box-shadow:0 0 0 2px var(--bg-base), 0 0 0 4px var(--cor, var(--accent));}
+  .cor-nome-opcao.sem-cor{
+    background:var(--glass-strong);
+    box-shadow:inset 0 0 0 1px var(--line-strong);
+    position:relative;
+  }
+  .cor-nome-opcao.sem-cor::after{
+    content:'';
+    position:absolute;
+    left:50%;top:50%;
+    width:60%;height:1.5px;
+    border-radius:1px;
+    background:var(--text-muted);
+    transform:translate(-50%, -50%) rotate(-45deg);
+  }
+  .cor-nome-opcao.sem-cor.selected{box-shadow:0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent);}
+
+  /* --- diálogo do canal: microfone e privado -------------------------------- */
+  .cr-mic{margin-top:14px;}
+  .cr-dica{display:block;margin-top:5px;font-size:12px;line-height:1.45;color:var(--text-muted);}
+  .cr-privado{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);}
+  .cr-privado[hidden], .cr-mic[hidden]{display:none;}
+  .cr-privado-linha{display:flex;align-items:center;justify-content:space-between;gap:16px;}
+  .cr-privado-texto{display:flex;flex-direction:column;min-width:0;}
+  .cr-privado-titulo{font-size:13.5px;font-weight:600;color:var(--text-strong);}
+  .cr-privado-texto .cr-dica{margin-top:2px;}
+  .cr-pessoas{margin-top:12px;border:0;}
+  .cr-pessoas-lista{display:flex;flex-direction:column;gap:2px;max-height:212px;overflow-y:auto;overscroll-behavior:contain;margin:0 -4px;padding:0 4px;scrollbar-width:thin;}
+  .cr-pessoa{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    min-height:40px;
+    padding:5px 8px;
+    border-radius:10px;
+    cursor:pointer;
+    transition:background-color .15s ease;
+  }
+  .cr-pessoa:hover{background:var(--glass-strong);}
+  .cr-pessoa.travada{cursor:default;}
+  .cr-pessoa.travada:hover{background:transparent;}
+  .cr-pessoa input{width:16px;height:16px;flex-shrink:0;accent-color:var(--accent);}
+  .cr-pessoa .member-avatar{width:26px;height:26px;font-size:11px;flex-shrink:0;}
+  .cr-pessoa-nome{flex:1;min-width:0;font-size:13.5px;color:var(--text-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cr-pessoa-papel{flex-shrink:0;font-size:11.5px;color:var(--text-muted);}
+
+  /* --- lista de canais: marcas, moderação e arrasto ------------------------- */
+  .cn-marca{display:inline-flex;flex-shrink:0;color:var(--text-soft);}
+  .cn-marca.silencio{color:color-mix(in srgb, var(--danger) 80%, var(--text-muted));}
+  .cn-canal.ativo .cn-marca, .cn-canal:hover .cn-marca{color:var(--text-muted);}
+  .cn-pessoa-mudo.moderado{color:var(--danger);}
+  .cn-pessoa.moderavel{padding:0;}
+  .cn-pessoa-menu{flex:1;min-width:0;}
+  .cn-pessoa-btn{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    width:100%;
+    min-height:28px;
+    padding:3px 8px 3px 4px;
+    border-radius:8px;
+    text-align:left;
+    color:inherit;
+    transition:background-color .15s ease, color .15s ease;
+  }
+  .cn-pessoa-btn:hover, .cn-pessoa-btn[aria-expanded="true"]{background:var(--glass-strong);color:var(--text-strong);}
+  .cn-pessoa[data-movel] .cn-pessoa-btn{touch-action:pan-y;}
+  /* A lista de canais rola e corta o que passa da coluna: o menu da pessoa
+     ocupa a largura da coluna, a partir do recuo da sala. */
+  .cn-pessoa-lista{left:-22px;right:0;min-width:0;}
+  .novo-menu-titulo{
+    padding:8px 12px 4px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:.12em;
+    color:var(--text-muted);
+  }
+  .novo-menu-item .novo-menu-nome{display:flex;align-items:center;gap:8px;}
+  .novo-menu-item .novo-menu-nome .cn-icone{width:14px;height:14px;}
+  .novo-menu-item.perigo .novo-menu-nome{color:var(--danger);}
+
+  /* Arrasto: o item segurado sobe da lista com sombra; uma linha mostra onde
+     ele vai cair; a sala de destino de uma pessoa acende. */
+  .cn-itens{position:relative;}
+  #cn-lista.reordenando .cn-itens{user-select:none;}
+  #cn-lista .arrastando{
+    position:relative;
+    z-index:5;
+    border-radius:10px;
+    background:var(--glass-hover);
+    box-shadow:0 14px 30px color-mix(in srgb, var(--text-strong) 18%, transparent);
+    pointer-events:none;
+    opacity:.96;
+  }
+  #cn-lista .cn-cat-cab.arrastando{padding:2px 4px;}
+  .cn-solta-aqui{
+    position:absolute;
+    left:12px;
+    right:12px;
+    height:2px;
+    border-radius:1px;
+    background:var(--accent);
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+    pointer-events:none;
+    transition:top .12s var(--mov-curva);
+  }
+  .cn-solta-aqui::before{
+    content:'';
+    position:absolute;
+    left:-5px;
+    top:50%;
+    width:8px;height:8px;
+    border-radius:50%;
+    background:var(--accent);
+    transform:translateY(-50%);
+  }
+  .cn-solta-aqui[hidden]{display:none;}
+  .cn-linha.alvo-soltar > .cn-canal{
+    background:color-mix(in srgb, var(--cn-fala, var(--done)) 14%, var(--glass-strong));
+    box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--cn-fala, var(--done)) 60%, transparent);
+    color:var(--text-strong);
+  }
+
+  /* --- chamada: microfone travado e moderação no quadro da pessoa ---------- */
+  .ch-botao.travado{opacity:.75;cursor:not-allowed;}
+  .ch-rotulo-icone.moderado{color:var(--ch-desligado-texto);}
+  .ch-moderar{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+    margin-top:2px;
+    padding-top:10px;
+    border-top:1px solid color-mix(in srgb, var(--ch-texto) 12%, transparent);
+  }
+  .ch-moderar-titulo{flex-basis:100%;font-size:11.5px;color:var(--ch-suave);}
+  .ch-moderar-btn{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    min-height:32px;
+    padding:0 10px;
+    border-radius:9px;
+    font-size:12.5px;
+    font-weight:500;
+    background:var(--ch-botao);
+    color:var(--ch-texto);
+    transition:background-color .15s ease, color .15s ease, transform .12s ease;
+  }
+  .ch-moderar-btn:hover{background:var(--ch-botao-hover);}
+  .ch-moderar-btn:active{transform:scale(.96);}
+  .ch-moderar-btn.ativo{background:var(--ch-desligado);color:var(--ch-desligado-texto);}
+  .ch-moderar-btn.perigo:hover{background:var(--ch-desligado);color:var(--ch-desligado-texto);}
+  .ch-moderar-mover{
+    flex:1;
+    min-width:120px;
+    min-height:32px;
+    padding:0 8px;
+    border-radius:9px;
+    border:0;
+    font:inherit;
+    font-size:12.5px;
+    background:var(--ch-botao);
+    color:var(--ch-texto);
   }

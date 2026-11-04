@@ -196,6 +196,18 @@ do tópico de uma sala, a separação continua sendo a do SEC-075.
 3. Front: cargos, configurações do projeto, abas, arrastar canais, salas privadas,
    regra de microfone, moderação, fonte do nome, barra lateral, mini e animação.
 4. Teste no navegador com o Supabase simulado: celular a 375px, temas Vidro e Grafite.
+**Estado em 2026-11-04.** Passos 1 a 4 feitos. O SQL passou em 83 casos num
+Postgres 16 local, com stubs de `auth`, `storage` e `realtime`, rodando os três
+arquivos duas vezes seguidas sobre todo o SQL de antes. No Chromium, com o Supabase
+simulado e microfone e câmera falsos: troca de aba e de projeto, as quatro seções
+das configurações (cargo, ordem das abas e regra de cargo gravados), canais com gente
+nas salas, menu de moderação, arrastar canal para outra categoria e pessoa para outra
+sala, diálogo da sala privada e da sala de silêncio, fonte do nome, entrar numa sala,
+silenciar pelo quadro da pessoa, minimizar pelo clique no projeto da barra lateral,
+câmera pelo mini, ser movido para a sala de silêncio, ser silenciado e ser
+desconectado. Em 1440px e 390px, nos temas Vidro e Grafite, sem erro no console.
+Faltam os passos 5 e 6.
+
 5. Rodar os `.sql` no Supabase (ordem no README) e conferir a verificação do fim de
    cada um.
 6. Teste com duas contas: silenciar, mover e desconectar no meio da chamada, sala
