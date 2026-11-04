@@ -3482,10 +3482,13 @@ function renderProjectPage(){
       <div class="proj-head-main">
         <h1 class="proj-title">${esc(p.name)}</h1>
         <div class="proj-meta">
-          <button class="proj-people" onclick="openProjectsModal()" title="${isOwner ? 'Ver e gerenciar membros' : 'Ver membros'}">
-            <span class="proj-avatars">${avatares}${excedente}</span>
-            <span>${people.length} pessoa${people.length!==1?'s':''}</span>
-          </button>
+          <div class="proj-pessoas">
+            <button class="proj-people" onclick="alternarPessoasDoProjeto(this)" aria-haspopup="dialog" aria-expanded="false" title="Ver quem está no projeto">
+              <span class="proj-avatars">${avatares}${excedente}</span>
+              <span>${people.length} pessoa${people.length!==1?'s':''}</span>
+            </button>
+            <div class="proj-pessoas-pop" role="dialog" aria-label="${esc(`Pessoas em ${p.name}`)}" hidden>${pessoasDoProjetoHtml(p, isOwner)}</div>
+          </div>
           <span class="proj-role ${canEdit ? '' : 'leitura'}">${roleLabel}${canEdit ? '' : ' · só leitura'}</span>
           <span class="proj-andamento">${andamento}</span>
         </div>
@@ -3586,6 +3589,73 @@ function renderProjectsList(){
     ${invitesHtml}
     ${listHtml}`;
 }
+
+// "N pessoas", no topo do projeto: uma lista simples de quem está nele, como
+// a lista de membros de um servidor do Discord. Foto, nome, papel e, se a
+// pessoa estiver numa sala de voz, qual. Convidar e remover continuam no
+// "Gerenciar membros" (o modal dos projetos), só para o dono.
+function pessoasDoProjetoHtml(p, isOwner){
+  const papel = (uid)=>{
+    if(uid === p.owner_id) return 'Dono';
+    const m = (p.members || []).find(x=>x.user_id === uid);
+    return m && m.role === 'editor' ? 'Editor' : 'Visualizador';
+  };
+  const naSalaDe = {};
+  try{
+    const porSala = pessoasNasSalas(p.id);
+    for(const [sala, gente] of Object.entries(porSala)) for(const x of gente) naSalaDe[x.uid] = sala;
+  }catch(e){}
+  const ordem = {Dono: 0, Editor: 1, Visualizador: 2};
+  const pessoas = projectPeople(p)
+    .map(pe=>({...pe, papel: papel(pe.id)}))
+    .sort((a, b)=>(ordem[a.papel] - ordem[b.papel]) || a.label.localeCompare(b.label, 'pt-BR'));
+  const linhas = pessoas.map(pe=>{
+    const eu = pe.id === session.user.id;
+    const sala = naSalaDe[pe.id] && canalDoProjeto(p.id, naSalaDe[pe.id]);
+    return `
+      <li class="proj-pessoa">
+        ${avatarChip(pe.profile, pe.label[0])}
+        <span class="proj-pessoa-texto">
+          <span class="proj-pessoa-nome">${esc(pe.label)}${eu ? ' <span class="proj-pessoa-voce">(você)</span>' : ''}</span>
+          ${sala ? `<span class="proj-pessoa-sala">${ICONE_SALA}${esc(sala.nome)}</span>` : ''}
+        </span>
+        <span class="proj-pessoa-papel">${pe.papel}</span>
+      </li>`;
+  }).join('');
+  return `
+    <p class="proj-pessoas-titulo">${pessoas.length} ${pessoas.length === 1 ? 'pessoa' : 'pessoas'} no projeto</p>
+    <ul class="proj-pessoas-lista">${linhas}</ul>
+    ${isOwner ? '<button type="button" class="proj-pessoas-gerenciar" onclick="alternarPessoasDoProjeto(null, true);openProjectsModal()">Gerenciar membros</button>' : ''}`;
+}
+
+function alternarPessoasDoProjeto(btn, fechar){
+  const botoes = btn ? [btn] : [...document.querySelectorAll('.proj-pessoas .proj-people')];
+  for(const b of botoes){
+    const pop = b.nextElementSibling;
+    if(!pop) continue;
+    const abrir = !fechar && pop.hidden;
+    pop.hidden = !abrir;
+    b.setAttribute('aria-expanded', abrir);
+    if(abrir){ const alvo = pop.querySelector('button') || pop; pop.tabIndex = -1; alvo.focus(); }
+  }
+}
+
+document.addEventListener('click', (e)=>{
+  document.querySelectorAll('.proj-pessoas').forEach(w=>{
+    if(w.contains(e.target)) return;
+    const b = w.querySelector('.proj-people');
+    if(b && b.getAttribute('aria-expanded') === 'true') alternarPessoasDoProjeto(b, true);
+  });
+});
+
+document.addEventListener('keydown', (e)=>{
+  if(e.key !== 'Escape') return;
+  const b = document.querySelector('.proj-pessoas .proj-people[aria-expanded="true"]');
+  if(!b) return;
+  e.preventDefault();
+  alternarPessoasDoProjeto(b, true);
+  b.focus();
+});
 
 function openProjectsModal(){
   renderProjectsModal();
