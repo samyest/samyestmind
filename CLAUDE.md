@@ -58,6 +58,30 @@ mesmas skills em `~/.claude/skills/`; **a cópia do repositório é a que vale a
 | `frontend-design` | Ajuste pontual de direção estética, quando o pedido é pequeno e `impeccable` seria pesado demais. |
 | `web-design-guidelines` | Auditoria de UI já existente: acessibilidade, semântica de HTML, conformidade com as Web Interface Guidelines. Recebe arquivo ou padrão como argumento. |
 | `grilling` | **Antes** de construir feature nova. Entrevista em rodadas para fechar as decisões do plano. Não serve para trabalho visual. |
+| `ponytail` | Modo "dev sênior preguiçoso": a menor mudança que resolve a tarefa inteira, sem abstração nem config que ninguém pediu. Níveis `lite`, `full` (padrão) e `ultra`; desliga com "stop ponytail". |
+| `ponytail-review` | Revisão de um diff ou commit: bug, segurança, carga, teste faltando, velocidade e o que cortar. Só relata, não altera código. |
+| `ponytail-audit` | A mesma revisão para o repo inteiro (ou uma pasta), em ranking. Só relata. |
+| `ponytail-debt` | Lista os comentários `shortcut:` como livro de dívidas técnicas. Só relata. |
+| `ponytail-help` / `ponytail-gain` | Cartão de referência do ponytail e placar do benchmark deles. Só exibem; citam recursos do plugin (band, statusline) que não vêm com a skill. |
+| `security-audit` | Auditoria de segurança com rastreio até a fonte. Por padrão é só guia; o fluxo completo de seis fases (com relatório fora do repo, em `~/security-audit-skill/`) roda apenas quando o pedido é auditoria completa ou pen test. |
+| `voicestudio` | Gerar fala, transcrever e dublar pela API local do [VoiceStudio](https://github.com/debpalash/VoiceStudio) (`localhost:3900`). Só serve com o app rodando; não tem relação com o código deste site. |
 
 Use uma de cada vez. `impeccable` e `frontend-design` se sobrepõem — não empilhe as duas
-no mesmo pedido; escolha pelo tamanho do trabalho.
+no mesmo pedido; escolha pelo tamanho do trabalho. O mesmo vale para revisão:
+`ponytail-review`/`ponytail-audit` olham qualidade geral, `security-audit` vai fundo em
+segurança, e o agente `guardiao` checa as specs de `docs/specs/` — escolha uma pelo foco.
+
+### Origem das skills de terceiros
+
+Copiadas sem alteração, com a licença de cada projeto em `LICENSE.txt` na pasta da skill.
+Para atualizar, clone de novo, compare e troque o commit aqui.
+
+| Skills | Repositório | Commit | Licença |
+|---|---|---|---|
+| `ponytail*` (as 6 de `skills/`) | [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) | `96608e0` | MIT |
+| `security-audit` | [cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill) | `c1c8a8c` | MIT |
+| `voicestudio` | [debpalash/VoiceStudio](https://github.com/debpalash/VoiceStudio) | `346bef2` | AGPL-3.0 |
+
+Do ponytail vieram só as skills: os hooks de ativação automática, a statusline e o
+"band" são do plugin e não foram instalados. Do VoiceStudio ficou de fora a
+`voicestudio-maintainer`, que serve para manter o repositório deles.
