@@ -51,7 +51,7 @@ decididas na implementação, seguindo o padrão do app.
 | Q5 | Três tipos: categoria, texto e voz. Categoria tem um nível só. Canal sem categoria fica no topo da lista, como no Discord. |
 | Q6 | Nome livre de até 60 caracteres, com maiúsculas, acento e emoji ("EM REUNIÃO 🤫"). Não vira minúsculas com hífen. |
 | Q7 | Apagar um canal apaga as mensagens dele, com confirmação que diz isso. Apagar uma categoria não apaga os canais: eles ficam sem categoria. No máximo 100 itens (canais e categorias) por projeto, regra do banco. |
-| Q8 | Ordem por "Subir" e "Descer" no diálogo do canal, que funcionam no teclado e no celular; a categoria se escolhe no mesmo diálogo. Arrastar fica para depois. |
+| Q8 | Ordem pelo campo "Lugar na lista" do diálogo do canal ("No topo" ou "Depois de #drive"), que funciona no teclado e no celular; a categoria se escolhe no mesmo diálogo. Arrastar fica para depois. |
 | Q9 | Não lidas por canal (nome em destaque e contador), e a soma no projeto (aba e barra lateral), como antes. O "silenciar" continua por projeto (Q16 da RFC 0002). A notificação diz "Ana em Projeto X" e, no corpo, "#drive: " antes do trecho. |
 | Q10 | Cada sala é uma chamada separada, todas no mesmo tópico `chamada:<project_id>`. A Presence ganha `sala` (o id do canal de voz), e cada um só conecta com quem está na mesma sala. As policies do SEC-075 não mudam. |
 | Q11 | Clicar numa sala abre a prévia (Q22 da RFC 0002). Quem já está numa sala do mesmo projeto troca direto ao clicar em outra, sem prévia e sem desligar microfone, câmera ou tela, como no Discord. Uma sala por vez. |
@@ -148,9 +148,12 @@ projeto.
   enquanto não houver categoria, o modelo de equipe), o + de cada categoria (canal
   nela) e, ao passar o mouse ou com o foco, o lápis de cada canal e categoria.
 - **Diálogo do canal**, no formato do "Novo projeto" (`modal-rapido`): tipo (só ao
-  criar), nome e categoria; ao editar, "Subir", "Descer" e "Apagar".
-- **Erros** por `showToast(..., 'erro')`, sem fechar o diálogo nem perder o nome
-  digitado (QUA-005 e o princípio 4 do PRODUCT.md).
+  criar), nome, categoria e lugar na lista; ao editar, também "Apagar".
+- **Erros** no próprio diálogo, como no "Novo projeto", sem fechar nem perder o nome
+  digitado (princípio 4 do PRODUCT.md). Fora do diálogo, por
+  `showToast(..., 'erro')` (QUA-005).
+- **O canal aberto fica guardado** no aparelho, para criar canais acima dele (o
+  modelo de equipe põe `#avisos` no topo) não trocar a conversa de ninguém.
 - **Montagem do HTML:** nome do canal e da categoria por `esc()` em todo lugar; o id
   vai para `onclick` só depois de passar pelo formato uuid.
 
@@ -207,6 +210,14 @@ Move o `#geral` e a sala Geral que existirem, em vez de criar outros.
 3. Front: aba Canais, diálogo do canal, modelo de equipe, salas na chamada e
    fallback sem a tabela.
 4. Teste no navegador com o Supabase simulado: lista, troca de canal, celular a 375px.
+
+**Estado em 2026-11-04.** Passos 1 a 4 e 7 feitos. O SQL passou em 38 casos num
+Postgres 16 local (inclusive rodando duas vezes seguidas). No Chromium, com o
+Supabase simulado, foram testados: o modelo de equipe, gente nas salas, não lidas
+por canal, criar uma sala numa posição, renomear, o celular a 375px, os temas Vidro
+e Grafite e o modo sem o SQL novo. Faltam os passos 5 e 6, que dependem do painel
+do Supabase e de duas contas reais (a troca de sala com WebRTC de verdade não foi
+testada).
 5. Rodar o `canais_projeto.sql` no Supabase e conferir a verificação do fim do
    arquivo. Pode ser antes ou depois de publicar o código (Q15).
 6. Teste com duas contas em salas diferentes e trocando de sala no meio da chamada.
