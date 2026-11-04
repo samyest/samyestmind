@@ -14656,7 +14656,7 @@ function chamadaExpandir(){
     c.modo = 'expandida';
     desenharChamada();
   }).then(()=>{
-    const b = document.getElementById('ch-btn-minimizar');
+    const b = document.getElementById('ch-btn-minimizar') || document.getElementById('ch-btn-flutuar');
     if(b) b.focus();
   });
 }
@@ -15359,8 +15359,12 @@ function desenharChamada(){
         <div class="ch-topo-acoes">
           ${salas.length > 1 ? `<button type="button" id="ch-btn-salas" class="ch-salas-btn" onclick="chamadaAlternarSalas()" aria-expanded="${!!c.painelSalas}" aria-label="Salas de voz: trocar de sala">${iconeChamada('volume', 16)}<span>Salas</span><span class="ch-salas-seta">${iconeChamada('seta', 14)}</span></button>` : ''}
           ${doc === document ? `<button type="button" id="ch-btn-chat" class="ch-salas-btn ch-chat-btn ${c.chatAberto ? 'ativo' : ''}" onclick="chamadaAlternarChat()" aria-expanded="${!!c.chatAberto}" aria-label="${!c.chatAberto && chatNaoLidas[c.pid] ? `Chat do projeto, ${chatNaoLidas[c.pid]} não lida${chatNaoLidas[c.pid] > 1 ? 's' : ''}` : 'Chat do projeto'}" title="Chat do projeto">${iconeChamada('chat', 16)}<span>Chat</span>${seloChatHtml(c)}</button>` : ''}
-          ${doc === document && janelaFlutuanteSuportada() ? `<button type="button" id="ch-btn-flutuar" class="ch-botao ch-botao-leve" onclick="abrirJanelaFlutuante()" aria-label="Janela flutuante, por cima dos outros programas" title="Janela flutuante, por cima dos outros programas">${iconeChamada('flutuar', 18)}</button>` : ''}
-          <button type="button" id="ch-btn-minimizar" class="ch-botao ch-botao-leve" onclick="chamadaMinimizar()" aria-label="${minimizar}" title="${minimizar}">${iconeChamada('minimizar', 18)}</button>
+          ${doc === document && janelaFlutuanteSuportada()
+            // Um botão só no topo: com janela flutuante, ela; o cartão no
+            // canto continua no Esc e no clique na barra lateral. Sem ela
+            // (celular, Firefox, Safari), o minimizar, que é a única saída.
+            ? `<button type="button" id="ch-btn-flutuar" class="ch-botao ch-botao-leve" onclick="abrirJanelaFlutuante()" aria-label="Janela flutuante, por cima dos outros programas (Esc minimiza no canto)" title="Janela flutuante, por cima dos outros programas (Esc minimiza no canto)">${iconeChamada('flutuar', 18)}</button>`
+            : `<button type="button" id="ch-btn-minimizar" class="ch-botao ch-botao-leve" onclick="chamadaMinimizar()" aria-label="${minimizar}" title="${minimizar}">${iconeChamada('minimizar', 18)}</button>`}
         </div>
         ${c.painelSalas && salas.length > 1 ? painelSalasHtml(c) : ''}
       </header>
