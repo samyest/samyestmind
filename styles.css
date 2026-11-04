@@ -41,6 +41,10 @@
     --mov-curva: cubic-bezier(.16, 1, .3, 1);
     --mov-tela: .34s;
     --mov-aba: .24s;
+
+    /* Largura da barra lateral. Fica no :root, e não no .app, porque a
+       chamada aberta (fora do #app) começa onde a barra termina. */
+    --sidebar-w: 220px;
   }
 
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -2162,6 +2166,25 @@
     background:var(--ch-painel);
     box-shadow:var(--ch-sombra);
   }
+  /* No computador, a barra lateral continua à mostra: a chamada aberta
+     ocupa só a área do app, num painel com a mesma margem e o mesmo
+     arredondado da barra. Com a barra escondida, vai até a borda (menos a
+     margem), e o botão de mostrar a barra fica por cima dela. No celular,
+     tela cheia. */
+  @media (min-width:901px){
+    .chamada[data-modo="expandida"]{
+      top:14px;
+      right:14px;
+      bottom:14px;
+      left:calc(var(--sidebar-w) + 28px);
+      border-radius:28px;
+      overflow:hidden;
+      box-shadow:var(--ch-sombra);
+    }
+    /* Barra escondida: a chamada deixa livre a faixa do botão de mostrar a
+       barra (que fica dentro do #app e não tem como passar por cima dela). */
+    body:has(#app.sidebar-collapsed) .chamada[data-modo="expandida"]{left:36px;}
+  }
   .chamada button:focus-visible{outline:2px solid var(--ch-foco);outline-offset:2px;}
 
   .ch-ponto{width:8px;height:8px;border-radius:50%;background:var(--ch-fala, #43b562);flex-shrink:0;box-shadow:0 0 0 3px color-mix(in srgb, var(--ch-fala, #43b562) 22%, transparent);}
@@ -2274,6 +2297,9 @@
   .ch-rotulo, .ch-estado{pointer-events:none;}
   .ch-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;}
   .ch-video.tela{object-fit:contain;}
+  /* Em destaque, o quadro estica para a largura do palco: com cover, a
+     câmera era cortada e parecia ter zoom. Inteira, com faixa escura. */
+  .ch-destaque .ch-video{object-fit:contain;}
   .ch-video.espelho{transform:scaleX(-1);}
   .ch-ladrilho-avatar{position:absolute;inset:0;display:grid;place-items:center;color:var(--ch-suave);}
   .ch-ladrilho.tela .ch-ladrilho-avatar{color:rgba(233,238,243,0.6);}
@@ -4112,7 +4138,7 @@
   .mobile-nav-fab:active{transform:translateY(-10px) scale(0.92);}
 
   @media (max-width:1440px){
-    .app{--sidebar-w:200px;}
+    :root{--sidebar-w:200px;}
     main{padding:32px 28px 50px;}
     .dash-grid{gap:16px;}
     .kanban{gap:14px;}
