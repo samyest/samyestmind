@@ -12733,10 +12733,40 @@ function nomeDaChamada(pid, sala){
   return salasDoProjeto(pid).length > 1 ? `${nomeDaSala(pid, sala)} · ${nome}` : nome;
 }
 
+// Ligar e desligar câmera, microfone e fone várias vezes seguidas mandava uma
+// Presence por clique; o Realtime limita a taxa e derrubava o canal, e quem
+// estava na sala via a pessoa sumir e fechava a conexão. Agora sai no máximo
+// uma a cada 600 ms, sempre com o estado mais novo.
+const PRESENCA_INTERVALO = 600;
 function atualizarPresencaChamada(){
   const c = chamada;
   const reg = regDaChamada(c);
   if(!reg || !reg.assinado) return Promise.resolve();
+  if(c.presencaTimer) return c.presencaPromessa;
+  const espera = Math.max(0, (c.presencaUltima || 0) + PRESENCA_INTERVALO - Date.now());
+  c.presencaPromessa = new Promise(ok=>{
+    c.presencaResolver = ok;
+    c.presencaTimer = setTimeout(()=>{
+      c.presencaTimer = null;
+      c.presencaResolver = null;
+      c.presencaUltima = Date.now();
+      enviarPresencaChamada(c).then(ok, ok);
+    }, espera);
+  });
+  return c.presencaPromessa;
+}
+
+// Cancela a Presence que ia sair (ao sair da chamada ou trocar de tópico);
+// quem esperava por ela segue em frente.
+function cancelarPresencaPendente(c){
+  clearTimeout(c.presencaTimer);
+  c.presencaTimer = null;
+  if(c.presencaResolver){ c.presencaResolver(); c.presencaResolver = null; }
+}
+
+function enviarPresencaChamada(c){
+  const reg = regDaChamada(c);
+  if(chamada !== c || !reg || !reg.assinado) return Promise.resolve();
   return reg.canal.track({
     sessao: c.sessao, em_chamada: true, desde: c.entrouEm, sala: CHAMADA_UUID.test(c.sala || '') ? c.sala : null,
     mic: c.mic && !!c.local.voz, ensurdecido: c.ensurdecido, camera: c.camera, tela: c.tela, telaSom: !!(c.tela && c.local.telaAudio)
@@ -13216,6 +13246,7 @@ function fecharParChamada(par){
 // Liga e desliga conexões conforme a Presence: entra quem chegou, sai quem
 // saiu ou perdeu o acesso. Sem limite de pessoas desde 2026-11-03 (antes, só
 // as 4 primeiras ficavam, Q19); a qualidade se ajusta pelo tetoDaChamada.
+const PRESENCA_TOLERANCIA = 5000;
 function reconciliarChamada(){
   const c = chamada;
   const reg = regDaChamada(c);
@@ -13258,8 +13289,20 @@ function reconciliarChamada(){
     // Quem espera a oferta não faz nada aqui: se ela não vier, a vigia pede.
     if(!par && eu < p.uid) criarParChamada(p.uid, p.sessao, true);
   }
+  // Quem some da Presence com a conexão ainda de pé fica uns segundos: uma
+  // queda curta do canal (ou da própria Presence) não derruba a voz e o vídeo
+  // de todo mundo. Se a pessoa não voltar, sai como sempre.
+  c.sumidos = c.sumidos || new Map();
+  for(const uid of vistos) c.sumidos.delete(uid);
+  const agora = Date.now();
   for(const uid of [...c.participantes.keys()]){
     if(vistos.has(uid)) continue;
+    const parVivo = c.pares.get(uid);
+    if(parVivo && parVivo.pc.connectionState === 'connected'){
+      if(!c.sumidos.has(uid)){ c.sumidos.set(uid, agora); setTimeout(()=>{ if(chamada === c) reconciliarChamada(); }, PRESENCA_TOLERANCIA + 100); }
+      if(agora - c.sumidos.get(uid) < PRESENCA_TOLERANCIA){ vistos.add(uid); continue; }
+    }
+    c.sumidos.delete(uid);
     const par = c.pares.get(uid);
     if(par) fecharParChamada(par);
     c.participantes.delete(uid);
@@ -13900,6 +13943,8 @@ async function sairDaChamada(opts){
   if(audios) audios.remove();
   const reg = regDaChamada(c);
   const restantes = naSala(reg, c.sala).filter(p=>!(p.uid === session.user.id && p.sessao === c.sessao));
+  // A Presence que estava para sair não sai mais depois do untrack.
+  cancelarPresencaPendente(c);
   if(reg && reg.assinado){ try{ await reg.canal.untrack(); }catch(e){} }
   if(c.presente && !restantes.length) registrarLinhaChamada(c.pid, c.sala, 'chamada_fim', Math.round((Date.now() - c.inicio) / 1000));
   if(!o.silencioso) tocarSomChamada('sair');
@@ -13939,6 +13984,7 @@ async function trocarDeSalaChamada(sala, opts){
   }
   const restantes = naSala(reg, c.sala).filter(p=>!(p.uid === eu && p.sessao === c.sessao));
   if(c.presente && !restantes.length && c.sala !== sala) registrarLinhaChamada(c.pid, c.sala, 'chamada_fim', Math.round((Date.now() - c.inicio) / 1000));
+  if(topicoNovo !== c.topico) cancelarPresencaPendente(c);
   if(topicoNovo !== c.topico && reg && reg.assinado){ try{ await reg.canal.untrack(); }catch(e){} }
   c.topico = topicoNovo;
   clearTimeout(c.timerInicio);
@@ -14229,6 +14275,8 @@ async function chamadaAlternarMic(){
     return;
   }
   if(!c.local.voz){
+    if(c.micOcupado) return;
+    c.micOcupado = true;
     try{
       const s = await navigator.mediaDevices.getUserMedia(restricoesMicrofone(c.dispositivos.mic));
       if(chamada !== c){ s.getTracks().forEach(t=>t.stop()); return; }
@@ -14236,6 +14284,7 @@ async function chamadaAlternarMic(){
       c.ensurdecido = false;
       await trocarFaixaLocal('voz', s.getAudioTracks()[0]);
     }catch(e){ showToast(mensagemErroMidia(e, 'o microfone'), 'erro'); return; }
+    finally{ c.micOcupado = false; }
   }else{
     c.mic = !c.mic;
     // Abrir o microfone tira o ensurdecer, como no Discord.
@@ -14262,7 +14311,17 @@ function chamadaAlternarEnsurdecer(){
 
 async function chamadaAlternarCamera(){
   const c = chamada;
-  if(!c) return;
+  if(!c || c.cameraOcupada) return;
+  // Um pedido por vez: dois cliques rápidos pediam a câmera duas vezes e uma
+  // das faixas ficava ligada sem ninguém ver.
+  c.cameraOcupada = true;
+  try{ await alternarCameraAgora(c); }finally{ c.cameraOcupada = false; }
+  if(chamada !== c) return;
+  atualizarPresencaChamada();
+  desenharChamada();
+}
+
+async function alternarCameraAgora(c){
   if(c.camera){
     c.camera = false;
     await trocarFaixaLocal('cam', null);
@@ -14274,10 +14333,8 @@ async function chamadaAlternarCamera(){
       c.dispositivos.cam = t.getSettings().deviceId || c.dispositivos.cam;
       c.camera = true;
       await trocarFaixaLocal('cam', t);
-    }catch(e){ showToast(mensagemErroMidia(e, 'a câmera'), 'erro'); return; }
+    }catch(e){ showToast(mensagemErroMidia(e, 'a câmera'), 'erro'); }
   }
-  atualizarPresencaChamada();
-  desenharChamada();
 }
 
 // Transmitir a tela começa por uma escolha do app, como no Discord: o que
