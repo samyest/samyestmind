@@ -17,7 +17,10 @@
 --      abas). Editor e visualizador continuam como eram (SEC-085).
 --    - definir_cargo_membro(): o dono muda o cargo de alguém. O UPDATE direto em
 --      project_members continua fechado (SEC-084).
---    - projects.regras_cargos: quais cargos podem convidar pessoas e silenciar
+--    - projects.regras_cargos: o que cada cargo pode (RFC 0005 e 0006):
+--      convidar, mudar cargos, mudar o nome, mudar o ícone, criar e editar
+--      canais de texto, criar e editar salas de voz, silenciar e mover outros
+--      nas salas. Antes eram só convidar e silenciar
 --      e mover outros nas salas de voz. Só o dono muda (SEC-086).
 --    - Convite: além do dono, convida quem o cargo deixa, sempre para cargo
 --      igual ou abaixo do seu (pode_convidar_como, SEC-084).
@@ -109,6 +112,9 @@ set search_path = public
 as $$
 declare
   v_projeto uuid;
+  v_alvo    uuid;
+  v_atual   text;
+  v_meu     integer;
 begin
   if auth.uid() is null then
     raise exception 'cargo_sem_login: entre na conta' using errcode = '42501';
@@ -116,9 +122,22 @@ begin
   if p_cargo is null or p_cargo not in ('editor', 'participante', 'viewer') then
     raise exception 'cargo_invalido: cargo desconhecido' using errcode = '22023';
   end if;
-  select project_id into v_projeto from project_members where id = p_membro;
-  if v_projeto is null or not is_project_owner(v_projeto) then
-    raise exception 'cargo_sem_permissao: só o dono do projeto muda cargos' using errcode = '42501';
+  select project_id, user_id, role into v_projeto, v_alvo, v_atual from project_members where id = p_membro;
+  if v_projeto is null then
+    raise exception 'cargo_sem_permissao: convite ou membro não encontrado' using errcode = '42501';
+  end if;
+  -- O dono muda qualquer um. Quem tem a regra "cargos" (RFC 0006) muda só
+  -- quem tem cargo igual ou abaixo do seu, para cargo igual ou abaixo do seu,
+  -- e nunca o próprio.
+  if not is_project_owner(v_projeto) then
+    v_meu := nivel_no_projeto(v_projeto, auth.uid());
+    if not tem_permissao_voz(v_projeto, 'cargos')
+       or v_alvo = auth.uid()
+       or v_meu is null
+       or (case v_atual when 'editor' then 2 when 'participante' then 1 else 0 end) > v_meu
+       or (case p_cargo when 'editor' then 2 when 'participante' then 1 else 0 end) > v_meu then
+      raise exception 'cargo_sem_permissao: seu cargo não muda o cargo dessa pessoa' using errcode = '42501';
+    end if;
   end if;
   update project_members set role = p_cargo where id = p_membro;
 end $$;
@@ -149,6 +168,15 @@ begin
     insert into _regras_sem_convidar
       select not public.regras_cargos_validas('{"editor": ["convidar"]}'::jsonb);
   end if;
+  -- O mesmo para as regras da RFC 0006 (nome, ícone, canais de texto, salas
+  -- e cargos): na primeira vez, o editor salvo ganha as quatro que ele já
+  -- tinha de fato (nome, ícone, texto e voz). "cargos" fica só com o dono.
+  create temp table if not exists _regras_sem_estrutura (v boolean);
+  delete from _regras_sem_estrutura;
+  if to_regprocedure('public.regras_cargos_validas(jsonb)') is not null then
+    insert into _regras_sem_estrutura
+      select not public.regras_cargos_validas('{"editor": ["texto"]}'::jsonb);
+  end if;
 end $$;
 
 create or replace function public.regras_cargos_validas(r jsonb)
@@ -163,8 +191,9 @@ as $$
       select 1 from jsonb_each(r) e
        where e.key not in ('editor', 'participante', 'viewer')
           or jsonb_typeof(e.value) <> 'array'
-          or jsonb_array_length(e.value) > 3
-          or not (e.value <@ '["convidar", "silenciar", "mover"]'::jsonb)
+          or jsonb_array_length(e.value) > 8
+          or not (e.value <@ '["convidar", "cargos", "nome", "icone", "texto", "voz", "silenciar", "mover"]'::jsonb)
+          or (select count(distinct x) from jsonb_array_elements_text(e.value) x) <> jsonb_array_length(e.value)
     )
   );
 $$;
@@ -207,6 +236,14 @@ update public.projects p
  where p.regras_cargos is not null
    and exists (select 1 from _regras_sem_convidar where v);
 delete from _regras_sem_convidar;
+
+update public.projects p
+   set regras_cargos = p.regras_cargos
+     || jsonb_build_object('editor', (p.regras_cargos -> 'editor') || '["nome", "icone", "texto", "voz"]'::jsonb)
+ where p.regras_cargos is not null
+   and jsonb_typeof(p.regras_cargos -> 'editor') = 'array'
+   and exists (select 1 from _regras_sem_estrutura where v);
+delete from _regras_sem_estrutura;
 
 -- O editor altera projects pela policy de sempre (projects_update). As regras
 -- de cargo ficam só com o dono: sem isto, o editor daria a si mesmo poder de
@@ -284,13 +321,13 @@ as $$
       when dono then true
       when cargo is null then false
       when regras ? cargo then (regras -> cargo) ? p_permissao
-      when cargo = 'editor' then p_permissao in ('convidar', 'silenciar', 'mover')
+      when cargo = 'editor' then p_permissao in ('convidar', 'nome', 'icone', 'texto', 'voz', 'silenciar', 'mover')
       when cargo = 'participante' then p_permissao = 'convidar'
       else false
     end
     from eu
   ), false)
-  and p_permissao in ('convidar', 'silenciar', 'mover');
+  and p_permissao in ('convidar', 'cargos', 'nome', 'icone', 'texto', 'voz', 'silenciar', 'mover');
 $$;
 
 revoke all on function public.tem_permissao_voz(uuid, text) from public, anon;
@@ -314,6 +351,76 @@ $$;
 
 revoke all on function public.pode_convidar_como(uuid, text) from public, anon;
 grant execute on function public.pode_convidar_como(uuid, text) to authenticated;
+
+
+-- Criar, editar, mover e apagar canal de texto pede "texto"; sala de voz pede
+-- "voz"; categoria, qualquer um dos dois (RFC 0006). Usada pelas policies de
+-- project_channels, em salas_projeto.sql.
+create or replace function public.pode_mexer_no_canal(p_project_id uuid, p_tipo text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select case p_tipo
+    when 'texto' then tem_permissao_voz(p_project_id, 'texto')
+    when 'voz' then tem_permissao_voz(p_project_id, 'voz')
+    when 'categoria' then tem_permissao_voz(p_project_id, 'texto') or tem_permissao_voz(p_project_id, 'voz')
+    else false
+  end;
+$$;
+
+revoke all on function public.pode_mexer_no_canal(uuid, text) from public, anon;
+grant execute on function public.pode_mexer_no_canal(uuid, text) to authenticated;
+
+-- Mudar o projeto: nome pede "nome", ícone pede "icone" (RFC 0006); colunas,
+-- notas e ordem das abas continuam com dono e editor. A policy deixa passar
+-- quem tem qualquer uma dessas, e o gatilho confere campo por campo.
+drop policy if exists projects_update on public.projects;
+create policy projects_update on public.projects
+  for update to authenticated
+  using (
+    (owner_id = auth.uid()) or is_project_member(id, 'editor')
+    or tem_permissao_voz(id, 'nome') or tem_permissao_voz(id, 'icone')
+  )
+  with check (
+    (owner_id = auth.uid()) or is_project_member(id, 'editor')
+    or tem_permissao_voz(id, 'nome') or tem_permissao_voz(id, 'icone')
+  );
+
+create or replace function public.projeto_campos_por_regra()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if auth.uid() is null or is_project_owner(new.id) then
+    return new;
+  end if;
+  if new.name is distinct from old.name and not tem_permissao_voz(new.id, 'nome') then
+    raise exception 'regra_nome: seu cargo não muda o nome do projeto' using errcode = '42501';
+  end if;
+  if (new.icone is distinct from old.icone or new.icone_cor is distinct from old.icone_cor
+      or new.icone_imagem is distinct from old.icone_imagem)
+     and not tem_permissao_voz(new.id, 'icone') then
+    raise exception 'regra_icone: seu cargo não muda o ícone do projeto' using errcode = '42501';
+  end if;
+  if (new.columns is distinct from old.columns or new.notes is distinct from old.notes
+      or new.ordem_abas is distinct from old.ordem_abas)
+     and not is_project_member(new.id, 'editor') then
+    raise exception 'regra_estrutura: só o dono e quem edita mudam colunas, notas e abas' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+
+revoke all on function public.projeto_campos_por_regra() from public, anon, authenticated;
+
+drop trigger if exists projects_campos_por_regra on public.projects;
+create trigger projects_campos_por_regra
+  before update on public.projects
+  for each row execute function public.projeto_campos_por_regra();
 
 
 -- 6. Convites: o dono e quem o cargo deixa (SEC-084) ----------------------------
@@ -369,5 +476,8 @@ select
         where conrelid = 'public.projects'::regclass
           and conname in ('projects_regras_cargos_validas', 'projects_ordem_abas_valida')) as colunas,
   exists (select 1 from pg_trigger
-           where not tgisinternal and tgname = 'projects_regras_so_dono')        as gatilho,
+           where not tgisinternal and tgname = 'projects_regras_so_dono')
+  and exists (select 1 from pg_trigger
+               where not tgisinternal and tgname = 'projects_campos_por_regra')
+  and public.regras_cargos_validas('{"editor": ["cargos", "texto", "voz"]}'::jsonb) as gatilho,
   not has_function_privilege('authenticated', 'public.nivel_no_projeto(uuid, uuid)', 'EXECUTE') as nivel;
