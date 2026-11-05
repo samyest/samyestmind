@@ -112,8 +112,9 @@ Para as fotos no chat, as mensagens diretas e as regras de cargo por área (RFC 
 rode de novo e na ordem:
 
 1. `supabase/configuracoes_projeto.sql` — as regras **Mudar cargos**, **Mudar o nome**,
-   **Mudar a foto**, **Canais de texto** e **Salas de voz**. Na primeira vez, o editor
-   que já tinha regras salvas ganha nome, foto, texto e voz (o que ele já fazia).
+   **Mudar a foto**, **Canais de texto** e **Salas de voz**, e o **nome de cada cargo**
+   (o dono renomeia). Na primeira vez, o editor que já tinha regras salvas ganha nome,
+   foto, texto e voz (o que ele já fazia).
 2. `supabase/salas_projeto.sql` — canais por tipo de regra e as **mensagens diretas**
    (só as duas pessoas veem, nem o dono).
 3. `supabase/imagens_no_chat.sql` (novo) — a coluna da foto na mensagem e o bucket

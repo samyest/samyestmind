@@ -3425,7 +3425,7 @@ function renderSidebarProjects(){
       <button class="nav-empty-acao" onclick="entrarComCodigoRapido()">Entrar com código de convite</button>`;
   } else {
     html += state.projects.map(p=>{
-      const role = CARGOS[cargoValido(myRoleInProject(p.id))].curto;
+      const role = esc(curtoDoCargo(myRoleInProject(p.id), p));
       const isActive = state.view === 'project' && state.currentProjectId === p.id;
       return `
         <button class="sidebar-project-item ${isActive?'active':''}" data-pid="${p.id}" onclick="openProjectView('${p.id}')" title="${esc(p.name)} · segure e arraste para mudar a ordem" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown">
@@ -3470,8 +3470,24 @@ function cargoValido(role){
   return role === 'owner' || CARGOS_DE_MEMBRO.includes(role) ? role : 'viewer';
 }
 
-function nomeDoCargo(role){
-  return CARGOS[cargoValido(role)].nome;
+// O dono pode dar outro nome a cada cargo do projeto (RFC 0006): o
+// "Editor" vira "Moderador". O nome é texto de quem escreveu: sempre por
+// esc() no HTML. Sem nome próprio (ou com um que não passa), o padrão.
+const CARGO_NOME_MAX = 24;
+function nomesDosCargos(p){
+  const n = p && p.nomes_cargos;
+  return n && typeof n === 'object' && !Array.isArray(n) ? n : {};
+}
+function nomeDoCargo(role, p){
+  const r = cargoValido(role);
+  const v = nomesDosCargos(p)[r];
+  return typeof v === 'string' && v.trim() && v.length <= CARGO_NOME_MAX && !/[<>\u0000-\u001f\u007f]/.test(v) ? v : CARGOS[r].nome;
+}
+// Na barra lateral cabe pouco: o nome próprio, se houver, ou o curto padrão.
+function curtoDoCargo(role, p){
+  const r = cargoValido(role);
+  const nome = nomeDoCargo(r, p);
+  return nome === CARGOS[r].nome ? CARGOS[r].curto : nome;
 }
 
 // O cargo de qualquer pessoa no projeto, pela lista carregada. null para
@@ -3488,8 +3504,8 @@ function mexeEmTarefas(projectId){
   return role === 'owner' || role === 'editor' || role === 'participante';
 }
 
-function opcoesDeCargo(atual){
-  return CARGOS_DE_MEMBRO.map(r=>`<option value="${r}" ${r === atual ? 'selected' : ''}>${CARGOS[r].nome}</option>`).join('');
+function opcoesDeCargo(atual, p){
+  return CARGOS_DE_MEMBRO.map(r=>`<option value="${r}" ${r === atual ? 'selected' : ''}>${esc(nomeDoCargo(r, p))}</option>`).join('');
 }
 
 // Título de seção da barra lateral com o + que só aparece ao passar o mouse
@@ -3796,7 +3812,7 @@ async function mudarCargo(memberId, role, select){
   }
   m.role = role;
   const nome = (m.profile && m.profile.name) || m.invited_email || 'O convite';
-  showToast(`${nome} agora é ${CARGOS[role].nome.toLowerCase()}`);
+  showToast(`${nome} agora é ${nomeDoCargo(role, p)}`);
   await loadProjects();
   if(document.getElementById('projects-modal').classList.contains('open')) renderProjectsModal();
   if(configProjeto) desenharConfigProjeto();
@@ -4168,7 +4184,7 @@ function renderProjectPage(){
   // tarefas, que o participante também faz.
   const canEdit = isOwner || role === 'editor';
   const mexe = mexeEmTarefas(p.id);
-  const roleLabel = nomeDoCargo(isOwner ? 'owner' : role);
+  const roleLabel = esc(nomeDoCargo(isOwner ? 'owner' : role, p));
   // Itens = tarefas e eventos; o quadro e as contagens são só das tarefas.
   const projectItems = state.tasks.filter(t=>t.project_id===p.id);
   const projectTasks = projectItems.filter(t=>!ehEvento(t));
@@ -4421,8 +4437,9 @@ function cargosParaConvidar(pid){
 
 function opcoesDeConvite(pid){
   const cargos = cargosParaConvidar(pid);
+  const p = state.projects.find(x=>x.id === pid);
   const padrao = cargos.includes('editor') ? 'editor' : cargos[0];
-  return cargos.map(r=>`<option value="${r}" ${r === padrao ? 'selected' : ''}>${CARGOS[r].nome}</option>`).join('');
+  return cargos.map(r=>`<option value="${r}" ${r === padrao ? 'selected' : ''}>${esc(nomeDoCargo(r, p))}</option>`).join('');
 }
 
 function regrasDoProjeto(p){
@@ -4475,7 +4492,11 @@ function abrirConfigProjeto(pid, secao){
 
 function fecharConfigProjeto(){
   document.getElementById('config-projeto').classList.remove('open');
+  const redesenhar = configProjeto && configProjeto.redesenharAoFechar;
   configProjeto = null;
+  // Um cargo renomeado aparece no topo do projeto: redesenha só agora, para
+  // a página não passar por cima do diálogo aberto.
+  if(redesenhar && state.view === 'project'){ skipEntranceOnce = true; safeRerender(); }
 }
 
 function abrirSecaoProjeto(secao, focar){
@@ -4515,7 +4536,7 @@ function desenharConfigProjeto(){
   const rascunhoNome = campoNome && campoNome.dataset.mexido === '1' ? campoNome.value : null;
   const meu = cargoValido(myRoleInProject(p.id));
   document.getElementById('config-projeto-icone').innerHTML = projetoIconeHtml(p, 'm');
-  document.getElementById('config-projeto-sub').textContent = `${p.name} · você é ${CARGOS[meu].nome.toLowerCase()}`;
+  document.getElementById('config-projeto-sub').textContent = `${p.name} · você é ${nomeDoCargo(meu, p)}`;
   document.getElementById('config-projeto-nav').innerHTML = SECOES_CONFIG_PROJETO.map(([k, nome, icone])=>`
     <button class="set-aba" role="tab" id="cp-aba-${k}" data-secao="${k}" aria-controls="cp-${k}" aria-selected="${c.secao === k}" tabindex="${c.secao === k ? 0 : -1}" onclick="abrirSecaoProjeto('${k}')">
       <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${icone}</svg>
@@ -4560,7 +4581,7 @@ function painelGeralProjeto(p){
     </div>
     <div class="set-linha">
       <div class="set-linha-texto">
-        <div class="set-linha-titulo">Seu cargo: ${esc(CARGOS[meu].nome)}</div>
+        <div class="set-linha-titulo">Seu cargo: ${esc(nomeDoCargo(meu, p))}</div>
         <div class="set-linha-desc">${esc(CARGOS[meu].desc)}</div>
       </div>
       <button type="button" class="btn-secondary" data-foco="cp-ver-cargos" onclick="abrirSecaoProjeto('cargos')">Ver cargos</button>
@@ -4761,7 +4782,10 @@ function painelCargosProjeto(p){
     return `
       <div class="cp-cargo nivel-${c.nivel}">
         <div class="cp-cargo-cab">
-          <span class="cp-cargo-nome" id="cp-cargo-nome-${cargo}">${esc(c.nome)}</span>
+          ${dono
+            ? `<input type="text" class="cp-cargo-nome cp-cargo-renomear" id="cp-cargo-nome-${cargo}" data-foco="nome-cargo-${cargo}" value="${esc(nomeDoCargo(cargo, p))}" maxlength="${CARGO_NOME_MAX}" placeholder="${esc(c.nome)}" spellcheck="false" autocomplete="off" aria-label="${esc(`Nome do cargo ${c.nome}`)}" title="Clique para renomear o cargo" onkeydown="teclaNomeCargo(event, this)" onchange="renomearCargo('${cargo}', this)">`
+            : `<span class="cp-cargo-nome" id="cp-cargo-nome-${cargo}">${esc(nomeDoCargo(cargo, p))}</span>`}
+          ${nomeDoCargo(cargo, p) !== c.nome ? `<span class="cp-cargo-padrao" title="Nome padrão">${esc(c.nome)}</span>` : ''}
           <span class="cp-cargo-n">${n} ${n === 1 ? 'pessoa' : 'pessoas'}</span>
         </div>
         <p class="cp-cargo-desc">${esc(c.desc)}${cargo === 'owner' ? ' Tem todas as permissões, sempre.' : ''}</p>
@@ -4770,9 +4794,45 @@ function painelCargosProjeto(p){
   };
   return `
     <h3 class="set-painel-titulo">Cargos</h3>
-    <p class="set-painel-desc">${dono ? 'O que cada cargo pode fazer. Cada regra liga e desliga aqui e vale na hora para todo mundo daquele cargo.' : 'O que cada cargo pode fazer. Só o dono muda as regras.'}</p>
+    <p class="set-painel-desc">${dono ? 'O que cada cargo pode fazer. Clique no nome de um cargo para renomear. Cada regra liga e desliga aqui e vale na hora para todo mundo daquele cargo.' : 'O que cada cargo pode fazer. Só o dono muda as regras e os nomes.'}</p>
     <div class="cp-cargos">${['owner', ...CARGOS_DE_MEMBRO].map(bloco).join('')}</div>
     <p class="cp-nota">Convidar e mudar cargos só vão até o cargo de quem faz, e ninguém muda o próprio cargo. Ninguém silencia nem move o dono, e cada pessoa só modera quem tem cargo igual ou abaixo do seu. As mensagens diretas são só de quem conversa, nem o dono vê.</p>`;
+}
+
+// Enter grava (o change vem do blur); Esc volta ao nome de antes sem gravar.
+function teclaNomeCargo(e, input){
+  if(e.key === 'Enter'){ e.preventDefault(); input.blur(); }
+  else if(e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); input.value = input.defaultValue; input.blur(); }
+}
+
+// Só o dono (SEC-086). Nome vazio, ou igual ao padrão, volta ao padrão.
+async function renomearCargo(cargo, input){
+  const p = configProjeto && state.projects.find(x=>x.id === configProjeto.pid);
+  if(!p || p.myRole !== 'owner' || !CARGOS[cargo] || !input) return;
+  const padrao = CARGOS[cargo].nome;
+  const v = input.value.replace(/[<>\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, CARGO_NOME_MAX) || padrao;
+  if(v === nomeDoCargo(cargo, p)){ input.value = v; return; }
+  const antes = p.nomes_cargos;
+  const novo = {...nomesDosCargos(p)};
+  if(v === padrao) delete novo[cargo]; else novo[cargo] = v;
+  const valor = Object.keys(novo).length ? novo : null;
+  p.nomes_cargos = valor;
+  input.disabled = true;
+  const {data, error} = await sb.from('projects').update({nomes_cargos: valor}).eq('id', p.id).select('id').maybeSingle();
+  input.disabled = false;
+  if(error || !data){
+    if(error) console.error(error);
+    p.nomes_cargos = antes;
+    input.value = nomeDoCargo(cargo, p);
+    showToast(faltaColuna(error) ? 'Renomear cargos precisa do supabase/configuracoes_projeto.sql novo. Rode ele no Supabase.'
+      : error ? 'Não deu para renomear o cargo. Confira a conexão e tente de novo.' : 'Só o dono renomeia os cargos.', 'erro');
+    return;
+  }
+  saveProjectsCache();
+  anunciarNoApp(v === padrao ? `O cargo voltou a se chamar ${padrao}` : `${padrao} agora se chama ${v}`);
+  configProjeto.redesenharAoFechar = true;
+  desenharConfigProjeto();
+  renderSidebarProjects();
 }
 
 async function alternarRegraCargo(cargo, perm, ligado, input){
@@ -4796,7 +4856,7 @@ async function alternarRegraCargo(cargo, perm, ligado, input){
     return;
   }
   saveProjectsCache();
-  anunciarNoApp(`${CARGOS[cargo].nome}: ${PERMISSOES_VOZ[perm].nome.toLowerCase()} ${ligado ? 'ligado' : 'desligado'}`);
+  anunciarNoApp(`${nomeDoCargo(cargo, p)}: ${PERMISSOES_VOZ[perm].nome.toLowerCase()} ${ligado ? 'ligado' : 'desligado'}`);
   if(chamada && chamada.pid === p.id) desenharChamada();
   atualizarListaCanais();
 }
@@ -4810,7 +4870,7 @@ function painelMembrosProjeto(p){
       <span class="cp-membro-texto">
         <span class="cp-membro-nome">${nomePessoaHtml(p.owner_id === eu ? meuPerfilDeNome() : p.ownerProfile, (p.ownerProfile && p.ownerProfile.name) || p.owner_email || 'Dono')}${p.owner_id === eu ? ' <span class="proj-pessoa-voce">(você)</span>' : ''}</span>
       </span>
-      <span class="cp-cargo-pilula nivel-3">Dono</span>
+      <span class="cp-cargo-pilula nivel-3">${esc(nomeDoCargo('owner', p))}</span>
     </li>`;
   const membros = (p.members || []).filter(m=>m.user_id !== p.owner_id)
     .sort((a, b)=>(a.status === 'accepted' ? 0 : 1) - (b.status === 'accepted' ? 0 : 1)
@@ -4830,8 +4890,8 @@ function painelMembrosProjeto(p){
         </span>
         ${!pendente && !sou && m.user_id && !canaisSemTabela ? `<button type="button" class="cn-acao cp-membro-dm" data-foco="dm-${m.id}" onclick="fecharConfigProjeto();abrirConversaDireta('${p.id}','${m.user_id}')" title="Mensagem direta" aria-label="${esc(`Mensagem direta para ${nome}`)}">${ICONE_DM}</button>` : ''}
         ${podeMudarCargoDe(p.id, m)
-          ? `<select class="select cp-membro-cargo" data-foco="cargo-${m.id}" aria-label="${esc(`Cargo de ${nome}`)}" onchange="mudarCargo('${m.id}', this.value, this)">${cargosParaDar(p.id).map(r=>`<option value="${r}" ${r === cargo ? 'selected' : ''}>${CARGOS[r].nome}</option>`).join('')}</select>`
-          : `<span class="cp-cargo-pilula nivel-${CARGOS[cargo].nivel}">${CARGOS[cargo].nome}</span>`}
+          ? `<select class="select cp-membro-cargo" data-foco="cargo-${m.id}" aria-label="${esc(`Cargo de ${nome}`)}" onchange="mudarCargo('${m.id}', this.value, this)">${cargosParaDar(p.id).map(r=>`<option value="${r}" ${r === cargo ? 'selected' : ''}>${esc(nomeDoCargo(r, p))}</option>`).join('')}</select>`
+          : `<span class="cp-cargo-pilula nivel-${CARGOS[cargo].nivel}">${esc(nomeDoCargo(cargo, p))}</span>`}
         ${dono
           ? `<button type="button" class="cn-acao cp-membro-tirar" data-foco="tirar-${m.id}" onclick="removeMember('${m.id}')" title="${pendente ? 'Cancelar convite' : 'Remover do projeto'}" aria-label="${esc(`${pendente ? 'Cancelar o convite de' : 'Remover'} ${nome}`)}"><svg aria-hidden="true" focusable="false" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`
           : ''}
@@ -4889,7 +4949,7 @@ function renderProjectsList(){
   const listHtml = state.projects.length === 0
     ? `<div class="empty"><strong>Nenhum projeto compartilhado ainda.</strong>Crie um ou entre com um código de convite em "Gerenciar".</div>`
     : `<div class="projects-list-grid">${state.projects.map(p=>{
-        const role = nomeDoCargo(myRoleInProject(p.id));
+        const role = esc(nomeDoCargo(myRoleInProject(p.id), p));
         const tasks = state.tasks.filter(t=>t.project_id===p.id);
         const active = tasks.filter(t=>taskColumnType(t)!=='done').length;
         return `
@@ -4932,7 +4992,7 @@ function pessoasDoProjetoHtml(p, isOwner){
     for(const [sala, gente] of Object.entries(porSala)) for(const x of gente) naSalaDe[x.uid] = sala;
   }catch(e){}
   const pessoas = projectPeople(p)
-    .map(pe=>{ const cargo = cargoNoProjeto(p, pe.id) || 'viewer'; return {...pe, cargo, papel: nomeDoCargo(cargo)}; })
+    .map(pe=>{ const cargo = cargoNoProjeto(p, pe.id) || 'viewer'; return {...pe, cargo, papel: esc(nomeDoCargo(cargo, p))}; })
     .sort((a, b)=>(CARGOS[b.cargo].nivel - CARGOS[a.cargo].nivel) || a.label.localeCompare(b.label, 'pt-BR'));
   const linhas = pessoas.map(pe=>{
     const eu = pe.id === session.user.id;
@@ -5139,7 +5199,7 @@ function renderProjectsModal(){
         <div class="member-row">
           ${avatarChip(p.ownerProfile, (p.owner_email||'?')[0])}
           <div class="member-email">${esc((p.ownerProfile && p.ownerProfile.name) || p.owner_email || '—')}</div>
-          <div class="member-status accepted">Dono</div>
+          <div class="member-status accepted">${esc(nomeDoCargo('owner', p))}</div>
         </div>` : '';
       const membersHtml = p.members.length === 0
         ? `<div style="font-size:12px;color:var(--text-soft);padding:6px 0;">Ninguém convidado ainda.</div>`
@@ -5156,8 +5216,8 @@ function renderProjectsModal(){
             <div class="member-email">${label}</div>
             ${isOwner && codeSeguro ? `<button class="member-copy" onclick="copiarLinkConvite('${codeSeguro}')">Copiar link</button>` : ''}
             ${isOwner
-              ? `<select class="member-cargo" aria-label="${esc(`Cargo de ${(m.profile && m.profile.name) || m.invited_email || 'convite por código'}`)}" onchange="mudarCargo('${m.id}', this.value, this)">${opcoesDeCargo(cargoValido(m.role))}</select><div class="member-status ${m.status === 'accepted' ? 'accepted' : 'pending'}">${m.status === 'accepted' ? 'Ativo' : 'Pendente'}</div>`
-              : `<div class="member-status ${m.status === 'accepted' ? 'accepted' : 'pending'}">${m.status === 'accepted' ? 'Ativo' : 'Pendente'} · ${nomeDoCargo(m.role)}</div>`}
+              ? `<select class="member-cargo" aria-label="${esc(`Cargo de ${(m.profile && m.profile.name) || m.invited_email || 'convite por código'}`)}" onchange="mudarCargo('${m.id}', this.value, this)">${opcoesDeCargo(cargoValido(m.role), p)}</select><div class="member-status ${m.status === 'accepted' ? 'accepted' : 'pending'}">${m.status === 'accepted' ? 'Ativo' : 'Pendente'}</div>`
+              : `<div class="member-status ${m.status === 'accepted' ? 'accepted' : 'pending'}">${m.status === 'accepted' ? 'Ativo' : 'Pendente'} · ${esc(nomeDoCargo(m.role, p))}</div>`}
             ${isOwner ? `<button class="member-remove" onclick="removeMember('${m.id}')" title="Remover"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>` : ''}
           </div>`;
         }).join('');
@@ -5167,7 +5227,7 @@ function renderProjectsModal(){
           <div class="project-card-head">
             <div class="project-card-name">${projetoIconeHtml(p, 'm')}<span class="project-card-nome">${esc(p.name)}</span>${seloNaoLidas(p.id)}</div>
             <div style="display:flex;align-items:center;gap:8px;">
-              <div class="project-card-role">${nomeDoCargo(myRoleInProject(p.id))}</div>
+              <div class="project-card-role">${esc(nomeDoCargo(myRoleInProject(p.id), p))}</div>
               <button class="btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="closeProjectsModal();openProjectView('${p.id}');">Abrir quadro</button>
             </div>
           </div>
@@ -11793,7 +11853,7 @@ function privadoCanalRapido(){
       <input type="checkbox" value="${pe.id}" ${marcado ? 'checked' : ''} ${sempre ? 'disabled' : ''} onchange="marcarMembroCanal(this)">
       ${avatarChip(perfil, (pe.label || '?')[0])}
       <span class="cr-pessoa-nome">${nomePessoaHtml(perfil, pe.label)}</span>
-      <span class="cr-pessoa-papel">${sempre ? (sempre === 'você' ? 'você' : sempre === 'dono' ? 'dono, sempre vê' : 'criou, sempre vê') : nomeDoCargo(cargoNoProjeto(p, pe.id))}</span>
+      <span class="cr-pessoa-papel">${sempre ? (sempre === 'você' ? 'você' : sempre === 'dono' ? 'dono, sempre vê' : 'criou, sempre vê') : esc(nomeDoCargo(cargoNoProjeto(p, pe.id), p))}</span>
     </label>`;
   }).join('');
 }

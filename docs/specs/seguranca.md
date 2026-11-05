@@ -350,7 +350,11 @@ uma com uma lista sem repetição dentro de `convidar`, `cargos`, `nome`, `icone
 não é o dono. Desde a RFC 0006, `projects_update` aceita também quem tem a regra
 `nome` ou `icone`, e o gatilho `projeto_campos_por_regra` confere campo por campo: o
 nome pede `nome`, as três colunas do ícone pedem `icone`, e colunas, notas e ordem das
-abas continuam do dono e do editor. `projects.ordem_abas` só aceita as cinco chaves de aba,
+abas continuam do dono e do editor. `projects.nomes_cargos` (o nome de cada cargo no
+projeto) só aceita as chaves `owner`, `editor`, `participante` e `viewer`, com texto de
+1 a 24 caracteres, sem espaço nas pontas, sem `<`, `>` nem caractere de controle
+(`nomes_cargos_validos`), e o mesmo gatilho das regras deixa só o dono mudar. O app
+só usa o nome depois de conferir o mesmo formato e sempre passa por `esc()`. `projects.ordem_abas` só aceita as cinco chaves de aba,
 sem repetir. As duas colunas entram no grant de UPDATE de `projects`; `owner_id`
 continua fora. **Por quê:** o editor altera `projects` pela policy de sempre; sem o
 gatilho, ele daria a si mesmo poder de moderar quem o dono não quis. **Verificação:**
