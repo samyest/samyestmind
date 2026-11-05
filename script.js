@@ -13518,6 +13518,107 @@ function guardarRuido(ligado){
   try{ localStorage.setItem('chamadaRuido', ligado ? 'sim' : 'nao'); }catch(e){}
 }
 
+// Aperte para falar (push to talk): com ele ligado, o microfone aberto só
+// manda som enquanto a tecla (ou o botão "Segure para falar") está apertada.
+// É escolha do aparelho, como a supressão de ruído. A tecla só vale com o app
+// (ou a janela flutuante) em foco: o navegador não deixa um site ouvir o
+// teclado fora dele.
+const PTT_PADRAO = {ativo: false, tecla: 'KeyV', nome: 'V'};
+let pttApertado = false;
+let pttCapturando = null;
+function pttConfig(){
+  try{
+    const v = JSON.parse(localStorage.getItem('chamadaPtt') || 'null');
+    if(v && typeof v === 'object' && typeof v.tecla === 'string' && /^[A-Za-z0-9]{1,24}$/.test(v.tecla) && typeof v.nome === 'string')
+      return {ativo: v.ativo === true, tecla: v.tecla, nome: v.nome.slice(0, 16)};
+  }catch(e){}
+  return {...PTT_PADRAO};
+}
+function guardarPtt(cfg){
+  try{ localStorage.setItem('chamadaPtt', JSON.stringify(cfg)); }catch(e){}
+}
+
+// A voz que sai: microfone aberto, sem ensurdecer e, no aperte para falar,
+// só com a tecla apertada.
+function vozLocalLiberada(c){
+  return !!c && c.mic && !c.ensurdecido && (!pttConfig().ativo || pttApertado);
+}
+function aplicarVozLocal(c){
+  if(c && c.local && c.local.voz) c.local.voz.enabled = vozLocalLiberada(c);
+}
+
+function pttApertar(){
+  if(pttApertado || !chamada || !pttConfig().ativo) return;
+  pttApertado = true;
+  aplicarVozLocal(chamada);
+  marcarBotoesPtt();
+}
+function pttSoltar(){
+  if(!pttApertado) return;
+  pttApertado = false;
+  aplicarVozLocal(chamada);
+  marcarBotoesPtt();
+}
+function marcarBotoesPtt(){
+  const falando = pttApertado && !!chamada && chamada.mic;
+  for(const d of docsChamada()) d.querySelectorAll('.ch-ptt').forEach(b=>{
+    b.classList.toggle('apertado', falando);
+    b.setAttribute('aria-pressed', String(falando));
+  });
+}
+
+function nomeDaTecla(e){
+  if(e.code === 'Space') return 'Espaço';
+  if(e.key && e.key.length === 1) return e.key.toUpperCase();
+  return String(e.key || e.code).slice(0, 16);
+}
+
+function campoDeTexto(el){
+  return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+}
+
+// Escolher a tecla: o próximo aperto vira a tecla (Esc cancela).
+function capturarTeclaPtt(botao){
+  pttCapturando = botao ? botao.id : null;
+  if(botao){ botao.textContent = 'Aperte uma tecla…'; botao.classList.add('capturando'); }
+}
+
+function teclaPttDesce(e){
+  if(pttCapturando){
+    if(e.key === 'Tab') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = pttCapturando;
+    pttCapturando = null;
+    if(e.key !== 'Escape' && !['Enter'].includes(e.key) && /^[A-Za-z0-9]{1,24}$/.test(e.code)){
+      guardarPtt({...pttConfig(), tecla: e.code, nome: nomeDaTecla(e)});
+      anunciarNoApp(`Aperte para falar: tecla ${nomeDaTecla(e)}`);
+    }
+    for(const d of docsChamada()){
+      const b = d.getElementById(id);
+      if(b){ b.textContent = pttConfig().nome; b.classList.remove('capturando'); b.focus(); }
+    }
+    if(previaChamada) desenharPreviaChamada();
+    return;
+  }
+  if(!chamada || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const cfg = pttConfig();
+  if(!cfg.ativo || e.code !== cfg.tecla || campoDeTexto(e.target)) return;
+  e.preventDefault();
+  pttApertar();
+}
+function teclaPttSobe(e){
+  if(e.code === pttConfig().tecla) pttSoltar();
+}
+function ligarTeclasPtt(win){
+  win.addEventListener('keydown', teclaPttDesce, true);
+  win.addEventListener('keyup', teclaPttSobe, true);
+  // Sair da janela com a tecla apertada não deixa o microfone preso aberto.
+  win.addEventListener('blur', pttSoltar);
+  win.document.addEventListener('visibilitychange', ()=>{ if(win.document.hidden) pttSoltar(); });
+}
+ligarTeclasPtt(window);
+
 function restricoesMicrofone(deviceId){
   const ruido = ruidoLigado();
   const audio = {deviceId: deviceId ? {exact: deviceId} : undefined, echoCancellation: true, noiseSuppression: ruido, autoGainControl: true};
@@ -13566,7 +13667,16 @@ function seletoresDispositivo(atual, acao){
       <span class="ch-disp-ruido-texto"><span>Supressão de ruído</span><small>Tira o barulho de fundo, como teclado e ventilador. Desligue para tocar música.</small></span>
       <input type="checkbox" role="switch" class="ch-interruptor" ${ruidoLigado() ? 'checked' : ''} onchange="${acao}('ruido', this.checked)">
     </label>`;
-  return campo('mic', 'Microfone') + campo('cam', 'Câmera') + campo('saida', 'Saída de áudio') + ruido;
+  const ptt = pttConfig();
+  const idTecla = `ch-ptt-tecla-${acao === 'previaTrocarDispositivo' ? 'previa' : 'chamada'}`;
+  const aperteParaFalar = `<div class="ch-disp-ptt">
+      <label class="ch-disp-ruido">
+        <span class="ch-disp-ruido-texto"><span>Aperte para falar</span><small>O microfone só manda som enquanto você segura a tecla, com o app na tela. No celular, segure o botão de falar.</small></span>
+        <input type="checkbox" role="switch" class="ch-interruptor" ${ptt.ativo ? 'checked' : ''} onchange="${acao}('ptt', this.checked)">
+      </label>
+      ${ptt.ativo ? `<div class="ch-disp-tecla"><span>Tecla</span><button type="button" class="ch-tecla" id="${idTecla}" onclick="capturarTeclaPtt(this)" title="Clique e aperte a tecla que quer usar">${esc(ptt.nome)}</button></div>` : ''}
+    </div>`;
+  return campo('mic', 'Microfone') + campo('cam', 'Câmera') + campo('saida', 'Saída de áudio') + ruido + aperteParaFalar;
 }
 
 /* --- prévia (Q22) --- */
@@ -13673,7 +13783,8 @@ async function previaAlternarCamera(){
 
 async function previaTrocarDispositivo(tipo, id){
   const pr = previaChamada;
-  if(!pr || !['mic', 'cam', 'saida', 'ruido'].includes(tipo)) return;
+  if(!pr || !['mic', 'cam', 'saida', 'ruido', 'ptt'].includes(tipo)) return;
+  if(tipo === 'ptt'){ guardarPtt({...pttConfig(), ativo: !!id}); desenharPreviaChamada(); return; }
   if(tipo === 'ruido'){
     guardarRuido(!!id);
     // Fecha antes de abrir de novo: com o microfone ainda aberto, o navegador
@@ -13856,7 +13967,7 @@ async function entrarNaChamada(){
   if(!chamada.camera && chamada.local.cam) chamada.local.cam = null;
   fecharPreviaChamada();
   if(chamada.local.voz){
-    chamada.local.voz.enabled = chamada.mic;
+    aplicarVozLocal(chamada);
     medirFala(eu, chamada.local.voz);
   }
   agendarRenovacaoTurn();
@@ -14258,7 +14369,7 @@ async function trocarFaixaLocal(tipo, track){
   }
   if(antiga && antiga !== track) antiga.stop();
   if(tipo === 'voz'){
-    if(track){ track.enabled = c.mic && !c.ensurdecido; medirFala(session.user.id, track); }
+    if(track){ aplicarVozLocal(c); medirFala(session.user.id, track); }
     else pararMedicaoFala(session.user.id);
   }
   // Só câmera e tela têm vídeo próprio. Antes, trocar o microfone (ao mudar a
@@ -14289,7 +14400,7 @@ async function chamadaAlternarMic(){
     c.mic = !c.mic;
     // Abrir o microfone tira o ensurdecer, como no Discord.
     if(c.mic && c.ensurdecido){ c.ensurdecido = false; for(const par of c.pares.values()) aplicarVolumePar(par); }
-    c.local.voz.enabled = c.mic;
+    aplicarVozLocal(c);
   }
   tocarSomChamada(c.mic ? 'desmutar' : 'mutar');
   atualizarPresencaChamada();
@@ -14302,7 +14413,7 @@ function chamadaAlternarEnsurdecer(){
   c.ensurdecido = !c.ensurdecido;
   if(c.ensurdecido){ c.micAntes = c.mic; c.mic = false; }
   else c.mic = c.micAntes !== false && !micTravadoNaSala(c.pid, c.sala);
-  if(c.local.voz) c.local.voz.enabled = c.mic;
+  aplicarVozLocal(c);
   for(const par of c.pares.values()) aplicarVolumePar(par);
   tocarSomChamada(c.ensurdecido ? 'ensurdecer' : 'ouvir');
   atualizarPresencaChamada();
@@ -14536,7 +14647,15 @@ async function pararTelaChamada(){
 
 async function chamadaTrocarDispositivo(tipo, id){
   const c = chamada;
-  if(!c || !['mic', 'cam', 'saida', 'ruido'].includes(tipo)) return;
+  if(!c || !['mic', 'cam', 'saida', 'ruido', 'ptt'].includes(tipo)) return;
+  if(tipo === 'ptt'){
+    guardarPtt({...pttConfig(), ativo: !!id});
+    pttApertado = false;
+    aplicarVozLocal(c);
+    anunciarNaChamada(id ? `Aperte para falar ligado: segure ${pttConfig().nome} para falar` : 'Aperte para falar desligado');
+    desenharChamada();
+    return;
+  }
   if(tipo === 'ruido') guardarRuido(!!id);
   else c.dispositivos[tipo] = id;
   try{
@@ -15260,6 +15379,7 @@ function adotarJanelaFlutuante(win, origem){
 // A janela flutuante nasce em branco: leva os estilos e o tema do app.
 function prepararJanelaFlutuante(win){
   const d = win.document;
+  ligarTeclasPtt(win);
   ouvirModalidadeChamada(d);
   for(const folha of document.querySelectorAll('link[rel="stylesheet"], style')){
     let copia;
@@ -15644,6 +15764,23 @@ function botaoChamada(id, acao, icone, rotulo, classe, pressionado){
   return `<button type="button" id="${id}" class="ch-botao ${cl}${trocando ? ' trocou' : ''}"${estilo} onclick="${acao}" aria-label="${rotulo}" title="${rotulo}"${pressionado === undefined ? '' : ` aria-pressed="${pressionado}"`}>${iconeChamada(icone)}</button>`;
 }
 
+// Segurar o botão: soltar o dedo (ou o mouse) em qualquer lugar solta a voz.
+// O fim é ouvido no documento, porque a chamada pode ser redesenhada (e o
+// botão trocado) enquanto a pessoa segura.
+function pttBotaoDesce(e){
+  e.preventDefault();
+  const doc = e.currentTarget.ownerDocument;
+  const fim = (ev)=>{
+    if(ev.pointerId !== e.pointerId) return;
+    doc.removeEventListener('pointerup', fim, true);
+    doc.removeEventListener('pointercancel', fim, true);
+    pttSoltar();
+  };
+  doc.addEventListener('pointerup', fim, true);
+  doc.addEventListener('pointercancel', fim, true);
+  pttApertar();
+}
+
 function controlesChamadaHtml(mini){
   const c = chamada;
   const micAberto = c.mic && !!c.local.voz;
@@ -15652,10 +15789,17 @@ function controlesChamadaHtml(mini){
   const travado = !micAberto && micTravadoNaSala(c.pid, c.sala);
   const rotuloMic = travado ? (silenciadoPeloModerador(c.pid, session.user.id) ? 'Silenciado por um moderador' : 'Sala de silêncio: microfone fechado')
     : micAberto ? 'Fechar o microfone' : 'Abrir o microfone';
+  const ptt = pttConfig();
+  // Aperte para falar: um botão de segurar, para o celular e para quem prefere
+  // o mouse. Solto, a voz para.
+  const segurar = ptt.ativo && micAberto
+    ? `<button type="button" id="${mini ? 'ch-btn-ptt-mini' : 'ch-btn-ptt'}" class="ch-botao ch-ptt${pttApertado ? ' apertado' : ''}" aria-pressed="${pttApertado}" aria-label="Segure para falar (ou a tecla ${esc(ptt.nome)})" title="Segure para falar (ou a tecla ${esc(ptt.nome)})" onpointerdown="pttBotaoDesce(event)" onkeydown="if((event.key===' '||event.key==='Enter')&&!event.repeat){event.preventDefault();pttApertar();}" onkeyup="if(event.key===' '||event.key==='Enter')pttSoltar()" oncontextmenu="return false">${iconeChamada('mic')}<span class="ch-ptt-texto">Falar</span></button>`
+    : '';
   const partes = [
     botaoChamada(mini ? 'ch-btn-mic-mini' : 'ch-btn-mic', 'chamadaAlternarMic()', micAberto ? 'mic' : 'micOff', rotuloMic, micAberto ? '' : (travado ? 'desligado travado' : 'desligado'), !micAberto),
     botaoChamada(mini ? 'ch-btn-fone-mini' : 'ch-btn-fone', 'chamadaAlternarEnsurdecer()', c.ensurdecido ? 'foneOff' : 'fone', c.ensurdecido ? 'Voltar a ouvir' : 'Ensurdecer', c.ensurdecido ? 'desligado' : '', c.ensurdecido)
   ];
+  if(segurar) partes.unshift(segurar);
   // Na chamada aberta, três grupos separados por um fio: o que eu falo e
   // ouço, o que eu mostro, e sair.
   const divisor = '<span class="ch-divisor" aria-hidden="true"></span>';
