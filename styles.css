@@ -6959,3 +6959,166 @@
     background:var(--ch-botao);
     color:var(--ch-texto);
   }
+
+  /* ---------- RFC 0006: organizar, mensagens diretas, fotos, tempo da sala ---------- */
+
+  /* "Canais" vira botão para quem mexe nos canais: liga o modo de organizar. */
+  .cn-topo-organizar{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    margin-left:-8px;
+    padding:5px 8px;
+    border-radius:8px;
+    transition:background-color .15s ease, color .15s ease;
+  }
+  .cn-topo-organizar:hover{background:color-mix(in srgb, var(--text) 6%, transparent);}
+  .cn-topo-organizar.ativo{background:var(--accent);color:var(--accent-text);}
+  .cn-organizar-dica{display:inline-grid;color:var(--text-muted);opacity:0;transition:opacity .15s ease;}
+  .cn-organizar-dica svg{width:13px;height:13px;}
+  .cn-topo-organizar:hover .cn-organizar-dica, .cn-topo-organizar:focus-visible .cn-organizar-dica{opacity:1;}
+
+  /* No modo de organizar, cada item mostra a alça e se arrasta no primeiro
+     movimento; o toque não rola a lista por cima do arrasto. */
+  .cn-alca{
+    flex-shrink:0;
+    display:grid;
+    place-items:center;
+    width:18px;
+    color:var(--text-muted);
+    cursor:grab;
+  }
+  .cn-alca svg{width:14px;height:14px;}
+  .cn-lista.organizando [data-movel="1"]{touch-action:none;cursor:grab;}
+  .cn-lista.organizando .cn-linha[data-movel="1"]{display:flex;flex-wrap:wrap;align-items:center;}
+  .cn-lista.organizando .cn-linha[data-movel="1"] > .cn-canal{flex:1;width:auto;}
+  .cn-lista.organizando .cn-linha[data-movel="1"] > .cn-sala-gente{flex-basis:100%;}
+  .cn-lista.organizando .cn-editar{display:none;}
+
+  /* Mensagens diretas, depois dos canais. */
+  .cn-diretas{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);}
+  .cn-diretas-titulo{
+    flex:1;
+    min-width:0;
+    margin:0;
+    padding:5px 4px 5px 3px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    font-weight:400;
+    text-transform:uppercase;
+    letter-spacing:0.12em;
+    color:color-mix(in srgb, var(--text) 62%, var(--text-muted));
+  }
+  .cn-diretas .cn-cat-cab .cn-acao{opacity:1;}
+  .cn-dm .cn-canal .member-avatar{width:22px;height:22px;font-size:10px;flex-shrink:0;}
+  .cn-diretas-vazio{margin:2px 4px 0;font-size:12px;line-height:1.45;color:var(--text-muted);}
+  .cn-dm-pessoa{flex-direction:row;align-items:center;gap:10px;}
+  .cn-dm-pessoa .member-avatar{width:26px;height:26px;font-size:11px;flex-shrink:0;}
+  .cn-conversa-nome.direta .member-avatar{width:26px;height:26px;font-size:11px;flex-shrink:0;}
+  .cn-conversa-detalhe{
+    margin-left:2px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    font-weight:400;
+    text-transform:uppercase;
+    letter-spacing:0.1em;
+    color:var(--text-muted);
+    white-space:nowrap;
+  }
+  .cp-membro-dm{width:32px;height:32px;}
+  .cp-membro-dm:hover{color:var(--accent);background:color-mix(in srgb, var(--accent) 12%, transparent);}
+  .cp-perm-grupo{
+    margin:14px 0 2px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:0.12em;
+    color:var(--text-muted);
+  }
+  .cp-perm-grupo:first-of-type{margin-top:8px;}
+  .cr-tipo.desligado{opacity:.45;cursor:not-allowed;}
+
+  /* Há quanto tempo a sala está em ligação. */
+  .cn-sala-tempo{
+    margin-left:auto;
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    font-variant-numeric:tabular-nums;
+    color:var(--cn-fala, #3a9f57);
+  }
+  .cn-sala-tempo + .cn-sala-n{margin-left:6px;}
+
+  /* Foto no chat: o clipe ao lado do campo, e a foto dentro do balão com a
+     curva acompanhando a dele. */
+  .chat-anexar{
+    flex-shrink:0;
+    display:grid;
+    place-items:center;
+    width:42px;
+    height:42px;
+    border-radius:var(--r-campo-chat, 8px);
+    color:var(--text-muted);
+    transition:background-color .15s ease, color .15s ease;
+  }
+  .chat-anexar:hover:not(:disabled){color:var(--text-strong);background:color-mix(in srgb, var(--text) 7%, transparent);}
+  .chat-anexar:disabled{cursor:progress;}
+  .chat-anexar.enviando svg{animation:chat-anexo-pulsa 1s ease-in-out infinite;}
+  @keyframes chat-anexo-pulsa{50%{opacity:.35;}}
+  .ch-chat .chat-anexar{color:var(--ch-suave, var(--text-muted));}
+  .chat-balao.com-foto{display:flex;flex-direction:column;gap:6px;width:fit-content;max-width:min(328px, 100%);padding:4px 4px 6px;}
+  .chat-balao.com-foto .chat-texto{padding:0 8px 0 9px;}
+  .chat-balao.com-foto .chat-hora{align-self:flex-end;padding-right:8px;}
+  .chat-balao.so-foto{padding-bottom:4px;position:relative;}
+  .chat-balao.so-foto .chat-hora{
+    position:absolute;
+    right:10px;
+    bottom:10px;
+    padding:1px 6px;
+    border-radius:6px;
+    background:rgba(8,12,16,0.55);
+    color:#fff;
+  }
+  .chat-foto{
+    display:block;
+    width:100%;
+    min-width:min(240px, 100%);
+    min-height:120px;
+    border-radius:12px;
+    overflow:hidden;
+    background:color-mix(in srgb, var(--text) 6%, transparent);
+    cursor:zoom-in;
+  }
+  .chat-foto img{display:block;width:100%;height:auto;max-height:360px;object-fit:cover;opacity:0;transition:opacity .2s ease;}
+  .chat-foto.pronta{min-height:0;}
+  .chat-foto.pronta img{opacity:1;}
+  .chat-foto.falhou{cursor:default;display:grid;place-items:center;}
+  .chat-foto.falhou::after{content:"Foto indisponível";font-size:12px;color:var(--text-muted);}
+  .chat-foto.falhou img{display:none;}
+  @media (prefers-reduced-motion: reduce){
+    .chat-foto img{transition:none;}
+    .chat-anexar.enviando svg{animation:none;}
+  }
+
+  /* ---------- Arredondado concêntrico (RFC 0006) ----------
+     Uma peça encostada na borda de outra segue a curva dela: o raio de dentro
+     é o raio de fora menos a distância entre as duas. Assim o canto de um
+     botão, vídeo ou foto corre paralelo ao do cartão em volta. */
+  .proj-chat{--r-campo-chat:calc(var(--radius) - 12px);}
+  .ch-chat{--r-campo-chat:8px;}
+  .chat-input, .chat-enviar{border-radius:var(--r-campo-chat, 8px);}
+  .novo-menu-item{border-radius:6px;}             /* lista 12, folga 6 */
+  .ch-sala{border-radius:8px;}                    /* painel 16, folga 8 */
+  .ch-segmento{border-radius:8px;}                /* trilho 12, folga 4 */
+  .tk-tipo-btn{border-radius:7px;}                /* trilho 10, folga 3 */
+  .ch-rotulo{border-radius:10px;}                 /* ladrilho 18, folga 8 */
+  .ch-ladrilho-acoes .ch-acao{border-radius:10px;} /* ladrilho 18, folga 8 */
+  .ch-previa-nome{left:8px;bottom:8px;border-radius:6px;} /* vídeo 14, folga 8 */
+  .ch-mini-eu{border-radius:8px;}                 /* mini 16, folga 8 */
+  .ch-faixa{border-radius:22px;}                  /* botão 10, folga 12 */
+  .cp-aba-num{border-radius:6px;}
+  .chat-balao.com-foto{border-radius:16px;}       /* foto 12, folga 4 */
+  body.theme-vidro .chat-balao.com-foto{border-radius:18px;}
+  body.theme-vidro .chat-foto{border-radius:14px;}
+  body.theme-vidro .chat-anexar{border-radius:50%;}
+  body.theme-vidro .chat-input{border-radius:21px;}
+  body.theme-vidro .chat-enviar{border-radius:50%;}

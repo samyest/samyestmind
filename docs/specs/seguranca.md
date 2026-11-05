@@ -272,7 +272,11 @@ Requisitos da [RFC 0004](../rfc/0004-canais-de-projeto.md).
 renomear, mover e apagar canal ou categoria é só do dono e dos editores. `project_id`
 e `tipo` ficam fora do `grant update`. O nome tem de 1 a 60 caracteres, a categoria
 de um canal é do mesmo projeto e é do tipo categoria, e um projeto tem no máximo 100
-itens. **Por quê:** é a estrutura que todos do projeto veem. Sem a regra no banco, a
+itens. Desde a RFC 0006, mexer é por tipo: canal de texto pede a regra `texto` do
+cargo, sala de voz a regra `voz`, categoria qualquer uma das duas
+(`pode_mexer_no_canal`, `security definer` com `search_path` fixo); o dono sempre pode.
+Conversa direta (`tipo = 'direta'`) não se cria, altera nem apaga por estas policies.
+**Por quê:** é a estrutura que todos do projeto veem. Sem a regra no banco, a
 chave pública deixaria um visualizador apagar canais (e o histórico deles), ou uma
 conta qualquer inundar a lista. Canal privado (RFC 0005) soma a regra do SEC-088.
 **Verificação:** revisão (toda policy de
@@ -316,10 +320,11 @@ outro projeto recusadas; visualizador não muda).
 
 Requisitos da [RFC 0005](../rfc/0005-cargos-e-configuracoes-do-projeto.md).
 
-### SEC-084 — Cargo só muda pelo dono, por função *(atendido em `supabase/configuracoes_projeto.sql`; falta aplicar no Supabase)*
-`definir_cargo_membro(membro, cargo)` é `security definer` com `search_path` fixo,
-recusa quem não é dono do projeto daquela linha e cargo fora de `editor`,
-`participante` e `viewer`. O grant de UPDATE de `project_members` continua só com
+### SEC-084 — Cargo só muda por função, pelo dono ou pela regra `cargos` *(atendido em `supabase/configuracoes_projeto.sql`; falta aplicar no Supabase)*
+`definir_cargo_membro(membro, cargo)` é `security definer` com `search_path` fixo e
+recusa cargo fora de `editor`, `participante` e `viewer`. O dono muda qualquer um.
+Quem tem a regra `cargos` (RFC 0006) só muda quem está com cargo igual ou abaixo do
+seu, só para cargo igual ou abaixo do seu, e nunca o próprio cargo. O grant de UPDATE de `project_members` continua só com
 `user_id` e `status`, e a policy de convite só aceita os três cargos. Além do dono,
 convida quem tem a permissão `convidar` do cargo, e só para cargo igual ou abaixo do
 seu (`pode_convidar_como`, `security definer` com `search_path` fixo); o convite nasce
@@ -340,8 +345,12 @@ do SQL com os quatro cargos.
 
 ### SEC-086 — Regras de cargo só o dono muda, e as configurações são de lista fechada *(atendido em `supabase/configuracoes_projeto.sql`; falta aplicar no Supabase)*
 `projects.regras_cargos` só aceita as chaves `editor`, `participante` e `viewer`, cada
-uma com uma lista dentro de `convidar`, `silenciar` e `mover`, e um gatilho recusa a mudança
-feita por quem não é o dono. `projects.ordem_abas` só aceita as cinco chaves de aba,
+uma com uma lista sem repetição dentro de `convidar`, `cargos`, `nome`, `icone`,
+`texto`, `voz`, `silenciar` e `mover`, e um gatilho recusa a mudança feita por quem
+não é o dono. Desde a RFC 0006, `projects_update` aceita também quem tem a regra
+`nome` ou `icone`, e o gatilho `projeto_campos_por_regra` confere campo por campo: o
+nome pede `nome`, as três colunas do ícone pedem `icone`, e colunas, notas e ordem das
+abas continuam do dono e do editor. `projects.ordem_abas` só aceita as cinco chaves de aba,
 sem repetir. As duas colunas entram no grant de UPDATE de `projects`; `owner_id`
 continua fora. **Por quê:** o editor altera `projects` pela policy de sempre; sem o
 gatilho, ele daria a si mesmo poder de moderar quem o dono não quis. **Verificação:**
@@ -372,6 +381,36 @@ voz privada daquele projeto que a pessoa pode ver. **Por quê:** esconder o cana
 na tela deixaria as mensagens e a sinalização da sala chegarem a todos do projeto pela
 API e pelo Realtime. **Verificação:** revisão + teste do SQL (membro fora da lista não
 lê canal, mensagem nem tópico; dono e lista leem).
+
+## Fotos no chat e mensagens diretas
+
+Requisitos da [RFC 0006](../rfc/0006-fotos-mensagens-diretas-e-regras-de-cargo.md).
+
+### SEC-090 — Foto do chat em bucket privado, com caminho conferido *(atendido em `supabase/imagens_no_chat.sql` e `script.js`; falta aplicar no Supabase)*
+`project_messages.imagem` guarda só o caminho no bucket privado `chat`, no formato
+`<projeto>/<canal>/<quem enviou>_<8 a 32 hex>.<png|jpg|webp|gif>` (o mesmo `check` no
+banco e `IMAGEM_CHAT` no app). Um gatilho confere que projeto e canal são os da
+mensagem e que o arquivo é de quem envia. O bucket aceita até 5 MB e só os quatro
+tipos de imagem. Ler o arquivo pede poder ver o canal (`pode_usar_imagem_chat`, com
+`ve_canal`); enviar e apagar pedem também que o arquivo seja seu. O app só mostra a
+foto por URL assinada de 1 hora, e redesenha a foto no canvas antes de subir (tira
+EXIF e localização). Apagar a mensagem zera `imagem` (`msg_apagar` exige
+`imagem is null`). **Por quê:** a foto é do canal, privado ou não; num bucket público
+qualquer um com o link a veria, e um caminho livre no banco apontaria para a foto de
+outro canal ou de outra pessoa. **Verificação:** revisão + teste do SQL (caminho de
+outro canal, de outra pessoa e fora do formato recusados; quem não vê o canal não lê
+o arquivo).
+
+### SEC-091 — Mensagem direta só para as duas pessoas *(atendido em `supabase/salas_projeto.sql`; falta aplicar no Supabase)*
+Conversa direta é um canal `tipo = 'direta'`, sempre privado e sem categoria
+(`check`), com as duas pessoas em `project_channel_membros`. Ela só nasce por
+`abrir_conversa_direta(projeto, outro)` (`security definer`, `search_path` fixo), que
+exige as duas pessoas no projeto, reaproveita a conversa que já existe e limita a 500
+por projeto. `ve_canal` e as policies de `project_channels` só mostram a conversa a
+quem está na lista, **nem ao dono do projeto**; criar, alterar e apagar pelas policies
+comuns é recusado. **Por quê:** é a conversa privada que a pessoa espera; o atalho de
+"o dono vê todo canal privado" (SEC-088) não pode valer aqui. **Verificação:** revisão +
+teste do SQL (dono, terceiro e conta de fora não leem; criar direto na tabela recusado).
 
 ## Fonte do nome
 

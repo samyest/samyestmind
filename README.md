@@ -108,6 +108,19 @@ participante convidam, para cargo igual ou abaixo do seu). Quem já tinha rodado
 arquivo roda de novo: as regras de cargo já salvas ganham o convidar no editor e no
 participante só nessa primeira vez.
 
+Para as fotos no chat, as mensagens diretas e as regras de cargo por área (RFC 0006),
+rode de novo e na ordem:
+
+1. `supabase/configuracoes_projeto.sql` — as regras **Mudar cargos**, **Mudar o nome**,
+   **Mudar a foto**, **Canais de texto** e **Salas de voz**. Na primeira vez, o editor
+   que já tinha regras salvas ganha nome, foto, texto e voz (o que ele já fazia).
+2. `supabase/salas_projeto.sql` — canais por tipo de regra e as **mensagens diretas**
+   (só as duas pessoas veem, nem o dono).
+3. `supabase/imagens_no_chat.sql` (novo) — a coluna da foto na mensagem e o bucket
+   privado `chat`. Precisa vir depois do `salas_projeto.sql`.
+
+Os três conferem tudo na última linha, que deve vir toda `true`.
+
 Falta o reforço do SEC-075, que depende do passo 6 da RFC: conferir se uma conta de
 fora do projeto, assinando um canal **público** chamado `chamada:<id do projeto>`,
 recebe os sinais do privado. Se receber, a saída é desligar **Allow public access**

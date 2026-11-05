@@ -57,6 +57,45 @@ alter table public.project_channels drop constraint if exists project_channels_p
 alter table public.project_channels add constraint project_channels_privado_valido
   check (not privado or tipo <> 'categoria');
 
+-- Mensagem direta (RFC 0006): um canal 'direta', sempre privado, com as duas
+-- pessoas na lista. Só nasce pela função abrir_conversa_direta (bloco 7b).
+alter table public.project_channels drop constraint if exists project_channels_tipo_check;
+alter table public.project_channels drop constraint if exists project_channels_tipo_valido;
+alter table public.project_channels add constraint project_channels_tipo_valido
+  check (tipo in ('categoria', 'texto', 'voz', 'direta'));
+alter table public.project_channels drop constraint if exists project_channels_direta_privada;
+alter table public.project_channels add constraint project_channels_direta_privada
+  check (tipo <> 'direta' or (privado and categoria_id is null));
+
+-- O limite de 100 canais (canais_projeto.sql) não conta as conversas diretas.
+create or replace function public.canal_validar()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  new.nome := btrim(new.nome);
+  if new.categoria_id is not null then
+    if new.categoria_id = new.id or not exists (
+      select 1 from project_channels c
+       where c.id = new.categoria_id
+         and c.project_id = new.project_id
+         and c.tipo = 'categoria'
+    ) then
+      raise exception 'canal_categoria: a categoria não é deste projeto'
+        using errcode = 'check_violation';
+    end if;
+  end if;
+  if tg_op = 'INSERT' and new.tipo <> 'direta' and (select count(*) from project_channels
+                            where project_id = new.project_id and tipo <> 'direta') >= 100 then
+    raise exception 'canal_limite: o projeto já tem 100 canais e categorias'
+      using errcode = 'check_violation';
+  end if;
+  return new;
+end $$;
+
+revoke all on function public.canal_validar() from public, anon, authenticated;
+
 grant insert (privado, regra_mic) on public.project_channels to authenticated;
 grant update (privado, regra_mic) on public.project_channels to authenticated;
 
@@ -107,11 +146,16 @@ as $$
             or exists (select 1 from project_members m
                         where m.project_id = c.project_id and m.user_id = p_user
                           and m.status = 'accepted'))
-       and (not c.privado
-            or p.owner_id = p_user
-            or c.criado_por = p_user
-            or exists (select 1 from project_channel_membros l
-                        where l.canal_id = c.id and l.user_id = p_user))
+       and (case when c.tipo = 'direta'
+              -- Conversa direta: só as duas pessoas, nem o dono do projeto.
+              then exists (select 1 from project_channel_membros l
+                            where l.canal_id = c.id and l.user_id = p_user)
+              else (not c.privado
+                    or p.owner_id = p_user
+                    or c.criado_por = p_user
+                    or exists (select 1 from project_channel_membros l
+                                where l.canal_id = c.id and l.user_id = p_user))
+            end)
   );
 $$;
 
@@ -149,34 +193,47 @@ grant execute on function public.na_lista_do_canal(uuid) to authenticated;
 
 
 -- 4. Policies dos canais --------------------------------------------------------------
---    As de canais_projeto.sql, com a regra do privado. A escrita continua de
---    dono e editores (SEC-080), e só no que eles veem. No UPDATE, a linha nova
---    também precisa ficar visível: o editor não tranca a si mesmo fora.
+--    As de canais_projeto.sql, com a regra do privado. Escrever pede a regra
+--    de cargo do tipo (RFC 0006: "texto" para canal de texto, "voz" para sala,
+--    qualquer uma para categoria; o padrão é dono e editores, SEC-080), e só no
+--    que a pessoa vê. No UPDATE, a linha nova também precisa ficar visível:
+--    ninguém tranca a si mesmo fora. Conversa direta não se cria nem se muda
+--    por aqui: só pela função abrir_conversa_direta, e só as duas pessoas a
+--    veem (nem o dono).
 
 drop policy if exists canais_select on public.project_channels;
 create policy canais_select on public.project_channels
   for select to authenticated
   using (
     (is_project_owner(project_id) or is_project_member(project_id))
-    and (not privado or is_project_owner(project_id)
-         or criado_por = auth.uid() or na_lista_do_canal(id))
+    and (case when tipo = 'direta' then na_lista_do_canal(id)
+              else (not privado or is_project_owner(project_id)
+                    or criado_por = auth.uid() or na_lista_do_canal(id)) end)
   );
 
 drop policy if exists canais_insert on public.project_channels;
 create policy canais_insert on public.project_channels
   for insert to authenticated
-  with check (is_project_owner(project_id) or is_project_member(project_id, 'editor'));
+  with check (
+    (is_project_owner(project_id) or is_project_member(project_id))
+    and tipo <> 'direta'
+    and pode_mexer_no_canal(project_id, tipo)
+  );
 
 drop policy if exists canais_update on public.project_channels;
 create policy canais_update on public.project_channels
   for update to authenticated
   using (
-    (is_project_owner(project_id) or is_project_member(project_id, 'editor'))
+    (is_project_owner(project_id) or is_project_member(project_id))
+    and tipo <> 'direta'
+    and pode_mexer_no_canal(project_id, tipo)
     and (not privado or is_project_owner(project_id)
          or criado_por = auth.uid() or na_lista_do_canal(id))
   )
   with check (
-    (is_project_owner(project_id) or is_project_member(project_id, 'editor'))
+    (is_project_owner(project_id) or is_project_member(project_id))
+    and tipo <> 'direta'
+    and pode_mexer_no_canal(project_id, tipo)
     and (not privado or is_project_owner(project_id)
          or criado_por = auth.uid() or na_lista_do_canal(id))
   );
@@ -185,10 +242,28 @@ drop policy if exists canais_delete on public.project_channels;
 create policy canais_delete on public.project_channels
   for delete to authenticated
   using (
-    (is_project_owner(project_id) or is_project_member(project_id, 'editor'))
+    (is_project_owner(project_id) or is_project_member(project_id))
+    and tipo <> 'direta'
+    and pode_mexer_no_canal(project_id, tipo)
     and (not privado or is_project_owner(project_id)
          or criado_por = auth.uid() or na_lista_do_canal(id))
   );
+
+-- A regra de cargo pelo id do canal, para a lista de quem vê. Conversa
+-- direta: ninguém mexe na lista pela API.
+create or replace function public.pode_mexer_no_canal_id(p_canal uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce((select c.tipo <> 'direta' and pode_mexer_no_canal(c.project_id, c.tipo)
+                     from project_channels c where c.id = p_canal), false);
+$$;
+
+revoke all on function public.pode_mexer_no_canal_id(uuid) from public, anon;
+grant execute on function public.pode_mexer_no_canal_id(uuid) to authenticated;
 
 -- A lista: quem vê o canal vê quem está nela; dono e editores que veem o
 -- canal mexem nela.
@@ -200,12 +275,14 @@ create policy canal_membros_select on public.project_channel_membros
 drop policy if exists canal_membros_insert on public.project_channel_membros;
 create policy canal_membros_insert on public.project_channel_membros
   for insert to authenticated
-  with check ((is_project_owner(project_id) or is_project_member(project_id, 'editor')) and pode_ver_canal(canal_id));
+  with check ((is_project_owner(project_id) or is_project_member(project_id))
+              and pode_mexer_no_canal_id(canal_id) and pode_ver_canal(canal_id));
 
 drop policy if exists canal_membros_delete on public.project_channel_membros;
 create policy canal_membros_delete on public.project_channel_membros
   for delete to authenticated
-  using ((is_project_owner(project_id) or is_project_member(project_id, 'editor')) and pode_ver_canal(canal_id));
+  using ((is_project_owner(project_id) or is_project_member(project_id))
+         and pode_mexer_no_canal_id(canal_id) and pode_ver_canal(canal_id));
 
 -- Só gente do projeto entra na lista, e só em canal de texto ou sala.
 create or replace function public.canal_membro_validar()
@@ -306,7 +383,8 @@ begin
   select c.tipo into v_tipo
     from project_channels c
    where c.id = new.canal_id and c.project_id = new.project_id;
-  if v_tipo is distinct from v_quer then
+  -- Texto também vai para a conversa direta (RFC 0006).
+  if v_tipo is distinct from v_quer and not (v_quer = 'texto' and v_tipo = 'direta') then
     raise exception 'canal_tipo: canal errado para esta mensagem'
       using errcode = 'check_violation';
   end if;
@@ -513,6 +591,52 @@ end $$;
 
 revoke all on function public.moderar_voz(uuid, uuid, text, uuid, text) from public, anon;
 grant execute on function public.moderar_voz(uuid, uuid, text, uuid, text) to authenticated;
+
+
+-- 7b. Conversa direta (RFC 0006, SEC-091) -------------------------------------------------
+--    Abre (ou acha) a conversa entre quem chama e outra pessoa do mesmo
+--    projeto. security definer porque a conversa nasce fora das policies de
+--    escrita de canais (qualquer um do projeto conversa com qualquer um), mas
+--    só para duas pessoas do projeto, e a lista tem exatamente as duas.
+
+create or replace function public.abrir_conversa_direta(p_projeto uuid, p_outro uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_eu    uuid := auth.uid();
+  v_canal uuid;
+begin
+  if v_eu is null or p_outro is null or p_outro = v_eu then
+    raise exception 'direta_invalida: escolha outra pessoa do projeto' using errcode = '22023';
+  end if;
+  if nivel_no_projeto(p_projeto, v_eu) is null or nivel_no_projeto(p_projeto, p_outro) is null then
+    raise exception 'direta_fora: as duas pessoas precisam ser do projeto' using errcode = '42501';
+  end if;
+  select c.id into v_canal
+    from project_channels c
+   where c.project_id = p_projeto and c.tipo = 'direta'
+     and exists (select 1 from project_channel_membros l where l.canal_id = c.id and l.user_id = v_eu)
+     and exists (select 1 from project_channel_membros l where l.canal_id = c.id and l.user_id = p_outro)
+   limit 1;
+  if v_canal is not null then
+    return v_canal;
+  end if;
+  if (select count(*) from project_channels where project_id = p_projeto and tipo = 'direta') >= 500 then
+    raise exception 'direta_limite: o projeto chegou a 500 conversas diretas' using errcode = 'check_violation';
+  end if;
+  insert into project_channels (project_id, tipo, nome, privado, posicao, criado_por)
+  values (p_projeto, 'direta', 'direta', true, 0, v_eu)
+  returning id into v_canal;
+  insert into project_channel_membros (canal_id, project_id, user_id)
+  values (v_canal, p_projeto, v_eu), (v_canal, p_projeto, p_outro);
+  return v_canal;
+end $$;
+
+revoke all on function public.abrir_conversa_direta(uuid, uuid) from public, anon;
+grant execute on function public.abrir_conversa_direta(uuid, uuid) to authenticated;
 
 
 -- 8. Quem sai do projeto sai das listas e da moderação ----------------------------------
