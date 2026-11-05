@@ -3260,9 +3260,10 @@ function moverProjeto(id, novoIndice){
   return true;
 }
 
-// Segurar o projeto (~0,4 s) e arrastar para cima ou para baixo. Antes de
-// segurar, mexer mais que alguns pixels cancela, e a barra rola normalmente no
-// toque. Alt + seta faz o mesmo pelo teclado.
+// No toque, segurar o projeto (~0,4 s) e arrastar para cima ou para baixo:
+// antes de segurar, mexer mais que alguns pixels cancela, e a barra rola
+// normalmente. Com o mouse não precisa segurar: clicar e arrastar já move (e
+// um clique sem arrastar abre o projeto). Alt + seta faz o mesmo pelo teclado.
 const SEGURAR_PROJETO_MS = 400;
 let arrastoProjeto = null;
 let ignorarCliqueProjeto = false;
@@ -3271,8 +3272,10 @@ function iniciarArrastoProjeto(e){
   if(e.button > 0 || arrastoProjeto) return;
   const item = e.target.closest('.sidebar-project-item[data-pid]');
   if(!item || state.projects.length < 2) return;
+  // Sem isto, segurar o botão do mouse e arrastar selecionava o texto da barra.
+  if(e.pointerType === 'mouse') e.preventDefault();
   const a = arrastoProjeto = {
-    item, id: item.dataset.pid, pointerId: e.pointerId, x: e.clientX, y: e.clientY,
+    item, id: item.dataset.pid, pointerId: e.pointerId, x: e.clientX, y: e.clientY, mouse: e.pointerType === 'mouse',
     ativo: false, timer: null, itens: [], rects: null, ordem: null, ordemInicial: null
   };
   a.timer = setTimeout(()=>levantarProjeto(a), SEGURAR_PROJETO_MS);
@@ -3299,8 +3302,8 @@ function moverArrastoProjeto(e){
   if(!a || e.pointerId !== a.pointerId) return;
   const dx = e.clientX - a.x, dy = e.clientY - a.y;
   if(!a.ativo){
-    if(Math.hypot(dx, dy) > 6) cancelarArrastoProjeto();
-    return;
+    if(a.mouse && Math.abs(dy) > 4){ clearTimeout(a.timer); levantarProjeto(a); }
+    else{ if(Math.hypot(dx, dy) > 6) cancelarArrastoProjeto(); return; }
   }
   a.item.style.transform = `translateY(${dy}px) scale(1.02)`;
   const meu = a.rects.get(a.id);
@@ -3428,7 +3431,7 @@ function renderSidebarProjects(){
       const role = esc(curtoDoCargo(myRoleInProject(p.id), p));
       const isActive = state.view === 'project' && state.currentProjectId === p.id;
       return `
-        <button class="sidebar-project-item ${isActive?'active':''}" data-pid="${p.id}" onclick="openProjectView('${p.id}')" title="${esc(p.name)} · segure e arraste para mudar a ordem" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown">
+        <button class="sidebar-project-item ${isActive?'active':''}" data-pid="${p.id}" onclick="openProjectView('${p.id}')" title="${esc(p.name)} · arraste para mudar a ordem" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown">
           ${projetoIconeHtml(p, 'p')}
           <span class="sidebar-project-name">${esc(p.name)}</span>
           ${seloNaoLidas(p.id)}
