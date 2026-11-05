@@ -13461,6 +13461,28 @@ function mostrarVozNoBotao(rms){
 
 function marcarFalaChamada(uid, falando){
   for(const d of docsChamada()) d.querySelectorAll(`[data-fala="${uid}"]`).forEach(el=>el.classList.toggle('falando', falando));
+  if(falando) notarFalanteMini(uid);
+}
+
+// Minimizada (e na janela flutuante), a chamada mostra uma pessoa só: a última
+// que falou. Para não piscar entre duas pessoas falando juntas, a troca espera
+// a nova falar um instante (0,7 s) e a anterior ficar pelo menos 2 s.
+const FALANTE_ESPERA_MS = 700;
+const FALANTE_MINIMO_MS = 2000;
+function notarFalanteMini(uid){
+  const c = chamada;
+  if(!c || !CHAMADA_UUID.test(uid) || uid === session.user.id || c.falanteMini === uid) return;
+  clearTimeout(c.falanteTimer);
+  const espera = Math.max(FALANTE_ESPERA_MS, FALANTE_MINIMO_MS - (Date.now() - (c.falanteDesde || 0)));
+  c.falanteTimer = setTimeout(()=>{
+    const m = falaMedidores.get(uid);
+    if(chamada !== c || !c.participantes.has(uid) || c.falanteMini === uid) return;
+    // Parou de falar antes da hora: fica quem estava.
+    if(!m || (!m.falando && performance.now() - (m.ate || 0) > 600)) return;
+    c.falanteMini = uid;
+    c.falanteDesde = Date.now();
+    if(c.modo === 'mini') desenharChamada();
+  }, espera);
 }
 
 /* --- sons (Q31) --- */
@@ -15830,16 +15852,27 @@ function controlesChamadaHtml(mini){
 }
 
 // Celular em pé: uma coluna até 2 ladrilhos e no máximo 2 colunas depois.
+// Uma pessoa só no mini: o destaque escolhido, senão uma tela transmitida,
+// senão quem falou por último (a câmera dela, ou a foto se estiver sem), e
+// antes de alguém falar, a primeira câmera ligada.
 function videosDoMini(){
   const c = chamada;
   const eu = session.user.id;
   const ladrilhos = ladrilhosChamada();
-  const outros = [];
-  const pegar = (k)=>{ if(k && !outros.includes(k) && !k.startsWith(`${eu}:`) && faixaDeVideoChamada(k)) outros.push(k); };
-  pegar(c.destaque);
-  ladrilhos.filter(l=>l.tipo === 'tela').forEach(l=>pegar(l.chave));
-  ladrilhos.filter(l=>l.tipo === 'cam').forEach(l=>pegar(l.chave));
-  return {outros: outros.slice(0, 4), minha: faixaDeVideoChamada(`${eu}:cam`) ? `${eu}:cam` : null};
+  const minha = faixaDeVideoChamada(`${eu}:cam`) ? `${eu}:cam` : null;
+  const existe = (k)=>!!k && !k.startsWith(`${eu}:`) && ladrilhos.some(l=>l.chave === k);
+  let principal = null;
+  if(existe(c.destaque) && faixaDeVideoChamada(c.destaque)) principal = c.destaque;
+  if(!principal){
+    const tela = ladrilhos.find(l=>l.tipo === 'tela' && existe(l.chave) && faixaDeVideoChamada(l.chave));
+    if(tela) principal = tela.chave;
+  }
+  if(!principal && c.falanteMini && existe(`${c.falanteMini}:cam`)) principal = `${c.falanteMini}:cam`;
+  if(!principal){
+    const cam = ladrilhos.find(l=>l.tipo === 'cam' && existe(l.chave) && faixaDeVideoChamada(l.chave));
+    if(cam) principal = cam.chave;
+  }
+  return {outros: principal ? [principal] : [], minha};
 }
 
 function colunasDaGrade(n){
@@ -15929,16 +15962,14 @@ function desenharChamada(){
   let html;
 
   if(c.modo === 'mini'){
-    // Minimizada, a câmera de quem estiver com ela ligada continua aparecendo:
-    // os vídeos dos outros em grade (até 4, o destaque e as telas primeiro) e
-    // a própria câmera num quadro no canto, ou ocupando tudo se for o único
-    // vídeo. Sem vídeo nenhum, as fotos de todos.
+    // Minimizada, uma pessoa só ocupa o quadro (videosDoMini): quem fala, a
+    // tela ou o destaque. A própria câmera só aparece quando não há mais
+    // ninguém para mostrar. Sem ninguém nem vídeo, as fotos de todos.
     const {outros, minha} = videosDoMini();
     const porChave = (k)=>ladrilhos.find(l=>l.chave === k);
     let palco;
     if(outros.length){
-      palco = `<div class="ch-mini-grade n-${outros.length}">${outros.map(k=>ladrilhoChamadaHtml(porChave(k), {mini: true})).join('')}</div>`
-        + (minha ? `<div class="ch-mini-eu">${ladrilhoChamadaHtml(porChave(minha), {mini: true, semRotulo: true})}</div>` : '');
+      palco = `<div class="ch-mini-grade n-${outros.length}">${outros.map(k=>ladrilhoChamadaHtml(porChave(k), {mini: true})).join('')}</div>`;
     }else if(minha){
       palco = ladrilhoChamadaHtml(porChave(minha), {mini: true});
     }else{
