@@ -13,7 +13,9 @@ Sem framework e sem build step. Não existe `package.json`; nada é compilado.
 - **Back** — funções serverless da Vercel em `api/` (ESM, `.mjs`), mais Supabase
   (Postgres com RLS) para persistência.
 - **SQL** — versionado em `supabase/*.sql` e aplicado à mão no SQL Editor do Supabase.
-  Mudou schema? Escreva o `.sql` correspondente ali.
+  Mudou schema? Escreva o `.sql` correspondente ali. Ao terminar, **sempre abra o
+  arquivo para o dono** (mande o `.sql` para ele copiar e colar), na ordem em que
+  precisa rodar, sem esperar ele pedir.
 
 ## Regras do projeto
 
