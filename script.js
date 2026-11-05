@@ -11271,9 +11271,8 @@ function itensModeracao(pid, uid, salaAtual){
     const sil = silenciadoPeloModerador(pid, uid);
     partes.push(item(`moderarVoz('${pid}','${uid}','${sil ? 'liberar' : 'silenciar'}')`, sil ? 'Liberar o microfone' : 'Silenciar nas salas', sil ? 'Volta a poder falar' : 'Fecha o microfone até alguém liberar'));
   }
+  // Mover é arrastando a pessoa para outra sala; o menu fica só com o resto.
   if(podeModerar(pid, uid, 'mover')){
-    const outras = salasDoProjeto(pid).filter(s=>s.id !== salaAtual && CHAMADA_UUID.test(s.id) && pessoaVeCanal(pid, s, uid));
-    if(outras.length) partes.push(`<div class="novo-menu-titulo" role="presentation">Mover para</div>${outras.map(s=>item(`moderarVoz('${pid}','${uid}','mover','${s.id}')`, `${ICONE_SALA}<span>${esc(s.nome)}</span>`, '')).join('')}`);
     partes.push(item(`moderarVoz('${pid}','${uid}','desconectar')`, 'Desconectar da chamada', 'Tira da sala', true));
   }
   return partes.join('');
