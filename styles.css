@@ -7122,3 +7122,30 @@
   body.theme-vidro .chat-anexar{border-radius:50%;}
   body.theme-vidro .chat-input{border-radius:21px;}
   body.theme-vidro .chat-enviar{border-radius:50%;}
+
+  /* Nome do cargo editável pelo dono (RFC 0006): parece título até o foco. */
+  .cp-cargo-renomear{
+    flex:1;
+    min-width:0;
+    margin:-4px 0 -4px -8px;
+    padding:3px 8px;
+    border:1px solid transparent;
+    border-radius:8px;
+    background:transparent;
+    font:inherit;
+    font-family:'Space Grotesk',sans-serif;
+    font-size:15px;
+    font-weight:600;
+    transition:border-color .15s ease, background-color .15s ease;
+  }
+  .cp-cargo-renomear:hover{border-color:var(--line-strong);}
+  .cp-cargo-renomear:focus{outline:none;border-color:var(--accent);background:var(--glass-strong);}
+  .cp-cargo-renomear:disabled{opacity:.6;}
+  .cp-cargo-padrao{
+    flex-shrink:0;
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:0.1em;
+    color:var(--text-muted);
+  }

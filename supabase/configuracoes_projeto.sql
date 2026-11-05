@@ -20,8 +20,9 @@
 --    - projects.regras_cargos: o que cada cargo pode (RFC 0005 e 0006):
 --      convidar, mudar cargos, mudar o nome, mudar o ícone, criar e editar
 --      canais de texto, criar e editar salas de voz, silenciar e mover outros
---      nas salas. Antes eram só convidar e silenciar
---      e mover outros nas salas de voz. Só o dono muda (SEC-086).
+--      nas salas. Só o dono muda (SEC-086).
+--    - projects.nomes_cargos: o nome de cada cargo no projeto ("Editor" pode
+--      virar "Moderador"). Só o dono muda (SEC-086, RFC 0006).
 --    - Convite: além do dono, convida quem o cargo deixa, sempre para cargo
 --      igual ou abaixo do seu (pode_convidar_como, SEC-084).
 --    - projects.ordem_abas: a ordem das abas do projeto, igual para todos. Dono
@@ -245,6 +246,33 @@ update public.projects p
    and exists (select 1 from _regras_sem_estrutura where v);
 delete from _regras_sem_estrutura;
 
+-- Nome de cada cargo no projeto (RFC 0006): {"editor": "Moderador", ...}. Só
+-- as quatro chaves, texto de 1 a 24 caracteres, sem espaço nas pontas e sem
+-- < > nem caractere de controle. O app ainda passa tudo por esc().
+create or replace function public.nomes_cargos_validos(n jsonb)
+returns boolean
+language sql
+immutable
+set search_path = public
+as $$
+  select n is null or (
+    jsonb_typeof(n) = 'object'
+    and not exists (
+      select 1 from jsonb_each(n) e
+       where e.key not in ('owner', 'editor', 'participante', 'viewer')
+          or jsonb_typeof(e.value) <> 'string'
+          or char_length(e.value #>> '{}') not between 1 and 24
+          or (e.value #>> '{}') <> btrim(e.value #>> '{}')
+          or (e.value #>> '{}') ~ '[<>[:cntrl:]]'
+    )
+  );
+$$;
+
+alter table public.projects add column if not exists nomes_cargos jsonb;
+alter table public.projects drop constraint if exists projects_nomes_cargos_validos;
+alter table public.projects add constraint projects_nomes_cargos_validos
+  check (public.nomes_cargos_validos(nomes_cargos));
+
 -- O editor altera projects pela policy de sempre (projects_update). As regras
 -- de cargo ficam só com o dono: sem isto, o editor daria a si mesmo poder de
 -- moderar quem o dono não quis. Pelo SQL Editor (sem auth.uid()) passa.
@@ -255,10 +283,11 @@ security invoker
 set search_path = public
 as $$
 begin
-  if new.regras_cargos is distinct from old.regras_cargos
+  if (new.regras_cargos is distinct from old.regras_cargos
+      or new.nomes_cargos is distinct from old.nomes_cargos)
      and auth.uid() is not null
      and not is_project_owner(new.id) then
-    raise exception 'regras_so_dono: só o dono muda as regras de cargo' using errcode = '42501';
+    raise exception 'regras_so_dono: só o dono muda as regras e os nomes dos cargos' using errcode = '42501';
   end if;
   return new;
 end $$;
@@ -267,12 +296,12 @@ revoke all on function public.projeto_regras_so_dono() from public, anon, authen
 
 drop trigger if exists projects_regras_so_dono on public.projects;
 create trigger projects_regras_so_dono
-  before update of regras_cargos on public.projects
+  before update of regras_cargos, nomes_cargos on public.projects
   for each row execute function public.projeto_regras_so_dono();
 
 -- Soma ao grant de rls_correcoes.sql e icone_projeto.sql. owner_id e
 -- owner_email continuam fixos.
-grant update (regras_cargos, ordem_abas) on public.projects to authenticated;
+grant update (regras_cargos, ordem_abas, nomes_cargos) on public.projects to authenticated;
 
 
 -- 5. Funções usadas pela moderação das salas ----------------------------------------
@@ -452,7 +481,8 @@ notify pgrst, 'reload schema';
 --      tarefas   — as três policies de escrita usam mexe_em_tarefas
 --      funcao    — definir_cargo_membro é security definer com search_path, e
 --                  authenticated continua sem UPDATE em project_members.role
---      colunas   — regras_cargos e ordem_abas existem, com check e grant
+--      colunas   — regras_cargos, ordem_abas e nomes_cargos existem, com check
+--                  e grant
 --      gatilho   — o gatilho das regras existe
 --      nivel     — nivel_no_projeto não está liberada para authenticated
 
@@ -471,10 +501,13 @@ select
   and not has_column_privilege('authenticated', 'public.project_members', 'role', 'UPDATE') as funcao,
   has_column_privilege('authenticated', 'public.projects', 'regras_cargos', 'UPDATE')
   and has_column_privilege('authenticated', 'public.projects', 'ordem_abas', 'UPDATE')
+  and has_column_privilege('authenticated', 'public.projects', 'nomes_cargos', 'UPDATE')
   and not has_column_privilege('authenticated', 'public.projects', 'owner_id', 'UPDATE')
-  and (select count(*) = 2 from pg_constraint
+  and (select count(*) = 3 from pg_constraint
         where conrelid = 'public.projects'::regclass
-          and conname in ('projects_regras_cargos_validas', 'projects_ordem_abas_valida')) as colunas,
+          and conname in ('projects_regras_cargos_validas', 'projects_ordem_abas_valida', 'projects_nomes_cargos_validos'))
+  and public.nomes_cargos_validos('{"editor": "Moderador"}'::jsonb)
+  and not public.nomes_cargos_validos('{"editor": "<b>x</b>"}'::jsonb) as colunas,
   exists (select 1 from pg_trigger
            where not tgisinternal and tgname = 'projects_regras_so_dono')
   and exists (select 1 from pg_trigger

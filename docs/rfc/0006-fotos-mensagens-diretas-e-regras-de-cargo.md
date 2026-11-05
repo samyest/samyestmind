@@ -40,6 +40,7 @@ poder sobre nome, ícone, canais e cargos. Por isso esta RFC.
 | Q7 | Arredondado concêntrico: peça encostada na borda de outra usa o raio de fora menos a folga. |
 | Q8 | Organizar: tocar no título "Canais" liga um modo com alça em cada item, que arrasta no primeiro movimento; "Pronto" desliga. Segurar para arrastar continua valendo. |
 | Q9 | Tempo em ligação: na linha da sala, desde quem entrou primeiro entre os que estão nela (na minha sala, o relógio da chamada). |
+| Q10 | Nome dos cargos: o dono renomeia cada cargo do projeto ("Editor" vira "Moderador") clicando no nome, em Configurações → Cargos. Até 24 caracteres; vazio volta ao padrão, que aparece ao lado quando o nome é outro. O nome novo vale em todo o app: topo do projeto, barra lateral, membros, convites e listas. |
 
 ### Fora do escopo
 
