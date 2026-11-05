@@ -12488,6 +12488,11 @@ let dispositivosChamada = {mic: [], cam: [], saida: []};
 let chamadaDesenho = {modo: null, chaves: new Set()};
 const chamadaEntradas = new Map();
 const CHAMADA_ENTRADA_MS = 380;
+// Ladrilho que sai (a tela que parou, quem saiu da chamada) não some de uma
+// vez: uma cópia dele fica no lugar e desaparece, e os que ficam deslizam
+// para a posição nova. A cópia sobrevive aos redesenhos seguidos.
+const CHAMADA_SAIDA_MS = 280;
+let chamadaSaindo = [];
 
 const ICONES_CHAMADA = {
   mic: '<path d="M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>',
@@ -16023,6 +16028,12 @@ function desenharChamada(){
   // logo depois: o texto e o cursor ficam; a rolagem é devolvida à mão.
   const comChat = c.modo === 'expandida' && chatDaChamadaVisivel();
   raiz.classList.toggle('com-chat', comChat);
+  // Onde cada ladrilho estava, para a saída e o deslize (só sem mudar de modo).
+  const semMovimento = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const animarLayout = !semMovimento && chamadaDesenho.modo === c.modo;
+  const antes = new Map();
+  if(animarLayout) raiz.querySelectorAll('.ch-ladrilho[data-chave]:not(.saindo)').forEach(el=>antes.set(el.dataset.chave, {el, r: el.getBoundingClientRect()}));
+  const raizAntes = raiz.getBoundingClientRect();
   const listaChatAntes = painelChatEl && painelChatEl.querySelector('#ch-chat-lista');
   const rolagemChatAntes = listaChatAntes && listaChatAntes.isConnected ? listaChatAntes.scrollTop : null;
   raiz.innerHTML = html;
@@ -16058,6 +16069,8 @@ function desenharChamada(){
     }else chamadaEntradas.delete(k);
   });
   chamadaDesenho = {modo: c.modo, chaves};
+  if(animarLayout) animarLayoutChamada(raiz, raizAntes, antes, chaves, agora);
+  else chamadaSaindo = [];
   if(c.animarPainel){
     raiz.querySelectorAll('.ch-painel-disp, .ch-volume, .ch-dialogo-fundo, .ch-salas').forEach(el=>el.classList.add('abrindo'));
     c.animarPainel = false;
@@ -16070,6 +16083,42 @@ function desenharChamada(){
     const el = doc.getElementById(foco);
     if(el) el.focus();
   }
+}
+
+function animarLayoutChamada(raiz, raizAntes, antes, chaves, agora){
+  // Quem saiu neste desenho vira uma cópia que desaparece no lugar dele.
+  for(const [k, {el, r}] of antes){
+    if(chaves.has(k)) continue;
+    el.classList.remove('entrando');
+    el.classList.add('saindo');
+    el.removeAttribute('id');
+    el.querySelectorAll('[id]').forEach(x=>x.removeAttribute('id'));
+    el.setAttribute('aria-hidden', 'true');
+    el.inert = true;
+    Object.assign(el.style, {position: 'absolute', left: `${r.left - raizAntes.left}px`, top: `${r.top - raizAntes.top}px`,
+      width: `${r.width}px`, height: `${r.height}px`, margin: '0', zIndex: '-1', pointerEvents: 'none'});
+    chamadaSaindo.push({el, desde: agora});
+  }
+  // As cópias de antes voltam depois do innerHTML, continuando de onde estavam.
+  chamadaSaindo = chamadaSaindo.filter(s=>agora - s.desde < CHAMADA_SAIDA_MS);
+  for(const s of chamadaSaindo){
+    s.el.style.animationDelay = `-${Math.round(agora - s.desde)}ms`;
+    if(s.el.parentNode !== raiz) raiz.appendChild(s.el);
+    setTimeout(()=>{ s.el.remove(); }, Math.max(0, CHAMADA_SAIDA_MS - (agora - s.desde)) + 20);
+  }
+  // Os que ficaram deslizam da posição antiga para a nova.
+  raiz.querySelectorAll('.ch-ladrilho[data-chave]:not(.saindo)').forEach(el=>{
+    const a = antes.get(el.dataset.chave);
+    if(!a) return;
+    const r1 = el.getBoundingClientRect();
+    if(!r1.width || !r1.height) return;
+    // Só o centro anda: esticar o ladrilho deformaria a foto redonda e o
+    // texto no meio do caminho.
+    const dx = (a.r.left + a.r.width / 2) - (r1.left + r1.width / 2);
+    const dy = (a.r.top + a.r.height / 2) - (r1.top + r1.height / 2);
+    if(Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+    el.animate([{transform: `translate(${dx}px, ${dy}px)`}, {transform: 'none'}], {duration: 360, easing: 'cubic-bezier(.2, .8, .2, 1)'});
+  });
 }
 
 function atualizarTempoChamada(){

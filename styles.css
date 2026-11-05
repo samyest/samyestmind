@@ -3015,6 +3015,9 @@
      com fade no primeiro quadro, em vez de piscar preto. */
   .ch-ladrilho.entrando{animation:chLadrilhoEntra .38s var(--mov-curva) both;}
   @keyframes chLadrilhoEntra{from{opacity:0;transform:scale(.94);}}
+  /* E sai do mesmo jeito, ao contrário: a tela que parou ou quem saiu. */
+  .ch-ladrilho.saindo{animation:chLadrilhoSai .28s cubic-bezier(.4, 0, 1, 1) both;}
+  @keyframes chLadrilhoSai{to{opacity:0;transform:scale(.94);}}
   .ch-video{opacity:0;transition:opacity .35s ease;}
   .ch-video.pronto{opacity:1;}
 
