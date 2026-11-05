@@ -3260,9 +3260,10 @@ function moverProjeto(id, novoIndice){
   return true;
 }
 
-// Segurar o projeto (~0,4 s) e arrastar para cima ou para baixo. Antes de
-// segurar, mexer mais que alguns pixels cancela, e a barra rola normalmente no
-// toque. Alt + seta faz o mesmo pelo teclado.
+// No toque, segurar o projeto (~0,4 s) e arrastar para cima ou para baixo:
+// antes de segurar, mexer mais que alguns pixels cancela, e a barra rola
+// normalmente. Com o mouse não precisa segurar: clicar e arrastar já move (e
+// um clique sem arrastar abre o projeto). Alt + seta faz o mesmo pelo teclado.
 const SEGURAR_PROJETO_MS = 400;
 let arrastoProjeto = null;
 let ignorarCliqueProjeto = false;
@@ -3271,8 +3272,10 @@ function iniciarArrastoProjeto(e){
   if(e.button > 0 || arrastoProjeto) return;
   const item = e.target.closest('.sidebar-project-item[data-pid]');
   if(!item || state.projects.length < 2) return;
+  // Sem isto, segurar o botão do mouse e arrastar selecionava o texto da barra.
+  if(e.pointerType === 'mouse') e.preventDefault();
   const a = arrastoProjeto = {
-    item, id: item.dataset.pid, pointerId: e.pointerId, x: e.clientX, y: e.clientY,
+    item, id: item.dataset.pid, pointerId: e.pointerId, x: e.clientX, y: e.clientY, mouse: e.pointerType === 'mouse',
     ativo: false, timer: null, itens: [], rects: null, ordem: null, ordemInicial: null
   };
   a.timer = setTimeout(()=>levantarProjeto(a), SEGURAR_PROJETO_MS);
@@ -3299,8 +3302,8 @@ function moverArrastoProjeto(e){
   if(!a || e.pointerId !== a.pointerId) return;
   const dx = e.clientX - a.x, dy = e.clientY - a.y;
   if(!a.ativo){
-    if(Math.hypot(dx, dy) > 6) cancelarArrastoProjeto();
-    return;
+    if(a.mouse && Math.abs(dy) > 4){ clearTimeout(a.timer); levantarProjeto(a); }
+    else{ if(Math.hypot(dx, dy) > 6) cancelarArrastoProjeto(); return; }
   }
   a.item.style.transform = `translateY(${dy}px) scale(1.02)`;
   const meu = a.rects.get(a.id);
@@ -3428,7 +3431,7 @@ function renderSidebarProjects(){
       const role = esc(curtoDoCargo(myRoleInProject(p.id), p));
       const isActive = state.view === 'project' && state.currentProjectId === p.id;
       return `
-        <button class="sidebar-project-item ${isActive?'active':''}" data-pid="${p.id}" onclick="openProjectView('${p.id}')" title="${esc(p.name)} · segure e arraste para mudar a ordem" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown">
+        <button class="sidebar-project-item ${isActive?'active':''}" data-pid="${p.id}" onclick="openProjectView('${p.id}')" title="${esc(p.name)} · arraste para mudar a ordem" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown">
           ${projetoIconeHtml(p, 'p')}
           <span class="sidebar-project-name">${esc(p.name)}</span>
           ${seloNaoLidas(p.id)}
@@ -12488,6 +12491,11 @@ let dispositivosChamada = {mic: [], cam: [], saida: []};
 let chamadaDesenho = {modo: null, chaves: new Set()};
 const chamadaEntradas = new Map();
 const CHAMADA_ENTRADA_MS = 380;
+// Ladrilho que sai (a tela que parou, quem saiu da chamada) não some de uma
+// vez: uma cópia dele fica no lugar e desaparece, e os que ficam deslizam
+// para a posição nova. A cópia sobrevive aos redesenhos seguidos.
+const CHAMADA_SAIDA_MS = 280;
+let chamadaSaindo = [];
 
 const ICONES_CHAMADA = {
   mic: '<path d="M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>',
@@ -12733,10 +12741,40 @@ function nomeDaChamada(pid, sala){
   return salasDoProjeto(pid).length > 1 ? `${nomeDaSala(pid, sala)} · ${nome}` : nome;
 }
 
+// Ligar e desligar câmera, microfone e fone várias vezes seguidas mandava uma
+// Presence por clique; o Realtime limita a taxa e derrubava o canal, e quem
+// estava na sala via a pessoa sumir e fechava a conexão. Agora sai no máximo
+// uma a cada 600 ms, sempre com o estado mais novo.
+const PRESENCA_INTERVALO = 600;
 function atualizarPresencaChamada(){
   const c = chamada;
   const reg = regDaChamada(c);
   if(!reg || !reg.assinado) return Promise.resolve();
+  if(c.presencaTimer) return c.presencaPromessa;
+  const espera = Math.max(0, (c.presencaUltima || 0) + PRESENCA_INTERVALO - Date.now());
+  c.presencaPromessa = new Promise(ok=>{
+    c.presencaResolver = ok;
+    c.presencaTimer = setTimeout(()=>{
+      c.presencaTimer = null;
+      c.presencaResolver = null;
+      c.presencaUltima = Date.now();
+      enviarPresencaChamada(c).then(ok, ok);
+    }, espera);
+  });
+  return c.presencaPromessa;
+}
+
+// Cancela a Presence que ia sair (ao sair da chamada ou trocar de tópico);
+// quem esperava por ela segue em frente.
+function cancelarPresencaPendente(c){
+  clearTimeout(c.presencaTimer);
+  c.presencaTimer = null;
+  if(c.presencaResolver){ c.presencaResolver(); c.presencaResolver = null; }
+}
+
+function enviarPresencaChamada(c){
+  const reg = regDaChamada(c);
+  if(chamada !== c || !reg || !reg.assinado) return Promise.resolve();
   return reg.canal.track({
     sessao: c.sessao, em_chamada: true, desde: c.entrouEm, sala: CHAMADA_UUID.test(c.sala || '') ? c.sala : null,
     mic: c.mic && !!c.local.voz, ensurdecido: c.ensurdecido, camera: c.camera, tela: c.tela, telaSom: !!(c.tela && c.local.telaAudio)
@@ -13216,6 +13254,7 @@ function fecharParChamada(par){
 // Liga e desliga conexões conforme a Presence: entra quem chegou, sai quem
 // saiu ou perdeu o acesso. Sem limite de pessoas desde 2026-11-03 (antes, só
 // as 4 primeiras ficavam, Q19); a qualidade se ajusta pelo tetoDaChamada.
+const PRESENCA_TOLERANCIA = 5000;
 function reconciliarChamada(){
   const c = chamada;
   const reg = regDaChamada(c);
@@ -13258,8 +13297,20 @@ function reconciliarChamada(){
     // Quem espera a oferta não faz nada aqui: se ela não vier, a vigia pede.
     if(!par && eu < p.uid) criarParChamada(p.uid, p.sessao, true);
   }
+  // Quem some da Presence com a conexão ainda de pé fica uns segundos: uma
+  // queda curta do canal (ou da própria Presence) não derruba a voz e o vídeo
+  // de todo mundo. Se a pessoa não voltar, sai como sempre.
+  c.sumidos = c.sumidos || new Map();
+  for(const uid of vistos) c.sumidos.delete(uid);
+  const agora = Date.now();
   for(const uid of [...c.participantes.keys()]){
     if(vistos.has(uid)) continue;
+    const parVivo = c.pares.get(uid);
+    if(parVivo && parVivo.pc.connectionState === 'connected'){
+      if(!c.sumidos.has(uid)){ c.sumidos.set(uid, agora); setTimeout(()=>{ if(chamada === c) reconciliarChamada(); }, PRESENCA_TOLERANCIA + 100); }
+      if(agora - c.sumidos.get(uid) < PRESENCA_TOLERANCIA){ vistos.add(uid); continue; }
+    }
+    c.sumidos.delete(uid);
     const par = c.pares.get(uid);
     if(par) fecharParChamada(par);
     c.participantes.delete(uid);
@@ -13410,6 +13461,28 @@ function mostrarVozNoBotao(rms){
 
 function marcarFalaChamada(uid, falando){
   for(const d of docsChamada()) d.querySelectorAll(`[data-fala="${uid}"]`).forEach(el=>el.classList.toggle('falando', falando));
+  if(falando) notarFalanteMini(uid);
+}
+
+// Minimizada (e na janela flutuante), a chamada mostra uma pessoa só: a última
+// que falou. Para não piscar entre duas pessoas falando juntas, a troca espera
+// a nova falar um instante (0,7 s) e a anterior ficar pelo menos 2 s.
+const FALANTE_ESPERA_MS = 700;
+const FALANTE_MINIMO_MS = 2000;
+function notarFalanteMini(uid){
+  const c = chamada;
+  if(!c || !CHAMADA_UUID.test(uid) || uid === session.user.id || c.falanteMini === uid) return;
+  clearTimeout(c.falanteTimer);
+  const espera = Math.max(FALANTE_ESPERA_MS, FALANTE_MINIMO_MS - (Date.now() - (c.falanteDesde || 0)));
+  c.falanteTimer = setTimeout(()=>{
+    const m = falaMedidores.get(uid);
+    if(chamada !== c || !c.participantes.has(uid) || c.falanteMini === uid) return;
+    // Parou de falar antes da hora: fica quem estava.
+    if(!m || (!m.falando && performance.now() - (m.ate || 0) > 600)) return;
+    c.falanteMini = uid;
+    c.falanteDesde = Date.now();
+    if(c.modo === 'mini') desenharChamada();
+  }, espera);
 }
 
 /* --- sons (Q31) --- */
@@ -13475,6 +13548,107 @@ function guardarRuido(ligado){
   try{ localStorage.setItem('chamadaRuido', ligado ? 'sim' : 'nao'); }catch(e){}
 }
 
+// Aperte para falar (push to talk): com ele ligado, o microfone aberto só
+// manda som enquanto a tecla (ou o botão "Segure para falar") está apertada.
+// É escolha do aparelho, como a supressão de ruído. A tecla só vale com o app
+// (ou a janela flutuante) em foco: o navegador não deixa um site ouvir o
+// teclado fora dele.
+const PTT_PADRAO = {ativo: false, tecla: 'KeyV', nome: 'V'};
+let pttApertado = false;
+let pttCapturando = null;
+function pttConfig(){
+  try{
+    const v = JSON.parse(localStorage.getItem('chamadaPtt') || 'null');
+    if(v && typeof v === 'object' && typeof v.tecla === 'string' && /^[A-Za-z0-9]{1,24}$/.test(v.tecla) && typeof v.nome === 'string')
+      return {ativo: v.ativo === true, tecla: v.tecla, nome: v.nome.slice(0, 16)};
+  }catch(e){}
+  return {...PTT_PADRAO};
+}
+function guardarPtt(cfg){
+  try{ localStorage.setItem('chamadaPtt', JSON.stringify(cfg)); }catch(e){}
+}
+
+// A voz que sai: microfone aberto, sem ensurdecer e, no aperte para falar,
+// só com a tecla apertada.
+function vozLocalLiberada(c){
+  return !!c && c.mic && !c.ensurdecido && (!pttConfig().ativo || pttApertado);
+}
+function aplicarVozLocal(c){
+  if(c && c.local && c.local.voz) c.local.voz.enabled = vozLocalLiberada(c);
+}
+
+function pttApertar(){
+  if(pttApertado || !chamada || !pttConfig().ativo) return;
+  pttApertado = true;
+  aplicarVozLocal(chamada);
+  marcarBotoesPtt();
+}
+function pttSoltar(){
+  if(!pttApertado) return;
+  pttApertado = false;
+  aplicarVozLocal(chamada);
+  marcarBotoesPtt();
+}
+function marcarBotoesPtt(){
+  const falando = pttApertado && !!chamada && chamada.mic;
+  for(const d of docsChamada()) d.querySelectorAll('.ch-ptt').forEach(b=>{
+    b.classList.toggle('apertado', falando);
+    b.setAttribute('aria-pressed', String(falando));
+  });
+}
+
+function nomeDaTecla(e){
+  if(e.code === 'Space') return 'Espaço';
+  if(e.key && e.key.length === 1) return e.key.toUpperCase();
+  return String(e.key || e.code).slice(0, 16);
+}
+
+function campoDeTexto(el){
+  return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+}
+
+// Escolher a tecla: o próximo aperto vira a tecla (Esc cancela).
+function capturarTeclaPtt(botao){
+  pttCapturando = botao ? botao.id : null;
+  if(botao){ botao.textContent = 'Aperte uma tecla…'; botao.classList.add('capturando'); }
+}
+
+function teclaPttDesce(e){
+  if(pttCapturando){
+    if(e.key === 'Tab') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = pttCapturando;
+    pttCapturando = null;
+    if(e.key !== 'Escape' && !['Enter'].includes(e.key) && /^[A-Za-z0-9]{1,24}$/.test(e.code)){
+      guardarPtt({...pttConfig(), tecla: e.code, nome: nomeDaTecla(e)});
+      anunciarNoApp(`Aperte para falar: tecla ${nomeDaTecla(e)}`);
+    }
+    for(const d of docsChamada()){
+      const b = d.getElementById(id);
+      if(b){ b.textContent = pttConfig().nome; b.classList.remove('capturando'); b.focus(); }
+    }
+    if(previaChamada) desenharPreviaChamada();
+    return;
+  }
+  if(!chamada || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const cfg = pttConfig();
+  if(!cfg.ativo || e.code !== cfg.tecla || campoDeTexto(e.target)) return;
+  e.preventDefault();
+  pttApertar();
+}
+function teclaPttSobe(e){
+  if(e.code === pttConfig().tecla) pttSoltar();
+}
+function ligarTeclasPtt(win){
+  win.addEventListener('keydown', teclaPttDesce, true);
+  win.addEventListener('keyup', teclaPttSobe, true);
+  // Sair da janela com a tecla apertada não deixa o microfone preso aberto.
+  win.addEventListener('blur', pttSoltar);
+  win.document.addEventListener('visibilitychange', ()=>{ if(win.document.hidden) pttSoltar(); });
+}
+ligarTeclasPtt(window);
+
 function restricoesMicrofone(deviceId){
   const ruido = ruidoLigado();
   const audio = {deviceId: deviceId ? {exact: deviceId} : undefined, echoCancellation: true, noiseSuppression: ruido, autoGainControl: true};
@@ -13523,7 +13697,16 @@ function seletoresDispositivo(atual, acao){
       <span class="ch-disp-ruido-texto"><span>Supressão de ruído</span><small>Tira o barulho de fundo, como teclado e ventilador. Desligue para tocar música.</small></span>
       <input type="checkbox" role="switch" class="ch-interruptor" ${ruidoLigado() ? 'checked' : ''} onchange="${acao}('ruido', this.checked)">
     </label>`;
-  return campo('mic', 'Microfone') + campo('cam', 'Câmera') + campo('saida', 'Saída de áudio') + ruido;
+  const ptt = pttConfig();
+  const idTecla = `ch-ptt-tecla-${acao === 'previaTrocarDispositivo' ? 'previa' : 'chamada'}`;
+  const aperteParaFalar = `<div class="ch-disp-ptt">
+      <label class="ch-disp-ruido">
+        <span class="ch-disp-ruido-texto"><span>Aperte para falar</span><small>O microfone só manda som enquanto você segura a tecla, com o app na tela. No celular, segure o botão de falar.</small></span>
+        <input type="checkbox" role="switch" class="ch-interruptor" ${ptt.ativo ? 'checked' : ''} onchange="${acao}('ptt', this.checked)">
+      </label>
+      ${ptt.ativo ? `<div class="ch-disp-tecla"><span>Tecla</span><button type="button" class="ch-tecla" id="${idTecla}" onclick="capturarTeclaPtt(this)" title="Clique e aperte a tecla que quer usar">${esc(ptt.nome)}</button></div>` : ''}
+    </div>`;
+  return campo('mic', 'Microfone') + campo('cam', 'Câmera') + campo('saida', 'Saída de áudio') + ruido + aperteParaFalar;
 }
 
 /* --- prévia (Q22) --- */
@@ -13630,7 +13813,8 @@ async function previaAlternarCamera(){
 
 async function previaTrocarDispositivo(tipo, id){
   const pr = previaChamada;
-  if(!pr || !['mic', 'cam', 'saida', 'ruido'].includes(tipo)) return;
+  if(!pr || !['mic', 'cam', 'saida', 'ruido', 'ptt'].includes(tipo)) return;
+  if(tipo === 'ptt'){ guardarPtt({...pttConfig(), ativo: !!id}); desenharPreviaChamada(); return; }
   if(tipo === 'ruido'){
     guardarRuido(!!id);
     // Fecha antes de abrir de novo: com o microfone ainda aberto, o navegador
@@ -13813,7 +13997,7 @@ async function entrarNaChamada(){
   if(!chamada.camera && chamada.local.cam) chamada.local.cam = null;
   fecharPreviaChamada();
   if(chamada.local.voz){
-    chamada.local.voz.enabled = chamada.mic;
+    aplicarVozLocal(chamada);
     medirFala(eu, chamada.local.voz);
   }
   agendarRenovacaoTurn();
@@ -13900,6 +14084,8 @@ async function sairDaChamada(opts){
   if(audios) audios.remove();
   const reg = regDaChamada(c);
   const restantes = naSala(reg, c.sala).filter(p=>!(p.uid === session.user.id && p.sessao === c.sessao));
+  // A Presence que estava para sair não sai mais depois do untrack.
+  cancelarPresencaPendente(c);
   if(reg && reg.assinado){ try{ await reg.canal.untrack(); }catch(e){} }
   if(c.presente && !restantes.length) registrarLinhaChamada(c.pid, c.sala, 'chamada_fim', Math.round((Date.now() - c.inicio) / 1000));
   if(!o.silencioso) tocarSomChamada('sair');
@@ -13939,6 +14125,7 @@ async function trocarDeSalaChamada(sala, opts){
   }
   const restantes = naSala(reg, c.sala).filter(p=>!(p.uid === eu && p.sessao === c.sessao));
   if(c.presente && !restantes.length && c.sala !== sala) registrarLinhaChamada(c.pid, c.sala, 'chamada_fim', Math.round((Date.now() - c.inicio) / 1000));
+  if(topicoNovo !== c.topico) cancelarPresencaPendente(c);
   if(topicoNovo !== c.topico && reg && reg.assinado){ try{ await reg.canal.untrack(); }catch(e){} }
   c.topico = topicoNovo;
   clearTimeout(c.timerInicio);
@@ -14212,7 +14399,7 @@ async function trocarFaixaLocal(tipo, track){
   }
   if(antiga && antiga !== track) antiga.stop();
   if(tipo === 'voz'){
-    if(track){ track.enabled = c.mic && !c.ensurdecido; medirFala(session.user.id, track); }
+    if(track){ aplicarVozLocal(c); medirFala(session.user.id, track); }
     else pararMedicaoFala(session.user.id);
   }
   // Só câmera e tela têm vídeo próprio. Antes, trocar o microfone (ao mudar a
@@ -14229,6 +14416,8 @@ async function chamadaAlternarMic(){
     return;
   }
   if(!c.local.voz){
+    if(c.micOcupado) return;
+    c.micOcupado = true;
     try{
       const s = await navigator.mediaDevices.getUserMedia(restricoesMicrofone(c.dispositivos.mic));
       if(chamada !== c){ s.getTracks().forEach(t=>t.stop()); return; }
@@ -14236,11 +14425,12 @@ async function chamadaAlternarMic(){
       c.ensurdecido = false;
       await trocarFaixaLocal('voz', s.getAudioTracks()[0]);
     }catch(e){ showToast(mensagemErroMidia(e, 'o microfone'), 'erro'); return; }
+    finally{ c.micOcupado = false; }
   }else{
     c.mic = !c.mic;
     // Abrir o microfone tira o ensurdecer, como no Discord.
     if(c.mic && c.ensurdecido){ c.ensurdecido = false; for(const par of c.pares.values()) aplicarVolumePar(par); }
-    c.local.voz.enabled = c.mic;
+    aplicarVozLocal(c);
   }
   tocarSomChamada(c.mic ? 'desmutar' : 'mutar');
   atualizarPresencaChamada();
@@ -14253,7 +14443,7 @@ function chamadaAlternarEnsurdecer(){
   c.ensurdecido = !c.ensurdecido;
   if(c.ensurdecido){ c.micAntes = c.mic; c.mic = false; }
   else c.mic = c.micAntes !== false && !micTravadoNaSala(c.pid, c.sala);
-  if(c.local.voz) c.local.voz.enabled = c.mic;
+  aplicarVozLocal(c);
   for(const par of c.pares.values()) aplicarVolumePar(par);
   tocarSomChamada(c.ensurdecido ? 'ensurdecer' : 'ouvir');
   atualizarPresencaChamada();
@@ -14262,7 +14452,17 @@ function chamadaAlternarEnsurdecer(){
 
 async function chamadaAlternarCamera(){
   const c = chamada;
-  if(!c) return;
+  if(!c || c.cameraOcupada) return;
+  // Um pedido por vez: dois cliques rápidos pediam a câmera duas vezes e uma
+  // das faixas ficava ligada sem ninguém ver.
+  c.cameraOcupada = true;
+  try{ await alternarCameraAgora(c); }finally{ c.cameraOcupada = false; }
+  if(chamada !== c) return;
+  atualizarPresencaChamada();
+  desenharChamada();
+}
+
+async function alternarCameraAgora(c){
   if(c.camera){
     c.camera = false;
     await trocarFaixaLocal('cam', null);
@@ -14274,10 +14474,8 @@ async function chamadaAlternarCamera(){
       c.dispositivos.cam = t.getSettings().deviceId || c.dispositivos.cam;
       c.camera = true;
       await trocarFaixaLocal('cam', t);
-    }catch(e){ showToast(mensagemErroMidia(e, 'a câmera'), 'erro'); return; }
+    }catch(e){ showToast(mensagemErroMidia(e, 'a câmera'), 'erro'); }
   }
-  atualizarPresencaChamada();
-  desenharChamada();
 }
 
 // Transmitir a tela começa por uma escolha do app, como no Discord: o que
@@ -14479,7 +14677,15 @@ async function pararTelaChamada(){
 
 async function chamadaTrocarDispositivo(tipo, id){
   const c = chamada;
-  if(!c || !['mic', 'cam', 'saida', 'ruido'].includes(tipo)) return;
+  if(!c || !['mic', 'cam', 'saida', 'ruido', 'ptt'].includes(tipo)) return;
+  if(tipo === 'ptt'){
+    guardarPtt({...pttConfig(), ativo: !!id});
+    pttApertado = false;
+    aplicarVozLocal(c);
+    anunciarNaChamada(id ? `Aperte para falar ligado: segure ${pttConfig().nome} para falar` : 'Aperte para falar desligado');
+    desenharChamada();
+    return;
+  }
   if(tipo === 'ruido') guardarRuido(!!id);
   else c.dispositivos[tipo] = id;
   try{
@@ -15203,6 +15409,7 @@ function adotarJanelaFlutuante(win, origem){
 // A janela flutuante nasce em branco: leva os estilos e o tema do app.
 function prepararJanelaFlutuante(win){
   const d = win.document;
+  ligarTeclasPtt(win);
   ouvirModalidadeChamada(d);
   for(const folha of document.querySelectorAll('link[rel="stylesheet"], style')){
     let copia;
@@ -15587,6 +15794,23 @@ function botaoChamada(id, acao, icone, rotulo, classe, pressionado){
   return `<button type="button" id="${id}" class="ch-botao ${cl}${trocando ? ' trocou' : ''}"${estilo} onclick="${acao}" aria-label="${rotulo}" title="${rotulo}"${pressionado === undefined ? '' : ` aria-pressed="${pressionado}"`}>${iconeChamada(icone)}</button>`;
 }
 
+// Segurar o botão: soltar o dedo (ou o mouse) em qualquer lugar solta a voz.
+// O fim é ouvido no documento, porque a chamada pode ser redesenhada (e o
+// botão trocado) enquanto a pessoa segura.
+function pttBotaoDesce(e){
+  e.preventDefault();
+  const doc = e.currentTarget.ownerDocument;
+  const fim = (ev)=>{
+    if(ev.pointerId !== e.pointerId) return;
+    doc.removeEventListener('pointerup', fim, true);
+    doc.removeEventListener('pointercancel', fim, true);
+    pttSoltar();
+  };
+  doc.addEventListener('pointerup', fim, true);
+  doc.addEventListener('pointercancel', fim, true);
+  pttApertar();
+}
+
 function controlesChamadaHtml(mini){
   const c = chamada;
   const micAberto = c.mic && !!c.local.voz;
@@ -15595,10 +15819,17 @@ function controlesChamadaHtml(mini){
   const travado = !micAberto && micTravadoNaSala(c.pid, c.sala);
   const rotuloMic = travado ? (silenciadoPeloModerador(c.pid, session.user.id) ? 'Silenciado por um moderador' : 'Sala de silêncio: microfone fechado')
     : micAberto ? 'Fechar o microfone' : 'Abrir o microfone';
+  const ptt = pttConfig();
+  // Aperte para falar: um botão de segurar, para o celular e para quem prefere
+  // o mouse. Solto, a voz para.
+  const segurar = ptt.ativo && micAberto
+    ? `<button type="button" id="${mini ? 'ch-btn-ptt-mini' : 'ch-btn-ptt'}" class="ch-botao ch-ptt${pttApertado ? ' apertado' : ''}" aria-pressed="${pttApertado}" aria-label="Segure para falar (ou a tecla ${esc(ptt.nome)})" title="Segure para falar (ou a tecla ${esc(ptt.nome)})" onpointerdown="pttBotaoDesce(event)" onkeydown="if((event.key===' '||event.key==='Enter')&&!event.repeat){event.preventDefault();pttApertar();}" onkeyup="if(event.key===' '||event.key==='Enter')pttSoltar()" oncontextmenu="return false">${iconeChamada('mic')}<span class="ch-ptt-texto">Falar</span></button>`
+    : '';
   const partes = [
     botaoChamada(mini ? 'ch-btn-mic-mini' : 'ch-btn-mic', 'chamadaAlternarMic()', micAberto ? 'mic' : 'micOff', rotuloMic, micAberto ? '' : (travado ? 'desligado travado' : 'desligado'), !micAberto),
     botaoChamada(mini ? 'ch-btn-fone-mini' : 'ch-btn-fone', 'chamadaAlternarEnsurdecer()', c.ensurdecido ? 'foneOff' : 'fone', c.ensurdecido ? 'Voltar a ouvir' : 'Ensurdecer', c.ensurdecido ? 'desligado' : '', c.ensurdecido)
   ];
+  if(segurar) partes.unshift(segurar);
   // Na chamada aberta, três grupos separados por um fio: o que eu falo e
   // ouço, o que eu mostro, e sair.
   const divisor = '<span class="ch-divisor" aria-hidden="true"></span>';
@@ -15621,16 +15852,27 @@ function controlesChamadaHtml(mini){
 }
 
 // Celular em pé: uma coluna até 2 ladrilhos e no máximo 2 colunas depois.
+// Uma pessoa só no mini: o destaque escolhido, senão uma tela transmitida,
+// senão quem falou por último (a câmera dela, ou a foto se estiver sem), e
+// antes de alguém falar, a primeira câmera ligada.
 function videosDoMini(){
   const c = chamada;
   const eu = session.user.id;
   const ladrilhos = ladrilhosChamada();
-  const outros = [];
-  const pegar = (k)=>{ if(k && !outros.includes(k) && !k.startsWith(`${eu}:`) && faixaDeVideoChamada(k)) outros.push(k); };
-  pegar(c.destaque);
-  ladrilhos.filter(l=>l.tipo === 'tela').forEach(l=>pegar(l.chave));
-  ladrilhos.filter(l=>l.tipo === 'cam').forEach(l=>pegar(l.chave));
-  return {outros: outros.slice(0, 4), minha: faixaDeVideoChamada(`${eu}:cam`) ? `${eu}:cam` : null};
+  const minha = faixaDeVideoChamada(`${eu}:cam`) ? `${eu}:cam` : null;
+  const existe = (k)=>!!k && !k.startsWith(`${eu}:`) && ladrilhos.some(l=>l.chave === k);
+  let principal = null;
+  if(existe(c.destaque) && faixaDeVideoChamada(c.destaque)) principal = c.destaque;
+  if(!principal){
+    const tela = ladrilhos.find(l=>l.tipo === 'tela' && existe(l.chave) && faixaDeVideoChamada(l.chave));
+    if(tela) principal = tela.chave;
+  }
+  if(!principal && c.falanteMini && existe(`${c.falanteMini}:cam`)) principal = `${c.falanteMini}:cam`;
+  if(!principal){
+    const cam = ladrilhos.find(l=>l.tipo === 'cam' && existe(l.chave) && faixaDeVideoChamada(l.chave));
+    if(cam) principal = cam.chave;
+  }
+  return {outros: principal ? [principal] : [], minha};
 }
 
 function colunasDaGrade(n){
@@ -15720,16 +15962,14 @@ function desenharChamada(){
   let html;
 
   if(c.modo === 'mini'){
-    // Minimizada, a câmera de quem estiver com ela ligada continua aparecendo:
-    // os vídeos dos outros em grade (até 4, o destaque e as telas primeiro) e
-    // a própria câmera num quadro no canto, ou ocupando tudo se for o único
-    // vídeo. Sem vídeo nenhum, as fotos de todos.
+    // Minimizada, uma pessoa só ocupa o quadro (videosDoMini): quem fala, a
+    // tela ou o destaque. A própria câmera só aparece quando não há mais
+    // ninguém para mostrar. Sem ninguém nem vídeo, as fotos de todos.
     const {outros, minha} = videosDoMini();
     const porChave = (k)=>ladrilhos.find(l=>l.chave === k);
     let palco;
     if(outros.length){
-      palco = `<div class="ch-mini-grade n-${outros.length}">${outros.map(k=>ladrilhoChamadaHtml(porChave(k), {mini: true})).join('')}</div>`
-        + (minha ? `<div class="ch-mini-eu">${ladrilhoChamadaHtml(porChave(minha), {mini: true, semRotulo: true})}</div>` : '');
+      palco = `<div class="ch-mini-grade n-${outros.length}">${outros.map(k=>ladrilhoChamadaHtml(porChave(k), {mini: true})).join('')}</div>`;
     }else if(minha){
       palco = ladrilhoChamadaHtml(porChave(minha), {mini: true});
     }else{
@@ -15822,6 +16062,12 @@ function desenharChamada(){
   // logo depois: o texto e o cursor ficam; a rolagem é devolvida à mão.
   const comChat = c.modo === 'expandida' && chatDaChamadaVisivel();
   raiz.classList.toggle('com-chat', comChat);
+  // Onde cada ladrilho estava, para a saída e o deslize (só sem mudar de modo).
+  const semMovimento = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const animarLayout = !semMovimento && chamadaDesenho.modo === c.modo;
+  const antes = new Map();
+  if(animarLayout) raiz.querySelectorAll('.ch-ladrilho[data-chave]:not(.saindo)').forEach(el=>antes.set(el.dataset.chave, {el, r: el.getBoundingClientRect()}));
+  const raizAntes = raiz.getBoundingClientRect();
   const listaChatAntes = painelChatEl && painelChatEl.querySelector('#ch-chat-lista');
   const rolagemChatAntes = listaChatAntes && listaChatAntes.isConnected ? listaChatAntes.scrollTop : null;
   raiz.innerHTML = html;
@@ -15857,6 +16103,8 @@ function desenharChamada(){
     }else chamadaEntradas.delete(k);
   });
   chamadaDesenho = {modo: c.modo, chaves};
+  if(animarLayout) animarLayoutChamada(raiz, raizAntes, antes, chaves, agora);
+  else chamadaSaindo = [];
   if(c.animarPainel){
     raiz.querySelectorAll('.ch-painel-disp, .ch-volume, .ch-dialogo-fundo, .ch-salas').forEach(el=>el.classList.add('abrindo'));
     c.animarPainel = false;
@@ -15869,6 +16117,42 @@ function desenharChamada(){
     const el = doc.getElementById(foco);
     if(el) el.focus();
   }
+}
+
+function animarLayoutChamada(raiz, raizAntes, antes, chaves, agora){
+  // Quem saiu neste desenho vira uma cópia que desaparece no lugar dele.
+  for(const [k, {el, r}] of antes){
+    if(chaves.has(k)) continue;
+    el.classList.remove('entrando');
+    el.classList.add('saindo');
+    el.removeAttribute('id');
+    el.querySelectorAll('[id]').forEach(x=>x.removeAttribute('id'));
+    el.setAttribute('aria-hidden', 'true');
+    el.inert = true;
+    Object.assign(el.style, {position: 'absolute', left: `${r.left - raizAntes.left}px`, top: `${r.top - raizAntes.top}px`,
+      width: `${r.width}px`, height: `${r.height}px`, margin: '0', zIndex: '-1', pointerEvents: 'none'});
+    chamadaSaindo.push({el, desde: agora});
+  }
+  // As cópias de antes voltam depois do innerHTML, continuando de onde estavam.
+  chamadaSaindo = chamadaSaindo.filter(s=>agora - s.desde < CHAMADA_SAIDA_MS);
+  for(const s of chamadaSaindo){
+    s.el.style.animationDelay = `-${Math.round(agora - s.desde)}ms`;
+    if(s.el.parentNode !== raiz) raiz.appendChild(s.el);
+    setTimeout(()=>{ s.el.remove(); }, Math.max(0, CHAMADA_SAIDA_MS - (agora - s.desde)) + 20);
+  }
+  // Os que ficaram deslizam da posição antiga para a nova.
+  raiz.querySelectorAll('.ch-ladrilho[data-chave]:not(.saindo)').forEach(el=>{
+    const a = antes.get(el.dataset.chave);
+    if(!a) return;
+    const r1 = el.getBoundingClientRect();
+    if(!r1.width || !r1.height) return;
+    // Só o centro anda: esticar o ladrilho deformaria a foto redonda e o
+    // texto no meio do caminho.
+    const dx = (a.r.left + a.r.width / 2) - (r1.left + r1.width / 2);
+    const dy = (a.r.top + a.r.height / 2) - (r1.top + r1.height / 2);
+    if(Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+    el.animate([{transform: `translate(${dx}px, ${dy}px)`}, {transform: 'none'}], {duration: 360, easing: 'cubic-bezier(.2, .8, .2, 1)'});
+  });
 }
 
 function atualizarTempoChamada(){
