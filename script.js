@@ -15603,6 +15603,36 @@ function faixaDeVideoChamada(chave){
   return t && t.readyState === 'live' ? t : null;
 }
 
+// A proporção de verdade de cada vídeo (largura / altura). O quadro em
+// destaque, a tela na grade e o mini seguem ela, em vez de um 16:9 fixo com
+// faixas pretas em volta: monitor ultrawide, uma janela, câmera 4:3 ou
+// celular em pé. Muda no meio da chamada (a pessoa redimensiona a janela que
+// transmite, o navegador baixa a resolução) e o quadro acompanha.
+const chamadaProporcao = {};
+function atualizarProporcaoVideo(chave, v){
+  if(!v.videoWidth || !v.videoHeight) return;
+  const ar = Math.round(v.videoWidth / v.videoHeight * 1000) / 1000;
+  if(chamadaProporcao[chave] === ar) return;
+  chamadaProporcao[chave] = ar;
+  aplicarProporcoesChamada();
+  if(chamada && chamada.modo === 'expandida') ajustarGradeChamada(docChamada().getElementById('chamada'));
+}
+function aplicarProporcoesChamada(){
+  for(const d of docsChamada()){
+    d.querySelectorAll('#chamada .ch-ladrilho[data-chave]').forEach(el=>{
+      const ar = chamadaProporcao[el.dataset.chave];
+      if(ar && el.classList.contains('com-video')) el.style.setProperty('--ch-ar', ar);
+      else el.style.removeProperty('--ch-ar');
+    });
+    // No mini, o quadro toma a proporção do vídeo que está nele.
+    d.querySelectorAll('#chamada .ch-mini-palco').forEach(palco=>{
+      const l = palco.querySelector('.ch-mini-grade .ch-ladrilho.com-video[data-chave], :scope > .ch-ladrilho.com-video[data-chave]');
+      const ar = l && chamadaProporcao[l.dataset.chave];
+      if(ar) palco.style.setProperty('--ch-ar', ar); else palco.style.removeProperty('--ch-ar');
+    });
+  }
+}
+
 function videoDaChamada(chave){
   const t = faixaDeVideoChamada(chave);
   if(!t) return null;
@@ -15613,6 +15643,8 @@ function videoDaChamada(chave){
     v.playsInline = true;
     v.muted = true;
     marcarVideoQuandoPronto(v);
+    v.addEventListener('loadedmetadata', ()=>atualizarProporcaoVideo(chave, v));
+    v.addEventListener('resize', ()=>atualizarProporcaoVideo(chave, v));
     chamadaVideos[chave] = v;
   }
   const atual = v.srcObject && v.srcObject.getVideoTracks()[0];
@@ -16077,11 +16109,12 @@ function desenharChamada(){
     const listaChat = painelChatEl && painelChatEl.querySelector('#ch-chat-lista');
     if(listaChat && rolagemChatAntes !== null) listaChat.scrollTop = rolagemChatAntes;
   }
-  if(c.modo === 'expandida') ajustarGradeChamada(raiz);
   raiz.querySelectorAll('[data-slot]').forEach(slot=>{
     const v = videoDaChamada(slot.dataset.slot);
     if(v) slot.appendChild(v);
   });
+  aplicarProporcoesChamada();
+  if(c.modo === 'expandida') ajustarGradeChamada(raiz);
   // Ladrilho de quem acabou de entrar (ou da tela que acabou de começar)
   // chega com animação; os que já estavam não repetem a cada desenho. Na
   // troca de modo, quem anima é a transição da janela inteira.
