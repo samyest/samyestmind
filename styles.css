@@ -2873,7 +2873,7 @@
   .ch-previa-disps .ch-disp-ruido{grid-column:1 / -1;}
   .chamada .ch-disp .select{width:100%;max-width:none;background:color-mix(in srgb, var(--ch-texto) 5%, var(--ch-painel));color:var(--ch-texto);border-color:color-mix(in srgb, var(--ch-texto) 14%, transparent);}
 
-  .ch-mini-palco{position:relative;display:block;width:100%;aspect-ratio:16 / 9;background:var(--ch-botao);cursor:pointer;}
+  .ch-mini-palco{position:relative;display:block;width:100%;aspect-ratio:clamp(1.25, var(--ch-ar, 1.7778), 2.2);background:var(--ch-botao);cursor:pointer;}
   .ch-mini-palco .ch-ladrilho{position:absolute;inset:0;border-radius:0;box-shadow:none;}
   .ch-mini-palco .ch-ladrilho:not(.com-video){background:none;}
   .ch-mini-palco .ch-ladrilho .member-avatar{width:48px;height:48px;font-size:18px;}
@@ -7186,3 +7186,17 @@
   .ch-tecla:hover{background:var(--ch-botao-hover);}
   .ch-tecla.capturando{background:var(--ch-ativo);color:var(--ch-ativo-texto);}
   @media (prefers-reduced-motion: reduce){ .ch-ptt{transition:none;} }
+
+  /* Proporção de verdade do vídeo (--ch-ar, do script): o quadro em destaque
+     cresce até onde cabe sem faixas pretas, centrado no espaço; a tela na grade
+     segue o formato dela (dentro de um limite, para a grade não desmontar). */
+  @supports (width: 1cqh){
+    .ch-destaque{container-type:size;align-items:center;justify-content:center;}
+    .ch-destaque .ch-ladrilho.com-video{
+      flex:0 0 auto;
+      width:min(100cqw, 100cqh * var(--ch-ar, 1.7778));
+      aspect-ratio:var(--ch-ar, 1.7778);
+    }
+  }
+  .ch-grade .ch-ladrilho.tela.com-video{aspect-ratio:clamp(1.33, var(--ch-ar, 1.7778), 2.4);}
+  .chamada.na-janela .ch-mini-palco{aspect-ratio:auto;}
