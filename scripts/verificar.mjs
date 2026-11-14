@@ -113,6 +113,29 @@ for(const f of deTipo(/\.html$/)){
   });
 }
 
+/* ---------- SEC-021: CSS de terceiro servido daqui, sem endereço de fora ---------- */
+// CSS também vaza dado: input[value^="a"]{background:url(https://…)} manda o que
+// se digita para fora, e a CSP libera img-src https:. Por isso o daisyUI vem de
+// vendor/ (gerado por scripts/daisyui/gerar.sh, RFC 0007) e só aceita data: e
+// referência interna (#, %23) em url().
+for(const f of deTipo(/\.html$/)){
+  cadaLinha(f, (l, n)=>{
+    for(const m of l.matchAll(/<link[^>]*\brel="stylesheet"[^>]*>/g)){
+      const href = (m[0].match(/\bhref="([^"]+)"/) || [])[1] || '';
+      if(/^https?:/.test(href) && !href.startsWith('https://fonts.googleapis.com/')) falha('SEC-021', f, n, `folha de estilo de fora: ${href}`);
+      if(href.startsWith('vendor/') && !existsSync(join(ROOT, href))) falha('SEC-021', f, n, `${href} não existe (rodou o gerar.sh?)`);
+    }
+  });
+}
+for(const f of deTipo(/^vendor\/.*\.css$/)){
+  const src = ler(f);
+  if(!/^\/\*! daisyUI \d+\.\d+\.\d+ /.test(src)) falha('SEC-021', f, 1, 'sem o cabeçalho do scripts/daisyui/gerar.sh (editado à mão?)');
+  if(/@import\b/.test(src)) falha('SEC-021', f, 0, '@import em CSS de terceiro');
+  for(const m of src.matchAll(/url\(\s*['"]?([^'")\s]*)/g)){
+    if(!/^(data:|#|%23)/.test(m[1])) falha('SEC-021', f, 0, `url() para fora: ${m[1].slice(0, 80)}`);
+  }
+}
+
 /* ---------- SEC-040 / SEC-041 / SEC-042: SQL ---------- */
 const sqls = deTipo(/^supabase\/.*\.sql$/);
 const sqlTudo = sqls.map(f=> ler(f)).join('\n').toLowerCase();

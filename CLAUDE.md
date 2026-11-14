@@ -8,8 +8,11 @@ O `README.md` cobre a configuração do Google, do Supabase e das variáveis de 
 
 Sem framework e sem build step. Não existe `package.json`; nada é compilado.
 
-- **Front** — `index.html`, `styles.css` (~2.600 linhas), `script.js` (~4.000 linhas),
+- **Front** — `index.html`, `styles.css` (~7.300 linhas), `script.js` (~16.000 linhas),
   em HTML/CSS/JS puro. Todo o app vive nesses três arquivos.
+- **Componentes** — daisyUI com prefixo `d-` (`d-btn`, `d-input`…), em
+  `vendor/daisyui-<versão>.css`. O arquivo é gerado e versionado; o deploy continua
+  sem build. Ver a RFC 0007 e a regra abaixo.
 - **Back** — funções serverless da Vercel em `api/` (ESM, `.mjs`), mais Supabase
   (Postgres com RLS) para persistência.
 - **SQL** — versionado em `supabase/*.sql` e aplicado à mão no SQL Editor do Supabase.
@@ -34,6 +37,14 @@ Sem framework e sem build step. Não existe `package.json`; nada é compilado.
   app no mesmo dia. Para atualizar, escolha uma versão publicada há pelo menos duas
   semanas, troque o número na URL e recalcule o hash:
   `curl -s https://cdn.jsdelivr.net/npm/@supabase/supabase-js@X.Y.Z/dist/umd/supabase.js | openssl dgst -sha384 -binary | openssl base64 -A`
+- daisyUI (RFC 0007): classe sempre com o prefixo `d-`; cor de componente sai dos
+  tokens do tema (o mapeamento no fim do `styles.css`), nunca de um tema do daisyUI.
+  Ajuste vai no `styles.css`, fora de camada, e reset global novo vai em
+  `@layer app-reset`. O `vendor/daisyui-*.css` nunca se edita à mão: para trocar a
+  versão, mude `DAISYUI` em `scripts/daisyui/gerar.sh` (publicada há pelo menos duas
+  semanas), rode `bash scripts/daisyui/gerar.sh`, troque o `<link>` no `index.html` e
+  apague o arquivo antigo. O `<link>` dele vem depois do `styles.css`, que fixa a
+  ordem das camadas. Nada de CDN para CSS: o SEC-021 barra.
 - HTML montado por template string: texto do usuário sempre por `esc()`, cor por
   `corSegura()`, e colunas (pessoais ou de projeto) só depois de `normalizarColunas()`
   — a chave delas vai crua para dentro de `onclick`.

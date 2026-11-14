@@ -1,3 +1,11 @@
+/* Ordem das camadas. O daisyUI (vendor/daisyui-*.css, RFC 0007) vem todo em
+   camadas e carrega depois deste arquivo; esta é a primeira linha que cita os
+   nomes, então é ela que fixa a ordem. O reset do app fica na camada mais
+   baixa: fora de camada, o `*{padding:0}` e o `button{background:none}`
+   passariam por cima de qualquer componente do daisyUI. O resto do arquivo
+   segue fora de camada e continua ganhando do daisyUI. */
+@layer app-reset, theme, base, components, utilities;
+
 :root{
     color-scheme: light;
     --bg-base: #E9EDF1;
@@ -47,7 +55,9 @@
     --sidebar-w: 220px;
   }
 
-  *{box-sizing:border-box;margin:0;padding:0;}
+  @layer app-reset{
+    *{box-sizing:border-box;margin:0;padding:0;}
+  }
   html,body{height:100%;overflow:hidden;overflow-x:hidden;overscroll-behavior-x:none;max-width:100vw;}
   body{
     background:var(--bg-base);
@@ -86,7 +96,9 @@
     opacity:0.55;
   }
 
-  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
+  @layer app-reset{
+    button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
+  }
 
   /* Acessibilidade -------------------------------------------------------- */
   /* Antes daqui nao havia foco visivel em lugar nenhum: navegar por Tab era
@@ -407,7 +419,9 @@
   }
   .alarm-banner-dismiss:hover{color:#E24E3D;background:rgba(226,78,61,0.1);}
 
-  input,select,textarea{font-family:inherit;color:var(--text);caret-color:var(--text);}
+  @layer app-reset{
+    input,select,textarea{font-family:inherit;color:var(--text);caret-color:var(--text);}
+  }
   input:-webkit-autofill,
   input:-webkit-autofill:hover,
   input:-webkit-autofill:focus,
@@ -3711,32 +3725,6 @@
     white-space:pre-wrap;
     word-break:break-word;
   }
-  .comment-composer{
-    display:flex;
-    gap:8px;
-    align-items:flex-end;
-  }
-  .comment-composer textarea{
-    flex:1;
-    background:var(--glass-strong);
-    border:1px solid var(--line);
-    border-radius:10px;
-    padding:9px 12px;
-    font-size:13px;
-    color:var(--text);
-    outline:none;
-    resize:none;
-    font-family:inherit;
-    line-height:1.4;
-    transition:background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .15s ease, opacity .15s ease;
-  }
-  .comment-composer textarea:focus{border-color:var(--accent);background:var(--glass-hover);}
-  .comment-send-btn{
-    padding:9px 16px;
-    flex-shrink:0;
-    height:fit-content;
-  }
-
   .settings-avatar-preview{
     width:56px;height:56px;
     background:linear-gradient(135deg, var(--palette-8), var(--palette-6));
@@ -4687,11 +4675,10 @@
     .theme-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
   }
 
-  /* Fica no fim de proposito: `.field textarea` e `.comment-composer textarea`
-     zeram o outline com a mesma especificidade do bloco de foco la de cima,
-     e no empate vence quem vem depois. */
-  .field textarea:focus-visible,
-  .comment-composer textarea:focus-visible{
+  /* Fica no fim de proposito: `.field textarea` zera o outline com a mesma
+     especificidade do bloco de foco la de cima, e no empate vence quem vem
+     depois. */
+  .field textarea:focus-visible{
     outline:2px solid var(--accent);
     outline-offset:1px;
   }
@@ -4923,44 +4910,7 @@
   .tag-chip-more{--tag-color:var(--text-soft);}
   .tag-chip-more::before{display:none;}
 
-  .tag-input{
-    display:flex;
-    flex-wrap:wrap;
-    align-items:center;
-    gap:6px;
-    min-height:42px;
-    padding:6px 10px;
-    background:var(--glass-strong);
-    border:1px solid var(--line);
-    border-radius:10px;
-    cursor:text;
-    transition:background-color .15s ease, border-color .15s ease;
-  }
-  .tag-input:focus-within{border-color:var(--accent);background:var(--glass-hover);}
   .tag-chips{display:contents;}
-  .tag-chip-edit{font-size:12px;padding:3px 4px 3px 9px;}
-  .tag-chip-remove{
-    width:18px;height:18px;
-    border-radius:50%;
-    display:grid;place-items:center;
-    font-size:13px;
-    line-height:1;
-    color:var(--text-muted);
-  }
-  .tag-chip-remove:hover:not(:disabled){color:var(--danger);background:color-mix(in srgb, var(--danger) 14%, transparent);}
-  .tag-chip-remove:disabled{display:none;}
-  .tag-input-field{
-    flex:1;
-    min-width:110px;
-    border:none;
-    outline:none;
-    background:transparent;
-    font-size:13px;
-    color:var(--text);
-    padding:4px 2px;
-  }
-  .tag-input-field::placeholder{color:var(--text-soft);}
-  .tag-input-field:disabled{cursor:not-allowed;}
   .tag-suggestion-item{display:flex;align-items:center;gap:8px;}
   .tag-suggestion-item .tag-chip{font-size:12px;}
 
@@ -6041,47 +5991,35 @@
   }
   .tk-prop-nome svg{width:16px;height:16px;flex-shrink:0;color:var(--text-soft);}
   .tk-prop-valor{position:relative;min-width:0;}
-  .tk-props .input,
-  .tk-props .select,
-  .tk-props .tag-input{
-    padding:8px 10px;
-    min-height:0;
-    background:transparent;
-    border-color:transparent;
-    font-size:13.5px;
-  }
-  .tk-props .input:hover:not(:disabled),
-  .tk-props .select:hover:not(:disabled),
-  .tk-props .tag-input:hover{background:var(--glass-strong);}
-  .tk-props .input:focus,
-  .tk-props .select:focus,
-  .tk-props .tag-input:focus-within{background:var(--glass-strong);border-color:var(--accent);}
+  /* Os campos são do daisyUI (d-input, d-select, RFC 0007); aqui só a medida:
+     ocupam a coluna toda, no corpo de texto das propriedades. */
+  .tk-props .d-input,
+  .tk-props .d-select{width:100%;font-size:13.5px;}
   .tk-quando{display:flex;align-items:center;gap:6px;}
   .tk-quando #m-date{flex:1 1 auto;min-width:0;}
   .tk-quando #m-time{flex:0 0 112px;}
-  .tk-quando .time-clear-btn{width:28px;height:28px;background:transparent;border-color:transparent;}
   .tk-props .task-color-row{margin:0;padding:5px 2px;gap:6px;}
   .tk-props .task-color-btn{width:22px;height:22px;}
 
   .tk-opcoes{border-top:1px solid var(--line);}
   .tk-opcao .set-linha{border-top:none;padding:12px 0;}
   .tk-opcao + .tk-opcao{border-top:1px solid var(--line);}
-  .tk-opcao .weekday-picker{margin:0 0 6px;}
+  .tk-opcao .set-linha > .d-toggle{flex-shrink:0;}
+  .tk-dias{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 6px;}
   .tk-dica{margin:8px 0 12px;font-size:12px;line-height:1.5;color:var(--text-muted);}
 
-  .field > .tk-secao{
+  .tk-secao{
     display:block;
     margin-bottom:8px;
-    font-family:inherit;
     font-size:13px;
     font-weight:500;
-    letter-spacing:0;
-    text-transform:none;
     color:var(--text-muted);
   }
-  .field.tk-notas{padding-top:16px;border-top:1px solid var(--line);}
-  .field.tk-notas textarea{min-height:110px;}
-  .field.tk-comentarios{padding-top:18px;}
+  .tk-notas{padding-top:16px;border-top:1px solid var(--line);}
+  .tk-notas .d-textarea{width:100%;min-height:110px;font-size:13px;line-height:1.6;resize:vertical;}
+  .tk-comentarios{padding-top:18px;}
+  .tk-comentar{display:flex;gap:8px;align-items:flex-end;}
+  .tk-comentar .d-textarea{flex:1;min-height:0;font-size:13px;line-height:1.4;resize:none;}
 
   @media (max-width:900px){
     .tk-prop{grid-template-columns:92px minmax(0, 1fr);gap:8px;}
@@ -6105,41 +6043,118 @@
   .tk-titulo::placeholder{color:var(--tk-apoio);opacity:1;}
   .tk-prop-nome{font-size:13.5px;color:var(--tk-rotulo);}
   .tk-prop-nome svg{color:var(--tk-apoio);}
-  .tk-props .input,
-  .tk-props .select,
-  .tk-props .tag-input{background:var(--tk-campo);color:var(--text-strong);}
-  .tk-props .input:hover:not(:disabled),
-  .tk-props .select:hover:not(:disabled),
-  .tk-props .tag-input:hover{background:var(--tk-campo-hover);}
-  .tk-props .input:focus,
-  .tk-props .select:focus,
-  .tk-props .tag-input:focus-within{background:var(--tk-campo);border-color:var(--accent);}
-  .tk-props .input::placeholder,
-  .tk-props .tag-input-field::placeholder{color:var(--tk-apoio);}
-  .tk-props .input:disabled, .tk-props .select:disabled{opacity:0.75;}
-  .tk-quando .time-clear-btn{color:var(--tk-apoio);}
   .tk-props .task-color-none{background:var(--tk-campo);border-color:color-mix(in srgb, var(--text) 30%, transparent);color:var(--tk-apoio);}
   .tk-modal .set-linha-desc,
   .tk-modal .tk-dica{color:var(--tk-apoio);font-size:12.5px;}
-  .tk-modal .sound-toggle-track{background:color-mix(in srgb, var(--text) 20%, transparent);}
-  .tk-modal .sound-toggle input:checked + .sound-toggle-track{background:var(--accent);}
-  .tk-modal .weekday-btn{
-    font-family:inherit;
-    font-size:12.5px;
-    color:var(--tk-rotulo);
-    background:var(--tk-campo);
-    border-color:color-mix(in srgb, var(--text) 16%, transparent);
-  }
-  .tk-modal .weekday-btn.selected{background:var(--accent);border-color:var(--accent);color:var(--accent-text);}
-  .tk-modal .field > .tk-secao{color:var(--tk-rotulo);font-size:13.5px;}
-  .tk-modal .field textarea,
-  .tk-modal .comment-composer textarea{background:var(--tk-campo);border-color:transparent;color:var(--text-strong);}
-  .tk-modal .field textarea:focus,
-  .tk-modal .comment-composer textarea:focus{border-color:var(--accent);}
-  .tk-modal textarea::placeholder{color:var(--tk-apoio);}
+  .tk-modal .tk-secao{color:var(--tk-rotulo);font-size:13.5px;}
   .tk-modal .tk-opcoes,
   .tk-modal .tk-opcao + .tk-opcao,
-  .tk-modal .field.tk-notas{border-color:color-mix(in srgb, var(--text) 12%, transparent);}
+  .tk-modal .tk-notas{border-color:color-mix(in srgb, var(--text) 12%, transparent);}
+
+  /* daisyUI no modal de tarefa (piloto da RFC 0007) ------------------------- */
+  /* Sobre o vidro, o base-100 global (o próprio vidro) sumiria: o campo usa o
+     mesmo --tk-campo de antes, e o texto digitado fica no tom mais forte. */
+  .tk-modal{
+    --color-base-100:var(--tk-campo);
+    --color-base-200:var(--tk-campo-hover);
+    --color-base-content:var(--text-strong);
+  }
+  /* Campo sem borda até receber foco: a linha de propriedades lê como texto, e
+     a borda aparece só no campo em uso. O --d-input-color é o que o daisyUI usa
+     para a borda; trocado fora de camada, vale também no :focus dele. */
+  .tk-modal :is(.d-input, .d-select, .d-textarea){--d-input-color:transparent;}
+  .tk-modal :is(.d-input, .d-select, .d-textarea):hover:not(:disabled, :focus, :focus-within){background-color:var(--tk-campo-hover);}
+  .tk-modal :is(.d-input, .d-select, .d-textarea):is(:focus, :focus-within){--d-input-color:var(--accent);}
+  .tk-modal :is(.d-input, .d-textarea)::placeholder{color:var(--tk-apoio);}
+  .tk-modal :is(.d-input, .d-select):disabled{opacity:.75;background-color:var(--tk-campo);}
+
+  /* Tarefa ou evento: o "segmentado" do Ant Design e do HeroUI, montado com
+     d-tabs-box. Trilho no tom do campo, escolhido em vidro claro. */
+  .tk-tipo.d-tabs-box{display:inline-flex;gap:2px;padding:3px;border-radius:10px;background-color:var(--tk-campo);}
+  .tk-tipo > .d-tab{--radius-field:7px;padding-inline:14px;font-size:13px;color:var(--tk-rotulo);}  /* trilho 10, folga 3 */
+  .tk-tipo > .d-tab:hover:not(:disabled){color:var(--text-strong);}
+  .tk-tipo > .d-tab.d-tab-active{background-color:var(--glass-hover);color:var(--text-strong);font-weight:500;box-shadow:0 1px 3px rgba(43,54,68,0.12);}
+  .tk-tipo > .d-tab:disabled{cursor:not-allowed;opacity:.7;}
+
+  /* Prazo: o x de limpar a hora é um d-btn fantasma, no tom de apoio. */
+  .tk-limpar-hora{color:var(--tk-apoio);}
+  .tk-limpar-hora:hover:not(:disabled){color:var(--danger);background-color:color-mix(in srgb, var(--danger) 12%, transparent);}
+
+  /* Tags: o d-input vira a caixa que cresce com os chips. O daisyUI fixa a
+     altura do campo; aqui ela vira mínima, e a linha quebra. */
+  .tk-tags.d-input{
+    height:auto;
+    min-height:var(--d-size);
+    flex-wrap:wrap;
+    gap:5px;
+    padding-block:4px;
+    padding-inline:6px 10px;
+    white-space:normal;
+  }
+  .tk-tags-campo{flex:1 1 110px;min-width:110px;font-size:13.5px;color:var(--text-strong);}
+  /* O anel de foco fica no campo de fora (focus-within); no de dentro seria um
+     segundo anel. */
+  .tk-tags-campo:focus-visible{outline:none;}
+  .tk-tags-campo:disabled{cursor:not-allowed;}
+  /* Chip de tag: d-badge com o ponto d-status, na mesma cor e tinta das tags
+     do quadro (.tag-chip). */
+  .tk-tag.d-badge{
+    gap:5px;
+    max-width:100%;
+    padding-inline:8px 3px;
+    font-size:12px;
+    font-weight:500;
+    color:var(--text-strong);
+    background-color:color-mix(in srgb, var(--tag-color, var(--accent)) 16%, transparent);
+    border-color:color-mix(in srgb, var(--tag-color, var(--accent)) 34%, transparent);
+  }
+  .tk-tag .d-status{background-color:var(--tag-color, var(--accent));}
+  .tk-tag-remover{
+    width:16px;height:16px;
+    display:grid;place-items:center;
+    border-radius:50%;
+    color:var(--tk-apoio);
+    transition:color .15s ease, background-color .15s ease;
+  }
+  .tk-tag-remover svg{width:10px;height:10px;}
+  .tk-tag-remover:hover:not(:disabled){color:var(--danger);background-color:color-mix(in srgb, var(--danger) 14%, transparent);}
+  .tk-tag-remover:disabled{display:none;}
+
+  /* Dias da rotina: d-btn redondos. Escolhido no accent, como antes. */
+  .tk-dias .d-btn{font-size:12.5px;font-weight:500;color:var(--tk-rotulo);background-color:var(--tk-campo);border-color:color-mix(in srgb, var(--text) 16%, transparent);}
+  .tk-dias .d-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .tk-dias .d-btn[aria-pressed="true"]{background-color:var(--accent);border-color:var(--accent);color:var(--accent-text);}
+
+  /* Interruptores: d-toggle no accent quando ligado. Desligado, o trilho fica
+     no tom do campo e a bolinha no de apoio, legível nos temas claros. */
+  .tk-modal .d-toggle{--d-input-color:var(--tk-apoio);background-color:var(--tk-campo);}
+  .tk-modal .d-toggle:checked{--d-input-color:var(--accent);background-color:color-mix(in srgb, var(--accent) 14%, transparent);}
+
+  /* Rodapé. Salvar leva o atalho em d-kbd (como os botões do AlignUI e do
+     coss) e, salvando, troca o atalho pelo d-loading (o isLoading do HeroUI). */
+  .tk-modal .modal-foot{align-items:center;}
+  .tk-acoes{display:flex;gap:8px;}
+  .tk-salvar .d-kbd{
+    min-height:0;
+    height:18px;
+    padding-inline:5px;
+    font-family:inherit;
+    font-size:10.5px;
+    font-weight:500;
+    color:inherit;
+    background-color:color-mix(in srgb, var(--accent-text) 16%, transparent);
+    border-color:color-mix(in srgb, var(--accent-text) 22%, transparent);
+    border-bottom-width:1px;
+    opacity:.85;
+  }
+  .tk-salvar .d-loading{display:none;}
+  .tk-salvar.salvando .d-loading{display:inline-block;}
+  /* Salvando, o botão fica travado mas continua com a cara de Salvar: o
+     cinza do disabled do daisyUI dizia "não dá pra clicar", não "estou indo". */
+  .tk-salvar.salvando:disabled{background-color:var(--color-primary);color:var(--color-primary-content);opacity:.85;cursor:progress;}
+  .tk-salvar.salvando .tk-atalho{display:none;}
+  /* No celular não há teclado físico para o atalho. */
+  @media (hover:none){ .tk-atalho{display:none;} }
 
   /* Configurações: os mesmos tons do modal de tarefa. */
   .set-aba{color:var(--tk-rotulo);}
@@ -6455,24 +6470,8 @@
     .pn-titulo{font-size:21px;}
   }
 
-  /* Tarefa ou evento, no modal (só dentro de projeto) */
-  .tk-tipo{
-    display:inline-flex;
-    gap:2px;
-    padding:3px;
-    border-radius:10px;
-    background:var(--tk-campo, var(--glass-strong));
-  }
-  .tk-tipo-btn{
-    padding:6px 14px;
-    border-radius:8px;
-    font-size:13px;
-    color:var(--tk-rotulo, var(--text-muted));
-    transition:background-color .15s ease, color .15s ease;
-  }
-  .tk-tipo-btn:hover:not(:disabled){color:var(--text-strong);}
-  .tk-tipo-btn.selected{background:var(--glass-hover);color:var(--text-strong);font-weight:500;box-shadow:0 1px 3px rgba(43,54,68,0.12);}
-  .tk-tipo-btn:disabled{cursor:not-allowed;opacity:0.7;}
+  /* Tarefa ou evento, no modal (só dentro de projeto). O seletor é um
+     d-tabs-box; o desenho dele fica junto do resto do modal de tarefa. */
   .tk-tipo-dica{margin:6px 2px 0;font-size:12px;color:var(--tk-apoio, var(--text-muted));}
 
   /* Início do projeto ------------------------------------------------------ */
@@ -7112,7 +7111,6 @@
   .novo-menu-item{border-radius:6px;}             /* lista 12, folga 6 */
   .ch-sala{border-radius:8px;}                    /* painel 16, folga 8 */
   .ch-segmento{border-radius:8px;}                /* trilho 12, folga 4 */
-  .tk-tipo-btn{border-radius:7px;}                /* trilho 10, folga 3 */
   .ch-rotulo{border-radius:10px;}                 /* ladrilho 18, folga 8 */
   .ch-ladrilho-acoes .ch-acao{border-radius:10px;} /* ladrilho 18, folga 8 */
   .ch-previa-nome{left:8px;bottom:8px;border-radius:6px;} /* vídeo 14, folga 8 */
@@ -7186,3 +7184,74 @@
   .ch-tecla:hover{background:var(--ch-botao-hover);}
   .ch-tecla.capturando{background:var(--ch-ativo);color:var(--ch-ativo-texto);}
   @media (prefers-reduced-motion: reduce){ .ch-ptt{transition:none;} }
+
+  /* ======================================================================
+     daisyUI vestido com os tokens do tema (RFC 0007)
+     ======================================================================
+     O daisyUI vem de vendor/daisyui-*.css, com prefixo d- (d-btn, d-input…),
+     em camadas: qualquer regra deste arquivo ganha dele. As cores dele saem
+     dos tokens que o applyTheme troca, então os 8 temas valem nos d-* sem
+     paleta própria. Fica no body, e não no :root, porque o Vidro redefine
+     --radius no body. */
+  body{
+    --color-base-100:var(--glass-strong);
+    --color-base-200:var(--glass);
+    --color-base-300:var(--line-strong);
+    --color-base-content:var(--text);
+    --color-primary:var(--accent);
+    --color-primary-content:var(--accent-text);
+    /* Secundária e destaque nos tons claros da paleta, com o texto forte:
+       o --palette-8 com branco fica abaixo de 3:1 nos temas claros. */
+    --color-secondary:var(--palette-5);
+    --color-secondary-content:var(--text-strong);
+    --color-accent:var(--palette-6);
+    --color-accent-content:var(--text-strong);
+    --color-neutral:var(--text-strong);
+    --color-neutral-content:var(--bg-base);
+    /* As cores de estado são as mesmas dos status do quadro. Nas claras, o
+       texto é tinta escura: branco sobre o verde e o areia não passa de 3:1. */
+    --color-info:var(--doing);
+    --color-info-content:#ffffff;
+    --color-success:var(--done);
+    --color-success-content:#1d2a1c;
+    --color-warning:var(--waiting);
+    --color-warning-content:#2e2410;
+    --color-error:var(--danger);
+    --color-error-content:#2b1712;
+    /* Arredondado concêntrico (RFC 0006): caixa no --radius do tema, campo
+       em 10 como os .input, peça pequena em 8. */
+    --radius-box:var(--radius);
+    --radius-field:10px;
+    --radius-selector:8px;
+    --size-field:.25rem;
+    --size-selector:.25rem;
+    --border:1px;
+    /* O mundo do app é vidro chapado: sem o degradê e a sombra de relevo que
+       o daisyUI põe nos botões, e sem o ruído. */
+    --depth:0;
+    --noise:0;
+  }
+  /* No Vidro os botões são pílulas, como o .btn-primary. */
+  body.theme-vidro .d-btn:not(.d-btn-square, .d-btn-circle){--radius-field:999px;}
+
+  /* Peso do texto do app (Inter 500), não o 600 do daisyUI. */
+  .d-btn{font-weight:500;}
+  /* O soft pinta o texto na cor pura, que sobre o vidro claro fica abaixo de
+     3:1 (o vermelho do Excluir). Em repouso o texto puxa para o --text-strong
+     do tema (35% de cor dá 4,8:1 no Sereno; 45% ficava em 4,2); no hover o
+     daisyUI enche o botão e usa a cor de conteúdo. */
+  .d-btn-soft:not(:hover, :active, :disabled){
+    color:color-mix(in srgb, var(--d-btn-color, var(--color-base-content)) 35%, var(--text-strong));
+    /* A tinta de 8% do daisyUI some no vidro e o botão parece desligado. */
+    --d-btn-bg:color-mix(in srgb, var(--d-btn-color, var(--color-base-content)) 14%, transparent);
+    --d-btn-border:transparent;
+  }
+  /* O retorno de toque do HeroUI: o botão afunda um pouco ao apertar, como
+     os botões do app (.btn-primary:active). */
+  .d-btn:active:not(:disabled){transform:scale(.96);}
+  /* O foco do app (:focus-visible lá no topo) traz border-radius:6px, que
+     achataria o canto dos componentes. revert-layer devolve o raio do daisyUI. */
+  :is(.d-btn, .d-input, .d-select, .d-textarea, .d-toggle, .d-tab, .d-checkbox, .d-radio):focus-visible{border-radius:revert-layer;}
+  @media (prefers-reduced-motion: reduce){
+    .d-btn:active:not(:disabled){transform:none;}
+  }
