@@ -36,6 +36,16 @@ em 8 s. **Por quê:** sem prazo, um serviço que trava segura a função até a 
 matá-la, e o app recebe um erro genérico em vez do 503 de "tente de novo".
 **Verificação:** auto (falha) — `fetch(` direto em `api/` fora do `buscar()`.
 
+### QUA-009 — Componente do daisyUI só com prefixo `d-` e com as cores do tema *(RFC 0007)*
+Classe do daisyUI sempre com `d-` (`d-btn`, nunca `btn`). Cor de componente sai dos
+tokens do tema (o mapeamento no fim do `styles.css`), nunca de um tema do daisyUI nem
+de cor fixa. Ajuste de componente vai no `styles.css`, fora de camada; o
+`vendor/daisyui-*.css` não se edita à mão. Regra nova de reset (`*`, elemento solto)
+vai para `@layer app-reset`. Tela migrada não mistura o controle antigo e o novo no
+mesmo papel (dois tipos de botão primário, por exemplo). **Por quê:** sem o prefixo,
+`.modal` e `.input` do daisyUI pegam os do app; fora da camada, o reset apaga o
+padding dos componentes. **Verificação:** revisão.
+
 ## Interface e acessibilidade
 
 ### QUA-020 — Elementos clicáveis são `<button>` ou `<a>`
@@ -60,6 +70,12 @@ Login, cadastro e redefinição de senha aparecem e validam campos vazios.
 
 ### QUA-042 — Layout sem rolagem horizontal em 375px
 **Verificação:** navegador.
+
+### QUA-044 — Modal de tarefa nos temas *(RFC 0007)*
+O modal de tarefa abre sem erro no Vidro, num tema claro e no Grafite: campos,
+seletor Tarefa/Evento, tags, interruptores, dias da rotina e rodapé legíveis, foco
+visível no teclado e sem rolagem lateral em 375px. Fora do modal, nada muda de
+aparência com o daisyUI carregado. **Verificação:** navegador.
 
 ### QUA-043 — Fluxos logados *(precisa de conta de teste)*
 Criar, mover e concluir tarefa; criar rotina; abrir projeto. Só roda se

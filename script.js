@@ -318,7 +318,10 @@ function openRoutineModal(id){
   editingRoutineId = id || null;
   const title = document.getElementById('routine-modal-title');
   document.getElementById('rt-status').innerHTML = getColumns().map(c=>`<option value="${c.key}">${esc(c.name)}</option>`).join('');
-  document.querySelectorAll('#rt-days .weekday-btn').forEach(b=>b.classList.remove('selected'));
+  document.querySelectorAll('#rt-days .weekday-btn').forEach(b=>{
+    b.classList.remove('selected');
+    b.setAttribute('aria-pressed', 'false');
+  });
   if(id){
     const r = state.routines.find(x=>x.id===id);
     if(!r) return;
@@ -331,7 +334,7 @@ function openRoutineModal(id){
     document.getElementById('rt-time').value = r.time || '';
     r.weekdays.forEach(d=>{
       const btn = document.querySelector(`#rt-days .weekday-btn[data-day="${d}"]`);
-      if(btn) btn.classList.add('selected');
+      if(btn){ btn.classList.add('selected'); btn.setAttribute('aria-pressed', 'true'); }
     });
     document.getElementById('rt-active-field').style.display = '';
     document.getElementById('rt-active').checked = r.active;
@@ -5125,7 +5128,7 @@ async function sendComment(){
   const input = document.getElementById('comment-input');
   const content = input.value.trim();
   if(!content || !currentCommentTaskId) return;
-  const btn = document.querySelector('.comment-send-btn');
+  const btn = document.getElementById('comment-send');
   if(btn) btn.disabled = true;
   const {error} = await sb.from('task_comments').insert({
     task_id: currentCommentTaskId,
@@ -6773,8 +6776,8 @@ function renderTaskTagChips(){
   const input = document.getElementById('m-tag-input');
   const travado = input && input.disabled;
   wrap.innerHTML = selectedTaskTags.map((tag, i)=>`
-    <span class="tag-chip tag-chip-edit" style="${tagStyle(tag)}">${esc(tag)}<button type="button" class="tag-chip-remove" data-i="${i}" aria-label="Remover tag ${esc(tag)}" ${travado ? 'disabled' : ''}>×</button></span>`).join('');
-  wrap.querySelectorAll('.tag-chip-remove').forEach(btn=>{
+    <span class="d-badge d-badge-sm tk-tag" style="${tagStyle(tag)}"><span class="d-status" aria-hidden="true"></span>${esc(tag)}<button type="button" class="tk-tag-remover" data-i="${i}" aria-label="Remover tag ${esc(tag)}" ${travado ? 'disabled' : ''}><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></span>`).join('');
+  wrap.querySelectorAll('.tk-tag-remover').forEach(btn=>{
     btn.onclick = (e)=>{
       e.stopPropagation();
       selectedTaskTags.splice(+btn.dataset.i, 1);
@@ -6860,7 +6863,7 @@ function aplicarTipoItem(){
   document.getElementById('m-kind-field').style.display = disponivel ? '' : 'none';
   document.querySelectorAll('#m-kind-field .tk-tipo-btn').forEach(b=>{
     const sel = b.dataset.kind === tipoItemModal;
-    b.classList.toggle('selected', sel);
+    b.classList.toggle('d-tab-active', sel);
     b.setAttribute('aria-checked', sel);
   });
   document.getElementById('m-kind-hint').textContent = evento
@@ -6917,7 +6920,7 @@ function openModal(id, prefillDate, prefillProjectId, prefillKind){
     document.getElementById('m-save').style.display = canEdit ? '' : 'none';
     document.getElementById('m-cancel').textContent = canEdit ? 'Cancelar' : 'Fechar';
     title.textContent = canEdit ? 'Editar tarefa' : 'Tarefa';
-    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn, #modal .tag-chip-remove, #modal .tk-tipo-btn').forEach(el=>{el.disabled = !canEdit;});
+    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .tk-limpar-hora, #modal .task-color-btn, #modal .tk-tag-remover, #modal .tk-tipo-btn').forEach(el=>{el.disabled = !canEdit;});
     setupGcalToggle(t, canEdit);
     commentsField.style.display = '';
     currentCommentTaskId = id;
@@ -6945,7 +6948,7 @@ function openModal(id, prefillDate, prefillProjectId, prefillKind){
     delBtn.style.display = 'none';
     document.getElementById('m-save').style.display = '';
     document.getElementById('m-cancel').textContent = 'Cancelar';
-    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .time-clear-btn, #modal .task-color-btn, #modal .tag-chip-remove, #modal .tk-tipo-btn').forEach(el=>{el.disabled = false;});
+    document.querySelectorAll('#modal input, #modal select, #modal textarea, #modal .btn-format, #modal .tk-limpar-hora, #modal .task-color-btn, #modal .tk-tag-remover, #modal .tk-tipo-btn').forEach(el=>{el.disabled = false;});
     setupGcalToggle(null, true);
     commentsField.style.display = 'none';
     currentCommentTaskId = null;
@@ -6958,6 +6961,9 @@ function openModal(id, prefillDate, prefillProjectId, prefillKind){
     aplicarTipoItem();
   };
   aplicarTipoItem();
+  // O mesmo keydown aceita Ctrl e ⌘; a dica no Salvar mostra a tecla do sistema.
+  const teclaAtalho = document.querySelector('#m-save .tk-atalho kbd');
+  if(teclaAtalho) teclaAtalho.textContent = ehMac() ? '⌘' : 'Ctrl';
   modal.classList.add('open');
   setTimeout(()=>document.getElementById('m-title').focus(), 50);
 }
@@ -6969,7 +6975,10 @@ function resetRepeatField(available){
   const checkbox = document.getElementById('m-repeat');
   field.style.display = available ? '' : 'none';
   checkbox.checked = false;
-  document.querySelectorAll('#m-repeat-days .weekday-btn').forEach(b=>b.classList.remove('selected'));
+  document.querySelectorAll('#m-repeat-days [data-day]').forEach(b=>{
+    b.classList.remove('selected');
+    b.setAttribute('aria-pressed', 'false');
+  });
   toggleRepeatField();
 }
 
@@ -6981,14 +6990,17 @@ function toggleRepeatField(){
   document.getElementById('m-date').disabled = checked;
 }
 
+// aria-pressed diz ao leitor de tela qual dia está marcado; antes só a cor
+// mudava.
 function toggleWeekdayBtn(el){
-  el.classList.toggle('selected');
+  const marcado = el.classList.toggle('selected');
+  el.setAttribute('aria-pressed', marcado);
 }
 
 // #m-repeat-days (tarefa nova) e #rt-days (rotina em Configurações) têm
 // cada um o seu próprio jogo de botões — nunca ler os dois juntos.
 function selectedWeekdays(){
-  return [...document.querySelectorAll('#m-repeat-days .weekday-btn.selected')].map(b=>+b.dataset.day);
+  return [...document.querySelectorAll('#m-repeat-days [data-day].selected')].map(b=>+b.dataset.day);
 }
 
 function filterClientSuggestions(){
@@ -7074,15 +7086,19 @@ async function saveTask(){
   if(document.getElementById('m-time').value) pedirPermissaoNotificacao();
 
   const btn = document.getElementById('m-save');
+  const rotulo = btn.querySelector('.tk-salvar-rotulo');
   salvandoTarefa = true;
   btn.disabled = true;
-  btn.textContent = 'Salvando…';
+  // .salvando troca a dica do atalho pelo d-loading (ver styles.css).
+  btn.classList.add('salvando');
+  rotulo.textContent = 'Salvando…';
   try{
     await salvarTarefaDoModal(title);
   }finally{
     salvandoTarefa = false;
     btn.disabled = false;
-    btn.textContent = 'Salvar';
+    btn.classList.remove('salvando');
+    rotulo.textContent = 'Salvar';
   }
 }
 

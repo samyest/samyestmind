@@ -58,6 +58,15 @@ Todo `<script src="https://...">` tem versão exata, `integrity` e
 `crossorigin="anonymous"`. **Por quê:** release nova ou CDN comprometida entraria
 no app no mesmo dia. **Verificação:** auto.
 
+### SEC-021 — CSS de terceiro servido daqui, sem endereço de fora *(RFC 0007)*
+Folha de estilo de biblioteca fica em `vendor/`, gerada por script com versão fixa
+(`scripts/daisyui/gerar.sh`), nunca editada à mão nem carregada de CDN. O arquivo não
+tem `@import` nem `url()` que aponte para fora (só `data:` e `#`). No HTML, a única
+folha de estilo de outra origem é a do Google Fonts. **Por quê:** CSS também vaza
+dado: `input[value^="a"]{background:url(https://…)}` manda para fora o que a pessoa
+digita, e a CSP aceita `img-src https:`. **Verificação:** auto (cabeçalho do gerador,
+`url()`, `@import` e `<link rel="stylesheet">`).
+
 ## API serverless (`api/`)
 
 ### SEC-030 — Identidade sempre derivada do token
